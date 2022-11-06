@@ -1,0 +1,3 @@
+[submodule "test/presentation-exchange"]
+	path = test/presentation-exchange
+	url = git@github.com:decentralized-identity/presentation-exchange.git

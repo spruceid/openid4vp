@@ -1,0 +1,31 @@
+[package]
+name = "oidc4vp"
+version = "0.1.0"
+edition = "2021"
+authors = ["Spruce Systems, Inc."]
+license = "MIT OR Apache-2.0"
+description = "OpenID Connect for Verifiable Presentations"
+repository = "https://github.com/spruceid/oidc4vp-rs/"
+documentation = "https://docs.rs/oidc4vp/"
+
+[dependencies]
+openidconnect = { version = "2.4.0", default-features = false }
+jsonpath-rust = "0.2.0"
+serde = { version = "1.0.147", features = ["derive"] }
+serde_json = "1.0.87"
+# ssi = { git = "https://github.com/spruceid/ssi", branch = "feat/oidc4vp-findings" }
+ssi = { path = "../ssi" }
+thiserror = "1.0.37"
+jsonschema = { version = "0.16.1", default-features = false }
+lazy_static = "1.4.0"
+schemars = { version = "0.8.11", default-features = false }
+
+[dev-dependencies]
+serde_path_to_error = "0.1.8"
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { version = "1.2", features = ["v4", "serde", "js"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+uuid = { version = "1.2", features = ["v4", "serde"] }
