@@ -5,18 +5,23 @@ use ssi::{jwk::Algorithm, ldp::ProofSuiteEnum};
 use crate::{siop::IdTokenSIOP, utils::NonEmptyVec};
 
 // TODO does openidconnect have a Request type?
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ResponseRequest {
     id_token: IdTokenSIOP, // CoreIdTokenClaims,
     vp_token: VpToken,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
+pub struct VpTokenIdToken {
+    pub presentation_submission: PresentationSubmission,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VpToken {
     pub presentation_definition: PresentationDefinition,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PresentationDefinition {
     pub id: String, // Uuid,
     pub input_descriptors: Vec<InputDescriptor>,
@@ -28,7 +33,7 @@ pub struct PresentationDefinition {
     pub format: Option<serde_json::Value>, // TODO
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InputDescriptor {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,7 +49,7 @@ pub struct InputDescriptor {
 }
 
 // TODO must have at least one
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Constraints {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fields: Option<Vec<ConstraintsField>>,
@@ -52,7 +57,7 @@ pub struct Constraints {
     pub limit_disclosure: Option<ConstraintsLimitDisclosure>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ConstraintsField {
     pub path: NonEmptyVec<String>, // TODO JsonPath validation at deserialization time
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,21 +72,21 @@ pub struct ConstraintsField {
     pub optional: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConstraintsLimitDisclosure {
     Required,
     Preferred,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct PresentationSubmission {
     id: String,
     definition_id: String,
     descriptor_map: Vec<DescriptorMap>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct DescriptorMap {
     id: String,
     format: String, // TODO should be enum of supported formats

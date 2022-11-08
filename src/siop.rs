@@ -7,6 +7,8 @@ use openidconnect::{
 use serde::{Deserialize, Serialize};
 use ssi::{did::DIDURL, jwk::JWK};
 
+use crate::presentation_exchange::{VpToken, VpTokenIdToken};
+
 #[derive(Serialize, Deserialize)]
 pub struct RequestParameters {
     scope: Scope,
@@ -80,11 +82,12 @@ impl StaticDiscoveryMetadata {
 //     };
 // }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct IdTokenSIOP {
-    iss: String,
-    sub: String,
-    sub_jwk: Option<JWK>,
+    pub iss: String,
+    pub sub: String,
+    pub sub_jwk: Option<JWK>,
+    pub vp_token: Option<VpTokenIdToken>,
 }
 
 #[cfg(test)]
