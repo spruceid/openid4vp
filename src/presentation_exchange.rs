@@ -1,27 +1,27 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-use ssi::{jwk::Algorithm, ldp::ProofSuiteEnum};
+use ssi::{jwk::Algorithm, ldp::ProofSuiteType};
 
-use crate::{siop::IdTokenSIOP, utils::NonEmptyVec};
+use crate::utils::NonEmptyVec;
 
 // TODO does openidconnect have a Request type?
 #[derive(Debug, Deserialize)]
 pub struct ResponseRequest {
-    id_token: IdTokenSIOP, // CoreIdTokenClaims,
+    id_token: serde_json::Value, // IdTokenSIOP, // CoreIdTokenClaims,
     vp_token: VpToken,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct VpTokenIdToken {
     pub presentation_submission: PresentationSubmission,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VpToken {
     pub presentation_definition: PresentationDefinition,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationDefinition {
     pub id: String, // Uuid,
     pub input_descriptors: Vec<InputDescriptor>,
@@ -33,7 +33,7 @@ pub struct PresentationDefinition {
     pub format: Option<serde_json::Value>, // TODO
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InputDescriptor {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -49,7 +49,7 @@ pub struct InputDescriptor {
 }
 
 // TODO must have at least one
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Constraints {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fields: Option<Vec<ConstraintsField>>,
@@ -57,7 +57,7 @@ pub struct Constraints {
     pub limit_disclosure: Option<ConstraintsLimitDisclosure>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConstraintsField {
     pub path: NonEmptyVec<String>, // TODO JsonPath validation at deserialization time
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -72,21 +72,21 @@ pub struct ConstraintsField {
     pub optional: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConstraintsLimitDisclosure {
     Required,
     Preferred,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct PresentationSubmission {
     id: String,
     definition_id: String,
     descriptor_map: Vec<DescriptorMap>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct DescriptorMap {
     id: String,
     format: String, // TODO should be enum of supported formats
@@ -133,15 +133,15 @@ pub struct SubmissionRequirementPick {
     max: Option<u64>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ClaimFormat {
     // Jwt,
     JwtVp { alg: Vec<Algorithm> },
     JwtVc { alg: Vec<Algorithm> },
     // Ldp,
-    LdpVp { proof_type: Vec<ProofSuiteEnum> },
-    LdpVc { proof_type: Vec<ProofSuiteEnum> },
+    LdpVp { proof_type: Vec<ProofSuiteType> },
+    LdpVc { proof_type: Vec<ProofSuiteType> },
 }
 
 #[cfg(test)]
