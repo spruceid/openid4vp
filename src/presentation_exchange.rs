@@ -11,7 +11,7 @@ pub struct ResponseRequest {
     vp_token: VpToken,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VpTokenIdToken {
     pub presentation_submission: PresentationSubmission,
 }
@@ -79,14 +79,14 @@ pub enum ConstraintsLimitDisclosure {
     Preferred,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationSubmission {
     id: String,
     definition_id: String,
     descriptor_map: Vec<DescriptorMap>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DescriptorMap {
     id: String,
     format: String, // TODO should be enum of supported formats
