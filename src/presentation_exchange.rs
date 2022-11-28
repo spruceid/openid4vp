@@ -133,17 +133,6 @@ pub struct SubmissionRequirementPick {
     max: Option<u64>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ClaimFormat {
-    // Jwt,
-    JwtVp { alg: Vec<Algorithm> },
-    JwtVc { alg: Vec<Algorithm> },
-    // Ldp,
-    LdpVp { proof_type: Vec<ProofSuiteType> },
-    LdpVc { proof_type: Vec<ProofSuiteType> },
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
