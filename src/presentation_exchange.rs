@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-use ssi::{jwk::Algorithm, ldp::ProofSuiteType};
 
 use crate::utils::NonEmptyVec;
 
