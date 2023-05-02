@@ -17,7 +17,12 @@ ssi = { version = "0.6.0", default-features = false }
 thiserror = "1.0.37"
 # jsonschema = { version = "0.16.1", default-features = false }
 lazy_static = "1.4.0"
+axum = "0.6.16"
+url = "2.3.1"
 # schemars = { version = "0.8.11", default-features = false }
+siop = { path = "../siop-rs"}
+rand = "0.8.5"
+isomdl = {path = "../isomdl"}
 
 [dev-dependencies]
 serde_path_to_error = "0.1.8"

@@ -1,7 +1,6 @@
+use crate::utils::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-
-use crate::utils::NonEmptyVec;
 
 // TODO does openidconnect have a Request type?
 #[derive(Debug, Deserialize)]
@@ -69,6 +68,30 @@ pub struct ConstraintsField {
     pub filter: Option<serde_json::Value>, // TODO JSONSchema validation at deserialization time
     #[serde(skip_serializing_if = "Option::is_none")]
     pub optional: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent_to_retain: Option<bool>,
+}
+
+impl ConstraintsField {
+    pub fn new(
+        path: NonEmptyVec<String>,
+        id: Option<String>,
+        purpose: Option<String>,
+        name: Option<String>,
+        filter: Option<serde_json::Value>,
+        optional: Option<bool>,
+        intent_to_retain: Option<bool>,
+    ) -> ConstraintsField {
+        ConstraintsField {
+            path,
+            id,
+            purpose,
+            name,
+            filter,
+            optional,
+            intent_to_retain,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
