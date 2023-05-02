@@ -1,13 +1,17 @@
-use serde::{Deserialize, Serialize};
-use serde_json::Map;
-
 use crate::utils::NonEmptyVec;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 // TODO does openidconnect have a Request type?
 #[derive(Debug, Deserialize)]
 pub struct ResponseRequest {
-    id_token: serde_json::Value, // IdTokenSIOP, // CoreIdTokenClaims,
-    vp_token: VpToken,
+    _id_token: serde_json::Value, // IdTokenSIOP, // CoreIdTokenClaims,
+    _vp_token: VpToken,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MdlVpToken {
+    pub presentation_submission: PresentationSubmission
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -18,6 +22,16 @@ pub struct VpTokenIdToken {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VpToken {
     pub presentation_definition: PresentationDefinition,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RequestObject{
+    pub presentation_definition: PresentationDefinition,
+    pub presentation_definition_uri: Option<String>,
+    pub client_id_scheme: Option<String>,
+    pub client_metadata: Option<Value>,
+    pub client_metadata_uri: Option<String>,
+
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -69,6 +83,32 @@ pub struct ConstraintsField {
     pub filter: Option<serde_json::Value>, // TODO JSONSchema validation at deserialization time
     #[serde(skip_serializing_if = "Option::is_none")]
     pub optional: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent_to_retain: Option<bool>,
+}
+
+pub type ConstraintsFields = Vec<ConstraintsField>;
+
+impl ConstraintsField {
+    pub fn new(
+        path: NonEmptyVec<String>,
+        id: Option<String>,
+        purpose: Option<String>,
+        name: Option<String>,
+        filter: Option<serde_json::Value>,
+        optional: Option<bool>,
+        intent_to_retain: Option<bool>,
+    ) -> ConstraintsField {
+        ConstraintsField {
+            path,
+            id,
+            purpose,
+            name,
+            filter,
+            optional,
+            intent_to_retain,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,25 +120,25 @@ pub enum ConstraintsLimitDisclosure {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationSubmission {
-    id: String,
-    definition_id: String,
-    descriptor_map: Vec<DescriptorMap>,
+    pub id: String,
+    pub definition_id: String,
+    pub descriptor_map: Vec<DescriptorMap>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DescriptorMap {
-    id: String,
-    format: String, // TODO should be enum of supported formats
-    path: String,
-    path_nested: Option<Box<DescriptorMap>>,
+    pub id: String,
+    pub format: String, // TODO should be enum of supported formats
+    pub path: String,
+    pub path_nested: Option<Box<DescriptorMap>>,
 }
 
 #[derive(Deserialize)]
 pub struct SubmissionRequirementBaseBase {
-    name: Option<String>,
-    purpose: Option<String>,
+    _name: Option<String>,
+    _purpose: Option<String>,
     #[serde(flatten)]
-    property_set: Option<Map<String, serde_json::Value>>,
+    _property_set: Option<Map<String, serde_json::Value>>,
 }
 
 #[derive(Deserialize)]
@@ -126,10 +166,10 @@ pub enum SubmissionRequirement {
 #[derive(Deserialize)]
 pub struct SubmissionRequirementPick {
     #[serde(flatten)]
-    submission_requirement: SubmissionRequirementBase,
-    count: Option<u64>,
-    min: Option<u64>,
-    max: Option<u64>,
+    _submission_requirement: SubmissionRequirementBase,
+    _count: Option<u64>,
+    _min: Option<u64>,
+    _max: Option<u64>,
 }
 
 #[cfg(test)]
@@ -187,7 +227,7 @@ pub(crate) mod tests {
 
     #[derive(Deserialize)]
     pub struct PresentationDefinitionTest {
-        presentation_definition: PresentationDefinition,
+        _presentation_definition: PresentationDefinition,
     }
 
     #[test]
@@ -217,7 +257,7 @@ pub(crate) mod tests {
     // TODO use VP type?
     #[derive(Deserialize)]
     pub struct PresentationSubmissionTest {
-        presentation_submission: PresentationSubmission,
+        _presentation_submission: PresentationSubmission,
     }
 
     #[test]
@@ -249,7 +289,7 @@ pub(crate) mod tests {
 
     #[derive(Deserialize)]
     pub struct SubmissionRequirementsTest {
-        submission_requirements: Vec<SubmissionRequirement>,
+        _submission_requirements: Vec<SubmissionRequirement>,
     }
 
     #[test]

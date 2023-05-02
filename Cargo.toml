@@ -9,19 +9,24 @@ repository = "https://github.com/spruceid/oidc4vp-rs/"
 documentation = "https://docs.rs/oidc4vp/"
 
 [dependencies]
-# openidconnect = { version = "2.4.0", default-features = false }
 jsonpath-rust = "0.2.0"
 serde = { version = "1.0.147", features = ["derive"] }
 serde_json = "1.0.87"
 ssi = { version = "0.6.0", default-features = false }
 thiserror = "1.0.37"
-# jsonschema = { version = "0.16.1", default-features = false }
 lazy_static = "1.4.0"
-# schemars = { version = "0.8.11", default-features = false }
+url = "2.3.1"
+rand = "0.8.5"
+isomdl = { git = "ssh://git@github.com/spruceid/isomdl.git", rev = "8f87768"}
+time = "0.3.21"
+p256 = "0.13.2"
+base64 = "0.13.1"
+x509-cert = "0.2.3"
+serde_cbor = "0.11.2"
+anyhow = "1.0.71"
 
 [dev-dependencies]
 serde_path_to_error = "0.1.8"
-
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { version = "1.2", features = ["v4", "serde", "js"] }

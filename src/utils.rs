@@ -1,6 +1,10 @@
-use jsonpath_rust::JsonPathInst;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
+use ssi::jws::Error as JwsError;
+use serde_cbor::Error as CborError;
+use isomdl::presentation::reader::oid4vp::Error as IsomdlError;
+use isomdl::definitions::helpers::non_empty_map::Error as NonEmptyMapError;
+use anyhow;
 
 // #[derive(Clone)]
 // pub struct JsonPath(JsonPathInst);
@@ -13,6 +17,14 @@ pub struct NonEmptyVec<T: Clone>(Vec<T>);
 pub enum Error {
     #[error("cannot construct a non-empty vec from an empty vec")]
     Empty,
+    #[error("field requested that cannot be mapped to an ISO18013-5 mDL field")]
+    UnrecognizedField,
+    #[error("could not deserialize cbor")]
+    CborError,
+    #[error("could not instantiate session manager")]
+    OID4VPError,
+    #[error("could not instantiate session manager")]
+    IsomdlError,
 }
 
 impl<T: Clone> NonEmptyVec<T> {
@@ -61,5 +73,36 @@ impl<T: Clone> Deref for NonEmptyVec<T> {
 
     fn deref(&self) -> &[T] {
         &self.0
+    }
+}
+
+impl From<JwsError> for Error {
+    fn from(_value: JwsError) -> Self {
+        Error::UnrecognizedField
+    }
+
+}
+
+impl From<CborError> for Error {
+    fn from(_value: CborError) -> Self {
+        Error::CborError
+    }
+}
+
+impl From<IsomdlError> for Error {
+    fn from(_value: IsomdlError) -> Self {
+        Error::IsomdlError
+    }
+}
+
+impl From<NonEmptyMapError> for Error {
+    fn from(_value: NonEmptyMapError) -> Self {
+        Error::Empty
+    }
+}
+
+impl From<anyhow::Error> for Error {
+    fn from(_value: anyhow::Error) -> Self {
+        Error::Empty
     }
 }
