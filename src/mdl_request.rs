@@ -89,7 +89,7 @@ pub fn prepare_mdl_request_object(
         scope: Some("openid".to_string()), // I think it could also be None
         state: None,
         presentation_definition: PresDef::PresentationDefinition {
-            presentation_definition: presentation_definition,
+            presentation_definition,
         },
         client_metadata: MetaData::ClientMetadata { client_metadata },
         response_mode: Some("direct_post.jwt".to_string()),
@@ -104,7 +104,7 @@ fn mdl_presentation_definition(
     let input_descriptors = build_input_descriptors(namespaces);
     Ok(PresentationDefinition {
         id: presentation_id,
-        input_descriptors: input_descriptors,
+        input_descriptors,
         name: None,
         purpose: None,
         format: None,

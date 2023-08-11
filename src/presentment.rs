@@ -24,7 +24,7 @@ pub trait Verify {
         &self,
         response: &[u8],
     ) -> Result<BTreeMap<String, Value>, Openid4vpError> {
-        let device_response: DeviceResponse = serde_cbor::from_slice(&response)?;
+        let device_response: DeviceResponse = serde_cbor::from_slice(response)?;
         let mut session_manager = SessionManager::new(device_response)?;
         Ok(session_manager.handle_response()?)
     }

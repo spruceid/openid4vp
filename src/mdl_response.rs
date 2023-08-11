@@ -23,14 +23,14 @@ fn match_path_to_mdl_field(
         .iter()
         .map(|suggested_path| {
             let suggested_field_name = suggested_path.strip_prefix("$['org.iso.18013.5.1']")?;
-            let suggested_field_name = suggested_field_name.replace(&['[', ']', '\''], "");
+            let suggested_field_name = suggested_field_name.replace(['[', ']', '\''], "");
             let mut matches: Vec<Option<String>> = mdl_field_paths
                 .iter()
                 .map(|known_path| {
                     let known_path_field_name =
                         known_path.strip_prefix(&format!("{}{}", &namespace_name, "."));
                     if let Some(path) = known_path_field_name {
-                        if path.to_string() == suggested_field_name {
+                        if *path == suggested_field_name {
                             Some(path.to_owned())
                         } else {
                             None
@@ -42,7 +42,7 @@ fn match_path_to_mdl_field(
                 .collect();
             matches.retain(|item| item.is_some());
             //TODO: if constraints limit = required and there are no matched paths for a certain field, throw an Error, if not then ignore.
-            if matches.len() > 0 {
+            if !matches.is_empty() {
                 matches.first()?.to_owned()
             } else {
                 None
@@ -51,7 +51,7 @@ fn match_path_to_mdl_field(
         .collect();
 
     matched_mdl_paths.retain(|path| path.is_some());
-    if matched_mdl_paths.len() > 0 {
+    if !matched_mdl_paths.is_empty() {
         matched_mdl_paths.first()?.to_owned() // always return the first match as defined in Presentation Exchange
     } else {
         None
