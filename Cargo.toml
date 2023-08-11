@@ -17,13 +17,18 @@ thiserror = "1.0.37"
 lazy_static = "1.4.0"
 url = "2.3.1"
 rand = "0.8.5"
-isomdl = { git = "ssh://git@github.com/spruceid/isomdl.git", rev = "8f87768"}
+isomdl = { git = "ssh://git@github.com/spruceid/isomdl.git", rev = "b2324b7"}
+# isomdl = {path = "../isomdl"}
 time = "0.3.21"
 p256 = "0.13.2"
 base64 = "0.13.1"
 x509-cert = "0.2.3"
 serde_cbor = "0.11.2"
 anyhow = "1.0.71"
+async-trait = "0.1.72"
+reqwest = "0.11.18"
+josekit = "0.8.3"
+openssl = "0.10.53"
 
 [dev-dependencies]
 serde_path_to_error = "0.1.8"

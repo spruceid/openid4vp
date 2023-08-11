@@ -11,7 +11,7 @@ pub struct ResponseRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MdlVpToken {
-    pub presentation_submission: PresentationSubmission
+    pub presentation_submission: PresentationSubmission,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -25,13 +25,12 @@ pub struct VpToken {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RequestObject{
+pub struct RequestObject {
     pub presentation_definition: PresentationDefinition,
     pub presentation_definition_uri: Option<String>,
     pub client_id_scheme: Option<String>,
     pub client_metadata: Option<Value>,
     pub client_metadata_uri: Option<String>,
-
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

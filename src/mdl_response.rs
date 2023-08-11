@@ -1,44 +1,54 @@
-use std::collections::BTreeMap;
+use crate::presentation_exchange::InputDescriptor;
 use crate::presentation_exchange::PresentationSubmission;
-use crate::presentation_exchange::{InputDescriptor};
 use crate::utils::NonEmptyVec;
+use crate::utils::Openid4vpError;
 use isomdl;
-use serde::{Serialize, Deserialize};
-use isomdl::definitions::device_request::ItemsRequest;
+pub use isomdl::definitions::device_request::ItemsRequest;
 use isomdl::definitions::helpers::NonEmptyMap;
-use crate::utils::Error;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-#[derive(Clone, Debug, Serialize, Deserialize,)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Jarm {
     pub vp_token: String,
-    pub presentation_submission: PresentationSubmission
+    pub presentation_submission: PresentationSubmission,
 }
 
-fn match_path_to_mdl_field(paths: NonEmptyVec<String>, mdl_field_paths: Vec<String>, namespace_name: String) -> Option<String> {
-    let mut matched_mdl_paths: Vec<Option<String>> = paths.iter().map(|suggested_path| {
-        let suggested_field_name = suggested_path.strip_prefix("$.mdoc.")?;
-        let mut matches: Vec<Option<String>> = mdl_field_paths.iter().map(|known_path| {
-            let known_path_field_name = known_path.strip_prefix(&format!("{}{}", &namespace_name, "."));
-            if let Some(path) = known_path_field_name {
-                if path == suggested_field_name {
-                    Some(path.to_owned())
-                } 
-                else { None 
-                }
-            }
-            else {
+fn match_path_to_mdl_field(
+    paths: NonEmptyVec<String>,
+    mdl_field_paths: Vec<String>,
+    namespace_name: String,
+) -> Option<String> {
+    let mut matched_mdl_paths: Vec<Option<String>> = paths
+        .iter()
+        .map(|suggested_path| {
+            let suggested_field_name = suggested_path.strip_prefix("$['org.iso.18013.5.1']")?;
+            let suggested_field_name = suggested_field_name.replace(&['[', ']', '\''], "");
+            let mut matches: Vec<Option<String>> = mdl_field_paths
+                .iter()
+                .map(|known_path| {
+                    let known_path_field_name =
+                        known_path.strip_prefix(&format!("{}{}", &namespace_name, "."));
+                    if let Some(path) = known_path_field_name {
+                        if path.to_string() == suggested_field_name {
+                            Some(path.to_owned())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            matches.retain(|item| item.is_some());
+            //TODO: if constraints limit = required and there are no matched paths for a certain field, throw an Error, if not then ignore.
+            if matches.len() > 0 {
+                matches.first()?.to_owned()
+            } else {
                 None
             }
-            
-    }).collect();
-    matches.retain(|item| item.is_some());
-    //TODO: if constraints limit = required and there are no matched paths for a certain field, throw an Error, if not then ignore.
-    if matches.len() > 0 {
-        matches.first()?.to_owned()
-    } else {
-        None
-    }
-    }).collect();
+        })
+        .collect();
 
     matched_mdl_paths.retain(|path| path.is_some());
     if matched_mdl_paths.len() > 0 {
@@ -98,55 +108,64 @@ fn mdl_field_paths() -> Vec<String> {
         "org.iso.18013.5.1.aamva.CDL_indicator".to_string(),
         "org.iso.18013.5.1.aamva.DHS_compliance_text".to_string(),
         "org.iso.18013.5.1.aamva.DHS_temporary_lawful_status".to_string(),
-        ]
+    ]
 }
 
 impl TryFrom<InputDescriptor> for ItemsRequest {
-    type Error = Error;
-    fn try_from(input_descriptor: InputDescriptor) -> Result<Self, Error> {
-        if let Some(constraints) = input_descriptor.constraints{
+    type Error = Openid4vpError;
+    fn try_from(input_descriptor: InputDescriptor) -> Result<Self, Openid4vpError> {
+        if let Some(constraints) = input_descriptor.constraints {
             let doc_type = "org.iso.18013.5.1.mDL".to_string();
             let namespace_name = "org.iso.18013.5.1".to_string();
             let constraints_fields = constraints.fields;
 
             if let Some(cf) = constraints_fields {
-                let mut fields: BTreeMap<Option<String>, Option<bool>>  = cf.iter().map(|constraints_field| {
-                    let path = match_path_to_mdl_field(constraints_field.path.clone(), mdl_field_paths(), namespace_name.clone());
-                    if let Some(p) = path {
-                        (Some(p), constraints_field.intent_to_retain)
-                    } else {
-                        (None, None)
-                    }
+                let mut fields: BTreeMap<Option<String>, Option<bool>> = cf
+                    .iter()
+                    .map(|constraints_field| {
+                        let path = match_path_to_mdl_field(
+                            constraints_field.path.clone(),
+                            mdl_field_paths(),
+                            namespace_name.clone(),
+                        );
+                        if let Some(p) = path {
+                            (Some(p), constraints_field.intent_to_retain)
+                        } else {
+                            (None, None)
+                        }
+                    })
+                    .collect();
 
-                }).collect();
-            
                 fields.retain(|k, _v| k.is_some());
-                let x: BTreeMap<Option<String>, Option<bool>> = fields.iter().map(|(k,v)| {
-                    if v.is_none() {
-                        (k.to_owned(), Some(false))
-                    } else {
-                        (k.to_owned(), v.to_owned())
-                    }
-                }).collect();
+                let x: BTreeMap<Option<String>, Option<bool>> = fields
+                    .iter()
+                    .map(|(k, v)| {
+                        if v.is_none() {
+                            (k.to_owned(), Some(false))
+                        } else {
+                            (k.to_owned(), v.to_owned())
+                        }
+                    })
+                    .collect();
                 // safe unwraps
-                let requested_fields: BTreeMap<String, bool> = x.iter().map(|(k, v)| (k.clone().unwrap(), v.unwrap())).collect();
+                let requested_fields: BTreeMap<String, bool> = x
+                    .iter()
+                    .map(|(k, v)| (k.clone().unwrap(), v.unwrap()))
+                    .collect();
 
                 let namespace: NonEmptyMap<String, bool> = NonEmptyMap::try_from(requested_fields)?;
                 let namespaces = NonEmptyMap::new(namespace_name, namespace);
-            
-                Ok(ItemsRequest {
-                        namespaces,
-                        doc_type,
-                        request_info: None
-                })
 
+                Ok(ItemsRequest {
+                    namespaces,
+                    doc_type,
+                    request_info: None,
+                })
             } else {
-                Err(Error::Empty)
+                Err(Openid4vpError::Empty)
             }
         } else {
-            Err(Error::Empty)
+            Err(Openid4vpError::Empty)
         }
-
-
     }
 }

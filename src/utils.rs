@@ -1,10 +1,11 @@
-use serde::{Deserialize, Serialize};
-use std::ops::Deref;
-use ssi::jws::Error as JwsError;
-use serde_cbor::Error as CborError;
-use isomdl::presentation::reader::oid4vp::Error as IsomdlError;
-use isomdl::definitions::helpers::non_empty_map::Error as NonEmptyMapError;
 use anyhow;
+use isomdl::definitions::helpers::non_empty_map::Error as NonEmptyMapError;
+use isomdl::presentation::reader::oid4vp::Error as IsomdlError;
+use reqwest::Error as ReqwestError;
+use serde::{Deserialize, Serialize};
+use serde_cbor::Error as CborError;
+use ssi::jws::Error as JwsError;
+use std::ops::Deref;
 
 // #[derive(Clone)]
 // pub struct JsonPath(JsonPathInst);
@@ -14,17 +15,63 @@ use anyhow;
 pub struct NonEmptyVec<T: Clone>(Vec<T>);
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("cannot construct a non-empty vec from an empty vec")]
+pub enum Openid4vpError {
+    #[error(
+        "The request is missing a required parameter, includes an
+    invalid parameter value, includes a parameter more than
+    once, or is otherwise malformed."
+    )]
+    InvalidRequest,
+    #[error(
+        "The client is not authorized to request an authorization
+    code using this method"
+    )]
+    UnauthorizedClient,
+    #[error(
+        "The resource owner or authorization server denied the
+    request."
+    )]
+    AccessDenied,
+    #[error(
+        "The authorization server does not support obtaining an
+    authorization code using this method."
+    )]
+    UnnsupportedResponseType,
+    #[error("Requested scope value is invalid, unknown, or malformed.")]
+    InvalidScope,
+    #[error(
+        "The server encountered an unexpected
+    condition that prevented it from fulfilling the request."
+    )]
+    ServerError,
+    #[error(
+        "The server is currently unable to handle
+    the request due to a temporary overloading or maintenance
+    of the server."
+    )]
+    TemporarilyUnavailable,
+    #[error("Verifier's pre-registered metadata has been found based on the Client Identifier, but client_metadata parameter is also present.")]
+    InvalidClient,
+    #[error("The Wallet does not support any of the formats requested by the Verifier")]
+    VpFormatsNotSupported,
+    #[error("The Presentation Definition URL cannot be reached.")]
+    InvalidPresentationDefinitionUri,
+    #[error("The Presentation Definition URL can be reached, but the specified presentation_definition cannot be found at the URL.")]
+    InvalidPresentationDefinitionReference,
+    #[error("Cannot construct a non-empty vec from an empty vec")]
     Empty,
-    #[error("field requested that cannot be mapped to an ISO18013-5 mDL field")]
+    #[error("Field requested that cannot be mapped to an ISO18013-5 mDL field")]
     UnrecognizedField,
-    #[error("could not deserialize cbor")]
+    #[error("Could not encode or decode cbor")]
     CborError,
-    #[error("could not instantiate session manager")]
+    #[error("Could not instantiate session manager")]
     OID4VPError,
-    #[error("could not instantiate session manager")]
+    #[error("Isomdl error")]
     IsomdlError,
+    #[error("The requested encryption algorithm is not supported.")]
+    UnsupportedEncryptionAlgorithm,
+    #[error("The requested encryption encoding is not supported.")]
+    UnsupportedEncryptionEncoding,
 }
 
 impl<T: Clone> NonEmptyVec<T> {
@@ -46,11 +93,11 @@ impl<T: Clone> NonEmptyVec<T> {
 }
 
 impl<T: Clone> TryFrom<Vec<T>> for NonEmptyVec<T> {
-    type Error = Error;
+    type Error = Openid4vpError;
 
-    fn try_from(v: Vec<T>) -> Result<NonEmptyVec<T>, Error> {
+    fn try_from(v: Vec<T>) -> Result<NonEmptyVec<T>, Openid4vpError> {
         if v.is_empty() {
-            return Err(Error::Empty);
+            return Err(Openid4vpError::Empty);
         }
         Ok(NonEmptyVec(v))
     }
@@ -76,33 +123,62 @@ impl<T: Clone> Deref for NonEmptyVec<T> {
     }
 }
 
-impl From<JwsError> for Error {
+impl From<JwsError> for Openid4vpError {
     fn from(_value: JwsError) -> Self {
-        Error::UnrecognizedField
+        Openid4vpError::UnrecognizedField
     }
-
 }
 
-impl From<CborError> for Error {
+impl From<CborError> for Openid4vpError {
     fn from(_value: CborError) -> Self {
-        Error::CborError
+        Openid4vpError::CborError
     }
 }
 
-impl From<IsomdlError> for Error {
+impl From<IsomdlError> for Openid4vpError {
     fn from(_value: IsomdlError) -> Self {
-        Error::IsomdlError
+        Openid4vpError::IsomdlError
     }
 }
 
-impl From<NonEmptyMapError> for Error {
+impl From<NonEmptyMapError> for Openid4vpError {
     fn from(_value: NonEmptyMapError) -> Self {
-        Error::Empty
+        Openid4vpError::Empty
     }
 }
 
-impl From<anyhow::Error> for Error {
+impl From<anyhow::Error> for Openid4vpError {
     fn from(_value: anyhow::Error) -> Self {
-        Error::Empty
+        Openid4vpError::Empty
+    }
+}
+
+impl From<ReqwestError> for Openid4vpError {
+    fn from(_value: reqwest::Error) -> Self {
+        Openid4vpError::InvalidRequest
+    }
+}
+
+impl From<serde_json::Error> for Openid4vpError {
+    fn from(_value: serde_json::Error) -> Self {
+        Openid4vpError::Empty
+    }
+}
+
+impl From<x509_cert::der::Error> for Openid4vpError {
+    fn from(_value: x509_cert::der::Error) -> Self {
+        Openid4vpError::InvalidRequest
+    }
+}
+
+impl From<openssl::error::ErrorStack> for Openid4vpError {
+    fn from(_value: openssl::error::ErrorStack) -> Self {
+        Openid4vpError::InvalidRequest
+    }
+}
+
+impl From<ssi::jwk::Error> for Openid4vpError {
+    fn from(_value: ssi::jwk::Error) -> Self {
+        Openid4vpError::InvalidRequest
     }
 }
