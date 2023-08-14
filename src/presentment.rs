@@ -8,6 +8,7 @@ use isomdl::presentation::reader::oid4vp::SessionManager;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+#[allow(clippy::too_many_arguments)]
 pub trait Verify {
     fn mdl_request(
         &self,
