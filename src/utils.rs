@@ -181,12 +181,6 @@ impl From<x509_cert::der::Error> for Openid4vpError {
     }
 }
 
-impl From<openssl::error::ErrorStack> for Openid4vpError {
-    fn from(_value: openssl::error::ErrorStack) -> Self {
-        Openid4vpError::InvalidRequest
-    }
-}
-
 impl From<ssi::jwk::Error> for Openid4vpError {
     fn from(_value: ssi::jwk::Error) -> Self {
         Openid4vpError::InvalidRequest
@@ -198,6 +192,3 @@ impl From<base64::DecodeError> for Openid4vpError {
         Openid4vpError::DecodingError
     }
 }
-
-// impl From<base64url::Error> for Openid4vpError {
-// }
