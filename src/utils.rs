@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_cbor::Error as CborError;
 use ssi::jws::Error as JwsError;
 use std::ops::Deref;
+use josekit::JoseError;
 
 // #[derive(Clone)]
 // pub struct JsonPath(JsonPathInst);
@@ -72,6 +73,9 @@ pub enum Openid4vpError {
     UnsupportedEncryptionAlgorithm,
     #[error("The requested encryption encoding is not supported.")]
     UnsupportedEncryptionEncoding,
+    #[error("There is an error in the base64 encoding.")]
+    DecodingError,
+
 }
 
 impl<T: Clone> NonEmptyVec<T> {
@@ -153,6 +157,12 @@ impl From<anyhow::Error> for Openid4vpError {
     }
 }
 
+impl From<JoseError> for Openid4vpError {
+    fn from(_value: JoseError) -> Self {
+        Openid4vpError::ServerError
+    }
+}
+
 impl From<ReqwestError> for Openid4vpError {
     fn from(_value: reqwest::Error) -> Self {
         Openid4vpError::InvalidRequest
@@ -182,3 +192,12 @@ impl From<ssi::jwk::Error> for Openid4vpError {
         Openid4vpError::InvalidRequest
     }
 }
+
+impl From<base64::DecodeError> for Openid4vpError {
+    fn from(_value: base64::DecodeError) -> Self {
+        Openid4vpError::DecodingError
+    }
+}
+
+// impl From<base64url::Error> for Openid4vpError {
+// }

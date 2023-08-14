@@ -22,6 +22,7 @@ pub struct RequestObject {
     pub client_id: String,
     pub client_id_scheme: Option<String>,
     pub response_uri: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
