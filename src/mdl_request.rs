@@ -78,7 +78,7 @@ pub fn prepare_mdl_request_object(
                 "ES256"
             ]
         }}),
-        jwks: jwks,
+        jwks,
         require_signed_request_object: false,
     };
 
