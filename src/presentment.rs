@@ -34,7 +34,7 @@ pub trait Verify {
     //fn validate_vc_response(&self){}
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 pub trait Present {
     async fn prepare_mdl_response(
         &self,
