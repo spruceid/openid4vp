@@ -1,12 +1,12 @@
 use anyhow;
 use isomdl::definitions::helpers::non_empty_map::Error as NonEmptyMapError;
 use isomdl::presentation::reader::oid4vp::Error as IsomdlError;
+use josekit::JoseError;
 use reqwest::Error as ReqwestError;
 use serde::{Deserialize, Serialize};
 use serde_cbor::Error as CborError;
 use ssi::jws::Error as JwsError;
 use std::ops::Deref;
-use josekit::JoseError;
 
 // #[derive(Clone)]
 // pub struct JsonPath(JsonPathInst);
@@ -75,7 +75,6 @@ pub enum Openid4vpError {
     UnsupportedEncryptionEncoding,
     #[error("There is an error in the base64 encoding.")]
     DecodingError,
-
 }
 
 impl<T: Clone> NonEmptyVec<T> {
@@ -190,5 +189,11 @@ impl From<ssi::jwk::Error> for Openid4vpError {
 impl From<base64::DecodeError> for Openid4vpError {
     fn from(_value: base64::DecodeError) -> Self {
         Openid4vpError::DecodingError
+    }
+}
+
+impl From<String> for Openid4vpError {
+    fn from(_value: String) -> Self {
+        Openid4vpError::OID4VPError
     }
 }

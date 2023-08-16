@@ -68,7 +68,7 @@ pub fn prepare_mdl_request_object(
     response_uri: String,
     presentation_id: String,
 ) -> Result<RequestObject, Openid4vpError> {
-    let jwks = json!({"keys": vec![jwk]});
+    let jwks = json!({ "keys": vec![jwk] });
     let presentation_definition = mdl_presentation_definition(requested_fields, presentation_id)?;
     let client_metadata = ClientMetadata {
         authorization_encrypted_response_alg: "ES256".to_string(),
