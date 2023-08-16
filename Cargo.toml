@@ -17,7 +17,7 @@ thiserror = "1.0.37"
 lazy_static = "1.4.0"
 url = "2.3.1"
 rand = "0.8.5"
-isomdl = { git = "ssh://git@github.com/spruceid/isomdl.git", rev = "b2324b7" }
+isomdl = { git = "ssh://git@github.com/spruceid/isomdl.git", rev = "635c8a7" }
 # isomdl = {path = "../isomdl"}
 time = "0.3.21"
 p256 = "0.13.2"
