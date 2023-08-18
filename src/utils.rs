@@ -59,8 +59,8 @@ pub enum Openid4vpError {
     InvalidPresentationDefinitionUri,
     #[error("The Presentation Definition URL can be reached, but the specified presentation_definition cannot be found at the URL.")]
     InvalidPresentationDefinitionReference,
-    #[error("Cannot construct a non-empty vec from an empty vec")]
-    Empty,
+    #[error("{0}")]
+    Empty(String),
     #[error("Field requested that cannot be mapped to an ISO18013-5 mDL field")]
     UnrecognizedField,
     #[error("Could not encode or decode cbor")]
@@ -75,6 +75,8 @@ pub enum Openid4vpError {
     UnsupportedEncryptionEncoding,
     #[error("There is an error in the base64 encoding.")]
     DecodingError,
+    #[error("JoseError {0}")]
+    JoseError(String),
 }
 
 impl<T: Clone> NonEmptyVec<T> {
@@ -100,7 +102,9 @@ impl<T: Clone> TryFrom<Vec<T>> for NonEmptyVec<T> {
 
     fn try_from(v: Vec<T>) -> Result<NonEmptyVec<T>, Openid4vpError> {
         if v.is_empty() {
-            return Err(Openid4vpError::Empty);
+            return Err(Openid4vpError::Empty(
+                "Can not create a NonEmptyVec from an empty Vec".to_string(),
+            ));
         }
         Ok(NonEmptyVec(v))
     }
@@ -145,14 +149,14 @@ impl From<IsomdlError> for Openid4vpError {
 }
 
 impl From<NonEmptyMapError> for Openid4vpError {
-    fn from(_value: NonEmptyMapError) -> Self {
-        Openid4vpError::Empty
+    fn from(value: NonEmptyMapError) -> Self {
+        Openid4vpError::Empty(value.to_string())
     }
 }
 
 impl From<anyhow::Error> for Openid4vpError {
-    fn from(_value: anyhow::Error) -> Self {
-        Openid4vpError::Empty
+    fn from(value: anyhow::Error) -> Self {
+        Openid4vpError::Empty(value.to_string())
     }
 }
 
@@ -169,8 +173,8 @@ impl From<ReqwestError> for Openid4vpError {
 }
 
 impl From<serde_json::Error> for Openid4vpError {
-    fn from(_value: serde_json::Error) -> Self {
-        Openid4vpError::Empty
+    fn from(value: serde_json::Error) -> Self {
+        Openid4vpError::Empty(value.to_string())
     }
 }
 

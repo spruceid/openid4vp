@@ -1,18 +1,10 @@
 use crate::presentation_exchange::InputDescriptor;
-use crate::presentation_exchange::PresentationSubmission;
 use crate::utils::NonEmptyVec;
 use crate::utils::Openid4vpError;
 use isomdl;
 pub use isomdl::definitions::device_request::ItemsRequest;
 use isomdl::definitions::helpers::NonEmptyMap;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Jarm {
-    pub vp_token: String,
-    pub presentation_submission: PresentationSubmission,
-}
 
 fn match_path_to_mdl_field(
     paths: NonEmptyVec<String>,
@@ -162,10 +154,14 @@ impl TryFrom<InputDescriptor> for ItemsRequest {
                     request_info: None,
                 })
             } else {
-                Err(Openid4vpError::Empty)
+                Err(Openid4vpError::Empty(
+                    "Missing constraints_fields".to_string(),
+                ))
             }
         } else {
-            Err(Openid4vpError::Empty)
+            Err(Openid4vpError::Empty(
+                "Missing inputdescriptors".to_string(),
+            ))
         }
     }
 }
