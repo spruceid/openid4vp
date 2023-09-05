@@ -129,7 +129,7 @@ pub struct DescriptorMap {
     pub id: String,
     pub format: String, // TODO should be enum of supported formats
     pub path: String,
-    pub path_nested: Option<Box<DescriptorMap>>,
+    //pub path_nested: Option<Box<DescriptorMap>>,
 }
 
 #[derive(Deserialize)]

@@ -1,11 +1,13 @@
 use anyhow;
 use isomdl::definitions::helpers::non_empty_map::Error as NonEmptyMapError;
 use isomdl::presentation::reader::oid4vp::Error as IsomdlError;
+use isomdl::presentation::reader::Error as IsomdlReaderErrror;
 use josekit::JoseError;
 use reqwest::Error as ReqwestError;
 use serde::{Deserialize, Serialize};
 use serde_cbor::Error as CborError;
 use ssi::jws::Error as JwsError;
+use isomdl::definitions::Error as IsomdlDefinitionError;
 use std::ops::Deref;
 
 // #[derive(Clone)]
@@ -67,8 +69,8 @@ pub enum Openid4vpError {
     CborError,
     #[error("Could not instantiate session manager")]
     OID4VPError,
-    #[error("Isomdl error")]
-    IsomdlError,
+    #[error("Isomdl error {0}")]
+    IsomdlError(String),
     #[error("The requested encryption algorithm is not supported.")]
     UnsupportedEncryptionAlgorithm,
     #[error("The requested encryption encoding is not supported.")]
@@ -77,6 +79,8 @@ pub enum Openid4vpError {
     DecodingError,
     #[error("JoseError {0}")]
     JoseError(String),
+    #[error("ResponseError {0}")]
+    ResponseError(String),
 }
 
 impl<T: Clone> NonEmptyVec<T> {
@@ -143,8 +147,20 @@ impl From<CborError> for Openid4vpError {
 }
 
 impl From<IsomdlError> for Openid4vpError {
-    fn from(_value: IsomdlError) -> Self {
-        Openid4vpError::IsomdlError
+    fn from(value: IsomdlError) -> Self {
+        Openid4vpError::IsomdlError(value.to_string())
+    }
+}
+
+impl From<IsomdlReaderErrror> for Openid4vpError {
+    fn from(value: IsomdlReaderErrror) -> Self {
+        Openid4vpError::ResponseError(value.to_string())
+    }
+}
+
+impl From<IsomdlDefinitionError> for Openid4vpError {
+    fn from(value: IsomdlDefinitionError) -> Self {
+        Openid4vpError::Empty(value.to_string())
     }
 }
 
@@ -161,8 +177,8 @@ impl From<anyhow::Error> for Openid4vpError {
 }
 
 impl From<JoseError> for Openid4vpError {
-    fn from(_value: JoseError) -> Self {
-        Openid4vpError::ServerError
+    fn from(value: JoseError) -> Self {
+        Openid4vpError::JoseError(value.to_string())
     }
 }
 
@@ -199,5 +215,17 @@ impl From<base64::DecodeError> for Openid4vpError {
 impl From<String> for Openid4vpError {
     fn from(_value: String) -> Self {
         Openid4vpError::OID4VPError
+    }
+}
+
+impl From<p256::ecdsa::Error> for Openid4vpError {
+    fn from(value: p256::ecdsa::Error) -> Self {
+        Openid4vpError::JoseError(value.to_string())
+    }
+}
+
+impl From<x509_cert::spki::Error> for Openid4vpError {
+    fn from(value: x509_cert::spki::Error) -> Self {
+        Openid4vpError::ResponseError(value.to_string())
     }
 }
