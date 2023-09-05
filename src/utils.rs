@@ -1,5 +1,6 @@
 use anyhow;
 use isomdl::definitions::helpers::non_empty_map::Error as NonEmptyMapError;
+use isomdl::definitions::Error as IsomdlDefinitionError;
 use isomdl::presentation::reader::oid4vp::Error as IsomdlError;
 use isomdl::presentation::reader::Error as IsomdlReaderErrror;
 use josekit::JoseError;
@@ -7,7 +8,6 @@ use reqwest::Error as ReqwestError;
 use serde::{Deserialize, Serialize};
 use serde_cbor::Error as CborError;
 use ssi::jws::Error as JwsError;
-use isomdl::definitions::Error as IsomdlDefinitionError;
 use std::ops::Deref;
 
 // #[derive(Clone)]
