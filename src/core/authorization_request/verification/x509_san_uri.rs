@@ -133,7 +133,7 @@ pub trait Verifier: Sized {
     /// ## Params
     /// * `spki` - the public key information necessary to construct a [Verifier].
     /// * `algorithm` - the value taken from the `alg` header of the request, to hint at what curve should be used by the [Verifier].
-    fn from_spki<'a>(spki: SubjectPublicKeyInfoRef<'a>, algorithm: String) -> Result<Self>;
+    fn from_spki(spki: SubjectPublicKeyInfoRef<'_>, algorithm: String) -> Result<Self>;
     fn verify(&self, payload: &[u8], signature: &[u8]) -> Result<()>;
 }
 
@@ -141,7 +141,7 @@ pub trait Verifier: Sized {
 pub struct P256Verifier(p256::ecdsa::VerifyingKey);
 
 impl Verifier for P256Verifier {
-    fn from_spki<'a>(spki: SubjectPublicKeyInfoRef<'a>, algorithm: String) -> Result<Self> {
+    fn from_spki(spki: SubjectPublicKeyInfoRef<'_>, algorithm: String) -> Result<Self> {
         if algorithm != "ES256" {
             bail!("P256Verifier cannot verify requests signed with '{algorithm}'")
         }

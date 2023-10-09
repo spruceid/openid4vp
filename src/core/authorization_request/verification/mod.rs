@@ -104,7 +104,7 @@ pub(crate) async fn verify_request<WP: WalletProfile + ?Sized>(
         ClientIdScheme::RedirectUri => profile.redirect_uri(&request, jwt).await?,
         ClientIdScheme::X509SanDns => profile.x509_san_dns(&request, jwt).await?,
         ClientIdScheme::X509SanUri => profile.x509_san_uri(&request, jwt).await?,
-        ClientIdScheme::Other(scheme) => profile.other(&scheme, &request, jwt).await?,
+        ClientIdScheme::Other(scheme) => profile.other(scheme, &request, jwt).await?,
     };
 
     Ok(request)

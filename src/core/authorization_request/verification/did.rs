@@ -70,7 +70,7 @@ pub async fn verify_with_resolver(
         "expected a DID verification method in 'kid' header, received '{kid}'"
     ))?;
 
-    if &client_id.0 != did {
+    if client_id.0 != did {
         bail!(
             "DIDs from 'kid' ({did}) and 'client_id' ({}) do not match",
             client_id.0
@@ -82,18 +82,6 @@ pub async fn verify_with_resolver(
             bail!("'client_id' ({did}) is not in the list of trusted dids")
         }
     }
-
-    println!(
-        "{}",
-        serde_json::to_string_pretty(
-            &didkit::dereference(resolver, did, &Default::default())
-                .await
-                .1
-        )
-        .unwrap()
-    );
-
-    println!("{kid:?}");
 
     let jwk = resolve_key(&kid, resolver)
         .await

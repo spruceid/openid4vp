@@ -102,7 +102,7 @@ impl fmt::Display for ClientIdScheme {
             ClientIdScheme::RedirectUri => REDIRECT_URI,
             ClientIdScheme::X509SanDns => X509_SAN_DNS,
             ClientIdScheme::X509SanUri => X509_SAN_URI,
-            ClientIdScheme::Other(o) => &o,
+            ClientIdScheme::Other(o) => o,
         }
         .fmt(f)
     }

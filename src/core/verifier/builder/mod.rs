@@ -66,7 +66,7 @@ impl<S: RequestSigner> SessionBuilder<S> {
         if !wallet_metadata
             .client_id_schemes_supported()
             .0
-            .contains(&client_id_scheme)
+            .contains(client_id_scheme)
         {
             bail!("wallet does not support client_id_scheme '{client_id_scheme}'")
         }

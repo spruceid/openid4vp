@@ -237,7 +237,7 @@ pub(crate) mod tests {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {
                 if ext != OsStr::new("json")
-                    || vec!["VC_expiration_example.json", "VC_revocation_example.json"] // TODO bad format
+                    || ["VC_expiration_example.json", "VC_revocation_example.json"] // TODO bad format
                         .contains(&path.file_name().unwrap().to_str().unwrap())
                 {
                     continue;
@@ -267,10 +267,8 @@ pub(crate) mod tests {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {
                 if ext != OsStr::new("json")
-                    || vec![
-                        "appendix_DIDComm_example.json",
-                        "appendix_CHAPI_example.json",
-                    ]
+                    || ["appendix_DIDComm_example.json",
+                        "appendix_CHAPI_example.json"]
                     .contains(&path.file_name().unwrap().to_str().unwrap())
                 {
                     continue;
@@ -299,7 +297,7 @@ pub(crate) mod tests {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {
                 if ext != OsStr::new("json")
-                    || vec!["schema.json"].contains(&path.file_name().unwrap().to_str().unwrap())
+                    || ["schema.json"].contains(&path.file_name().unwrap().to_str().unwrap())
                 {
                     continue;
                 }
