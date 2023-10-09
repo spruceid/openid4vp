@@ -110,7 +110,7 @@ impl fmt::Display for ClientIdScheme {
 
 /// `client_metadata` field in the Authorization Request.
 #[derive(Debug, Clone)]
-pub struct ClientMetadata(UntypedObject);
+pub struct ClientMetadata(pub UntypedObject);
 
 impl TypedParameter for ClientMetadata {
     const KEY: &'static str = "client_metadata";
