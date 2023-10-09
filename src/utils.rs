@@ -1,4 +1,5 @@
 use anyhow;
+use didkit::ssi::jws::Error as JwsError;
 use isomdl::definitions::helpers::non_empty_map::Error as NonEmptyMapError;
 use isomdl::definitions::Error as IsomdlDefinitionError;
 use isomdl::presentation::reader::oid4vp::Error as IsomdlError;
@@ -7,7 +8,6 @@ use josekit::JoseError;
 use reqwest::Error as ReqwestError;
 use serde::{Deserialize, Serialize};
 use serde_cbor::Error as CborError;
-use ssi::jws::Error as JwsError;
 use std::ops::Deref;
 
 // #[derive(Clone)]
@@ -200,8 +200,8 @@ impl From<x509_cert::der::Error> for Openid4vpError {
     }
 }
 
-impl From<ssi::jwk::Error> for Openid4vpError {
-    fn from(_value: ssi::jwk::Error) -> Self {
+impl From<didkit::ssi::jwk::Error> for Openid4vpError {
+    fn from(_value: didkit::ssi::jwk::Error) -> Self {
         Openid4vpError::InvalidRequest
     }
 }
