@@ -5,27 +5,8 @@ use crate::core::{
 };
 use anyhow::{bail, Context, Result};
 use base64::prelude::*;
-use didkit::{resolve_key, DIDResolver};
 use serde_json::{Map, Value as Json};
-
-/// Default implementation of request verification for `client_id_scheme` `did`.
-///
-/// Uses the default didkit [DIDResolver].
-pub async fn verify(
-    wallet_metadata: &WalletMetadata,
-    request_object: &AuthorizationRequestObject,
-    request_jwt: String,
-    trusted_dids: Option<&[String]>,
-) -> Result<()> {
-    verify_with_resolver(
-        wallet_metadata,
-        request_object,
-        request_jwt,
-        trusted_dids,
-        didkit::DID_METHODS.to_resolver(),
-    )
-    .await
-}
+use ssi::did_resolve::{resolve_key, DIDResolver};
 
 /// Default implementation of request validation for `client_id_scheme` `did`.
 pub async fn verify_with_resolver(
@@ -35,7 +16,7 @@ pub async fn verify_with_resolver(
     trusted_dids: Option<&[String]>,
     resolver: &dyn DIDResolver,
 ) -> Result<()> {
-    let (headers_b64, _, _) = didkit::ssi::jws::split_jws(&request_jwt)?;
+    let (headers_b64, _, _) = ssi::jws::split_jws(&request_jwt)?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
         .decode(headers_b64)
@@ -87,7 +68,7 @@ pub async fn verify_with_resolver(
         .await
         .context("unable to resolve verification method from 'kid' header")?;
 
-    let _: Json = didkit::ssi::jwt::decode_verify(&request_jwt, &jwk)
+    let _: Json = ssi::jwt::decode_verify(&request_jwt, &jwk)
         .context("request signature could not be verified")?;
 
     Ok(())

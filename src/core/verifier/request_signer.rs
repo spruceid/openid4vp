@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use didkit::JWK;
 use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+use ssi::jwk::JWK;
 
 #[async_trait]
 pub trait RequestSigner {

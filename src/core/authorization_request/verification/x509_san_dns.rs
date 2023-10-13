@@ -24,7 +24,7 @@ pub fn validate<V: Verifier>(
     trusted_roots: Option<&[Certificate]>,
 ) -> Result<()> {
     let client_id = request_object.client_id().0.as_str();
-    let (headers_b64, body_b64, sig_b64) = didkit::ssi::jws::split_jws(&request_jwt)?;
+    let (headers_b64, body_b64, sig_b64) = ssi::jws::split_jws(&request_jwt)?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
         .decode(headers_b64)

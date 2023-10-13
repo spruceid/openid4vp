@@ -51,6 +51,48 @@ impl From<RequireSignedRequestObject> for Json {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AuthorizationEncryptedResponseAlg(pub String);
+
+impl TypedParameter for AuthorizationEncryptedResponseAlg {
+    const KEY: &'static str = "authorization_encrypted_response_alg";
+}
+
+impl TryFrom<Json> for AuthorizationEncryptedResponseAlg {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(Self(serde_json::from_value(value)?))
+    }
+}
+
+impl From<AuthorizationEncryptedResponseAlg> for Json {
+    fn from(value: AuthorizationEncryptedResponseAlg) -> Json {
+        Json::String(value.0)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthorizationEncryptedResponseEnc(pub String);
+
+impl TypedParameter for AuthorizationEncryptedResponseEnc {
+    const KEY: &'static str = "authorization_encrypted_response_enc";
+}
+
+impl TryFrom<Json> for AuthorizationEncryptedResponseEnc {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(Self(serde_json::from_value(value)?))
+    }
+}
+
+impl From<AuthorizationEncryptedResponseEnc> for Json {
+    fn from(value: AuthorizationEncryptedResponseEnc) -> Json {
+        Json::String(value.0)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use serde_json::json;
@@ -108,5 +150,19 @@ mod test {
         let exp = true;
         let RequireSignedRequestObject(b) = metadata().get().unwrap().unwrap();
         assert_eq!(b, exp);
+    }
+
+    #[test]
+    fn authorization_encrypted_response_alg() {
+        let exp = "ECDH-ES";
+        let AuthorizationEncryptedResponseAlg(s) = metadata().get().unwrap().unwrap();
+        assert_eq!(s, exp);
+    }
+
+    #[test]
+    fn authorization_encrypted_response_enc() {
+        let exp = "A256GCM";
+        let AuthorizationEncryptedResponseEnc(s) = metadata().get().unwrap().unwrap();
+        assert_eq!(s, exp);
     }
 }

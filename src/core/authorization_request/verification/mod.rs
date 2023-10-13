@@ -74,10 +74,9 @@ pub(crate) async fn verify_request<WP: WalletProfile + ?Sized>(
     profile: &WP,
     jwt: String,
 ) -> Result<AuthorizationRequestObject> {
-    let request: AuthorizationRequestObject =
-        didkit::ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
-            .context("unable to decode Authorization Request Object JWT")?
-            .try_into()?;
+    let request: AuthorizationRequestObject = ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
+        .context("unable to decode Authorization Request Object JWT")?
+        .try_into()?;
 
     let client_id_scheme = request.client_id_scheme();
 

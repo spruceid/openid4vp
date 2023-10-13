@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use didkit::{DIDResolver, DID_METHODS};
+use ssi::did_resolve::DIDResolver;
 use tracing::{debug, warn};
 use url::Url;
 use x509_cert::{
@@ -118,18 +118,6 @@ impl<S: RequestSigner> SessionBuilder<S> {
     }
 
     /// Configure the [ClientId] and set the [ClientIdScheme] to `did`.
-    ///
-    /// Uses the default didkit [DIDResolver].
-    pub async fn with_did_client_id<T: RequestSigner>(
-        self,
-        vm: String,
-        signer: T,
-    ) -> Result<SessionBuilder<T>> {
-        self.with_did_client_id_and_resolver(vm, signer, DID_METHODS.to_resolver())
-            .await
-    }
-
-    /// Configure the [ClientId] and set the [ClientIdScheme] to `did`.
     pub async fn with_did_client_id_and_resolver<T: RequestSigner>(
         self,
         vm: String,
@@ -140,7 +128,7 @@ impl<S: RequestSigner> SessionBuilder<S> {
             "expected a DID verification method, received '{vm}'"
         ))?;
 
-        let key = didkit::resolve_key(&vm, resolver)
+        let key = ssi::did_resolve::resolve_key(&vm, resolver)
             .await
             .context("unable to resolve key from verification method")?;
 

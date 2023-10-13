@@ -1,19 +1,18 @@
 [package]
-name = "oidc4vp"
+name = "oid4vp"
 version = "0.1.0"
 edition = "2021"
 authors = ["Spruce Systems, Inc."]
 license = "MIT OR Apache-2.0"
 description = "OpenID Connect for Verifiable Presentations"
 repository = "https://github.com/spruceid/oidc4vp-rs/"
-documentation = "https://docs.rs/oidc4vp/"
+documentation = "https://docs.rs/oid4vp/"
 
 [dependencies]
 anyhow = "1.0.75"
 async-trait = "0.1.73"
 base64 = "0.21.4"
 did-web = "0.2.2"
-didkit = "0.6.0"
 isomdl = { git = "https://git@github.com/spruceid/isomdl", rev = "b2324b7" }
 josekit = { git = "https://github.com/cobward/josekit-rs", rev = "635c8a7" }
 p256 = { version = "0.13.2", features = ["jwk"] }
@@ -23,6 +22,7 @@ serde_cbor = "0.11.2"
 serde_json = "1.0.107"
 serde_qs = "0.12.0"
 serde_urlencoded = "0.7.1"
+ssi = "0.7.0"
 thiserror = "1.0.49"
 tracing = "0.1.37"
 url = { version = "2.4.1", features = ["serde"] }

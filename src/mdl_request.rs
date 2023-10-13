@@ -5,10 +5,10 @@ use crate::{
     },
     utils::NonEmptyVec,
 };
-use didkit::ssi::jwk::JWK;
 use isomdl::definitions::helpers::NonEmptyMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use ssi::jwk::JWK;
 use std::collections::BTreeMap;
 use x509_cert::der::referenced::OwnedToRef;
 use x509_cert::der::Decode;
