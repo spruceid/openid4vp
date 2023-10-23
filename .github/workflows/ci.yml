@@ -4,6 +4,7 @@ on: [push, pull_request]
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   build:
@@ -18,5 +19,5 @@ jobs:
       run: cargo test
     - name: Fmt
       run: cargo fmt -- --check
-    # - name: Clippy
-    #   run: RUSTFLAGS="-Dwarnings" cargo clippy
+    - name: Clippy
+      run: cargo clippy

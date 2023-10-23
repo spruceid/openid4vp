@@ -1,8 +1,24 @@
-use crate::core::{object::UntypedObject, profile::WalletProfile};
+use crate::core::{
+    metadata::{
+        parameters::{
+            verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
+            wallet::{
+                AuthorizationEncryptionAlgValuesSupported,
+                AuthorizationEncryptionEncValuesSupported,
+            },
+        },
+        WalletMetadata,
+    },
+    object::{ParsingErrorContext, TypedParameter, UntypedObject},
+    profile::{Profile, Wallet},
+};
 use anyhow::{bail, Context, Error, Result};
 use async_trait::async_trait;
 
-use super::{parameters::ClientIdScheme, AuthorizationRequestObject};
+use super::{
+    parameters::{ClientIdScheme, ClientMetadata, ResponseMode},
+    AuthorizationRequestObject,
+};
 
 pub mod did;
 pub mod x509_san_dns;
@@ -70,31 +86,24 @@ pub trait RequestVerification {
     ) -> Result<(), Error>;
 }
 
-pub(crate) async fn verify_request<WP: WalletProfile + ?Sized>(
+pub(crate) async fn verify_request<WP: Wallet + ?Sized>(
     profile: &WP,
     jwt: String,
+    http_client: &reqwest::Client,
 ) -> Result<AuthorizationRequestObject> {
     let request: AuthorizationRequestObject = ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
         .context("unable to decode Authorization Request Object JWT")?
         .try_into()?;
 
+    validate_request_against_metadata::<WP>(
+        profile,
+        &request,
+        profile.wallet_metadata(),
+        http_client,
+    )
+    .await?;
+
     let client_id_scheme = request.client_id_scheme();
-
-    if !profile
-        .wallet_metadata()
-        .client_id_schemes_supported()
-        .0
-        .contains(client_id_scheme)
-    {
-        bail!(
-            "wallet does not support client_id_scheme '{}'",
-            client_id_scheme
-        )
-    }
-
-    profile
-        .validate_request(&request)
-        .context("unable to validate request according to profile-specific checks:")?;
 
     match client_id_scheme {
         ClientIdScheme::Did => profile.did(&request, jwt).await?,
@@ -107,4 +116,65 @@ pub(crate) async fn verify_request<WP: WalletProfile + ?Sized>(
     };
 
     Ok(request)
+}
+
+pub(crate) async fn validate_request_against_metadata<P: Profile + ?Sized>(
+    profile: &P,
+    request: &AuthorizationRequestObject,
+    wallet_metadata: &WalletMetadata,
+    http_client: &reqwest::Client,
+) -> Result<(), Error> {
+    let client_id_scheme = request.client_id_scheme();
+    if !wallet_metadata
+        .client_id_schemes_supported()
+        .0
+        .contains(client_id_scheme)
+    {
+        bail!(
+            "wallet does not support client_id_scheme '{}'",
+            client_id_scheme
+        )
+    }
+
+    let client_metadata = ClientMetadata::resolve_with_http_client(request, http_client)
+        .await?
+        .0;
+
+    let response_mode = request.get::<ResponseMode>().parsing_error()?;
+
+    if response_mode.is_jarm()? {
+        let alg = client_metadata
+            .get::<AuthorizationEncryptedResponseAlg>()
+            .parsing_error()?;
+        let enc = client_metadata
+            .get::<AuthorizationEncryptedResponseEnc>()
+            .parsing_error()?;
+
+        if let Some(supported_algs) =
+            wallet_metadata.get::<AuthorizationEncryptionAlgValuesSupported>()
+        {
+            if !supported_algs?.0.contains(&alg.0) {
+                bail!(
+                    "unsupported {} '{}'",
+                    AuthorizationEncryptedResponseAlg::KEY,
+                    alg.0
+                )
+            }
+        }
+        if let Some(supported_encs) =
+            wallet_metadata.get::<AuthorizationEncryptionEncValuesSupported>()
+        {
+            if !supported_encs?.0.contains(&enc.0) {
+                bail!(
+                    "unsupported {} '{}'",
+                    AuthorizationEncryptedResponseEnc::KEY,
+                    enc.0
+                )
+            }
+        }
+    }
+
+    profile
+        .validate_request(wallet_metadata, request)
+        .context("unable to validate request according to profile-specific checks:")
 }

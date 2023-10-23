@@ -1,10 +1,15 @@
 use std::fmt;
 
-use crate::core::object::{TypedParameter, UntypedObject};
-use anyhow::Error;
+use crate::core::{
+    object::{ParsingErrorContext, TypedParameter, UntypedObject},
+    util::default_http_client,
+};
+use anyhow::{bail, Context, Error, Ok};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use url::Url;
+
+use super::AuthorizationRequestObject;
 
 const DID: &str = "did";
 const ENTITY_ID: &str = "entity_id";
@@ -127,6 +132,51 @@ impl TryFrom<Json> for ClientMetadata {
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         Ok(serde_json::from_value(value).map(ClientMetadata)?)
+    }
+}
+
+impl ClientMetadata {
+    /// Resolves the client metadata from the Authorization Request Object.
+    ///
+    /// If the client metadata is not passed by reference or value if the Authorization Request Object,
+    /// then this function will return an error.
+    ///
+    /// Uses the library's default http client.
+    pub async fn resolve(request: &AuthorizationRequestObject) -> Result<Self, Error> {
+        Self::resolve_with_http_client(request, &default_http_client()?).await
+    }
+
+    /// Resolves the client metadata from the Authorization Request Object.
+    ///
+    /// If the client metadata is not passed by reference or value if the Authorization Request Object,
+    /// then this function will return an error.
+    pub async fn resolve_with_http_client(
+        request: &AuthorizationRequestObject,
+        http_client: &reqwest::Client,
+    ) -> Result<Self, Error> {
+        if let Some(metadata) = request.get() {
+            return metadata;
+        }
+
+        if let Some(metadata_uri) = request.get::<ClientMetadataUri>() {
+            let uri = metadata_uri.parsing_error()?;
+            return http_client
+                .get(uri.0.clone())
+                .send()
+                .await
+                .context(format!("failed to GET {}", uri.0))?
+                .error_for_status()
+                .context(format!("failed to GET {}", uri.0))?
+                .json()
+                .await
+                .map(ClientMetadata)
+                .context(format!(
+                    "could not parse response from GET '{}' as JSON",
+                    uri.0
+                ));
+        }
+
+        bail!("")
     }
 }
 
@@ -308,6 +358,16 @@ impl Default for ResponseMode {
     }
 }
 
+impl ResponseMode {
+    pub fn is_jarm(&self) -> Result<bool, Error> {
+        match self {
+            ResponseMode::DirectPost => Ok(false),
+            ResponseMode::DirectPostJwt => Ok(true),
+            ResponseMode::Unsupported(rm) => bail!("unsupported response_mode: {rm}"),
+        }
+    }
+}
+
 const VP_TOKEN: &str = "vp_token";
 const VP_TOKEN_ID_TOKEN: &str = "vp_token id_token";
 
@@ -379,8 +439,33 @@ impl From<State> for Json {
     }
 }
 
+// TODO: Revisit the inner parsed type.
 #[derive(Debug, Clone)]
-pub struct PresentationDefinition(pub Json);
+pub struct PresentationDefinition {
+    raw: Json,
+    parsed: crate::presentation_exchange::PresentationDefinition,
+}
+
+impl PresentationDefinition {
+    pub fn into_parsed(self) -> crate::presentation_exchange::PresentationDefinition {
+        self.parsed
+    }
+
+    pub fn parsed(&self) -> &crate::presentation_exchange::PresentationDefinition {
+        &self.parsed
+    }
+}
+
+impl TryFrom<crate::presentation_exchange::PresentationDefinition> for PresentationDefinition {
+    type Error = Error;
+
+    fn try_from(
+        parsed: crate::presentation_exchange::PresentationDefinition,
+    ) -> Result<Self, Self::Error> {
+        let raw = serde_json::to_value(parsed.clone())?;
+        Ok(Self { raw, parsed })
+    }
+}
 
 impl TypedParameter for PresentationDefinition {
     const KEY: &'static str = "presentation_definition";
@@ -390,13 +475,14 @@ impl TryFrom<Json> for PresentationDefinition {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(value).map(Self)
+        let parsed = serde_json::from_value(value.clone())?;
+        Ok(Self { raw: value, parsed })
     }
 }
 
 impl From<PresentationDefinition> for Json {
     fn from(value: PresentationDefinition) -> Self {
-        value.0
+        value.raw
     }
 }
 

@@ -1,8 +1,4 @@
 use anyhow;
-use isomdl::definitions::helpers::non_empty_map::Error as NonEmptyMapError;
-use isomdl::definitions::Error as IsomdlDefinitionError;
-use isomdl::presentation::reader::oid4vp::Error as IsomdlError;
-use isomdl::presentation::reader::Error as IsomdlReaderErrror;
 use josekit::JoseError;
 use reqwest::Error as ReqwestError;
 use serde::{Deserialize, Serialize};
@@ -143,30 +139,6 @@ impl From<JwsError> for Openid4vpError {
 impl From<CborError> for Openid4vpError {
     fn from(_value: CborError) -> Self {
         Openid4vpError::CborError
-    }
-}
-
-impl From<IsomdlError> for Openid4vpError {
-    fn from(value: IsomdlError) -> Self {
-        Openid4vpError::IsomdlError(value.to_string())
-    }
-}
-
-impl From<IsomdlReaderErrror> for Openid4vpError {
-    fn from(value: IsomdlReaderErrror) -> Self {
-        Openid4vpError::ResponseError(value.to_string())
-    }
-}
-
-impl From<IsomdlDefinitionError> for Openid4vpError {
-    fn from(value: IsomdlDefinitionError) -> Self {
-        Openid4vpError::Empty(value.to_string())
-    }
-}
-
-impl From<NonEmptyMapError> for Openid4vpError {
-    fn from(value: NonEmptyMapError) -> Self {
-        Openid4vpError::Empty(value.to_string())
     }
 }
 

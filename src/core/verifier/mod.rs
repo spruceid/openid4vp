@@ -3,21 +3,24 @@ use url::Url;
 
 use self::builder::SessionBuilder;
 
-use super::{authorization_request::AuthorizationRequestObject, metadata::WalletMetadata};
+use crate::core::{
+    authorization_request::AuthorizationRequestObject, metadata::WalletMetadata, profile::Verifier,
+};
 
 pub mod builder;
 pub mod request_signer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Session {
+pub struct Session<P: Verifier> {
+    profile: P,
     authorization_request: Url,
     request_object: AuthorizationRequestObject,
     request_object_jwt: String,
 }
 
-impl Session {
-    pub fn builder(wallet_metadata: WalletMetadata) -> SessionBuilder {
-        SessionBuilder::new(wallet_metadata)
+impl<P: Verifier> Session<P> {
+    pub fn builder(profile: P, wallet_metadata: WalletMetadata) -> SessionBuilder<P> {
+        SessionBuilder::new(profile, wallet_metadata)
     }
 
     pub fn authorization_request(&self) -> &Url {

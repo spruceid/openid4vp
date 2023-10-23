@@ -13,7 +13,7 @@ use crate::core::{
     },
     metadata::{parameters::wallet::AuthorizationEndpoint, WalletMetadata},
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    profile::Profile,
+    profile::Verifier,
 };
 
 use self::{by_reference::ByReference, client::Client};
@@ -27,29 +27,32 @@ mod by_reference;
 mod client;
 
 #[derive(Debug, Clone)]
-pub struct SessionBuilder<S: RequestSigner = P256Signer> {
+pub struct SessionBuilder<P: Verifier, S: RequestSigner = P256Signer> {
     wallet_metadata: WalletMetadata,
     client: Option<Client<S>>,
     pass_by_reference: ByReference,
     request_params: UntypedObject,
+    profile: P,
 }
 
-impl<S: RequestSigner> SessionBuilder<S> {
-    pub fn new(wallet_metadata: WalletMetadata) -> Self {
+impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
+    pub fn new(profile: P, wallet_metadata: WalletMetadata) -> Self {
         Self {
             wallet_metadata,
             client: None,
             pass_by_reference: ByReference::False,
             request_params: UntypedObject::default(),
+            profile,
         }
     }
 
-    pub async fn build<P: Profile>(self, p: P) -> Result<Session> {
+    pub async fn build(self) -> Result<Session<P>> {
         let Self {
             wallet_metadata,
             client,
             pass_by_reference,
             mut request_params,
+            profile,
         } = self;
 
         let authorization_endpoint = wallet_metadata
@@ -78,7 +81,7 @@ impl<S: RequestSigner> SessionBuilder<S> {
             .try_into()
             .context("unable to construct Authorization Request Object from provided parameters")?;
 
-        p.validate_request(&request_object)?;
+        profile.validate_request(&wallet_metadata, &request_object)?;
 
         let request_object_jwt = client.generate_request_object_jwt(&request_object).await?;
 
@@ -94,6 +97,7 @@ impl<S: RequestSigner> SessionBuilder<S> {
         .to_url(authorization_endpoint)?;
 
         Ok(Session {
+            profile,
             authorization_request,
             request_object,
             request_object_jwt,
@@ -112,8 +116,12 @@ impl<S: RequestSigner> SessionBuilder<S> {
         self
     }
 
-    pub fn with_request_parameter<P: TypedParameter>(mut self, p: P) -> Self {
-        self.request_params.insert(p);
+    pub fn presentation_builder() -> P::PresentationBuilder {
+        P::PresentationBuilder::default()
+    }
+
+    pub fn with_request_parameter<T: TypedParameter>(mut self, t: T) -> Self {
+        self.request_params.insert(t);
         self
     }
 
@@ -123,7 +131,7 @@ impl<S: RequestSigner> SessionBuilder<S> {
         vm: String,
         signer: T,
         resolver: &dyn DIDResolver,
-    ) -> Result<SessionBuilder<T>> {
+    ) -> Result<SessionBuilder<P, T>> {
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
         ))?;
@@ -142,6 +150,7 @@ impl<S: RequestSigner> SessionBuilder<S> {
             wallet_metadata,
             pass_by_reference,
             request_params,
+            profile,
             ..
         } = self;
 
@@ -156,6 +165,7 @@ impl<S: RequestSigner> SessionBuilder<S> {
             client,
             pass_by_reference,
             request_params,
+            profile,
         })
     }
 

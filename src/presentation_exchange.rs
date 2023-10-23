@@ -267,8 +267,10 @@ pub(crate) mod tests {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {
                 if ext != OsStr::new("json")
-                    || ["appendix_DIDComm_example.json",
-                        "appendix_CHAPI_example.json"]
+                    || [
+                        "appendix_DIDComm_example.json",
+                        "appendix_CHAPI_example.json",
+                    ]
                     .contains(&path.file_name().unwrap().to_str().unwrap())
                 {
                     continue;
