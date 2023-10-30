@@ -5,6 +5,27 @@ use serde_json::{Map, Value as Json};
 use crate::core::object::TypedParameter;
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct VpFormats(pub Map<String, Json>);
+
+impl TypedParameter for VpFormats {
+    const KEY: &'static str = "vp_formats";
+}
+
+impl TryFrom<Json> for VpFormats {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        serde_json::from_value(value).map(Self).map_err(Into::into)
+    }
+}
+
+impl From<VpFormats> for Json {
+    fn from(value: VpFormats) -> Json {
+        value.0.into()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct JWKs {
     pub keys: Vec<Map<String, Json>>,
 }
@@ -123,6 +144,13 @@ mod test {
         }
         ))
         .unwrap()
+    }
+
+    #[test]
+    fn vp_formats() {
+        let VpFormats(fnd) = metadata().get().unwrap().unwrap();
+        let exp = json!({"mso_mdoc": {}}).as_object().unwrap().clone();
+        assert_eq!(fnd, exp)
     }
 
     #[test]
