@@ -176,7 +176,7 @@ impl ClientMetadata {
                 ));
         }
 
-        bail!("")
+        bail!("Error resolving client_metadata")
     }
 }
 
