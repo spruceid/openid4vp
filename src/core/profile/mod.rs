@@ -29,11 +29,25 @@ pub trait Profile {
 }
 
 pub trait Verifier: Profile {
-    /// Builder for profile-specific [PresentationDefinition].
     type PresentationBuilder: PresentationBuilder;
+    type VerifiedResponse;
+}
+
+pub trait VerifierSession {
+    type Verifier: Verifier;
+
+    fn build(verifier: Self::Verifier, authorization_request: Url) -> Self;
+    fn verify(
+        self,
+        response: AuthorizationResponse,
+    ) -> Result<<Self::Verifier as Verifier>::VerifiedResponse, Error>;
 }
 
 pub trait PresentationBuilder: Default {
+    type Element;
+
+    fn with_presentation_id(self, id: String) -> Self;
+    fn with_requested_element(self, element: Self::Element) -> Self;
     fn build(self) -> Result<PresentationDefinition, Error>;
 }
 
@@ -75,10 +89,13 @@ pub trait Wallet: Profile + RequestVerification + Sync {
         http_client: reqwest::Client,
     ) -> Result<Option<Url>, Error> {
         let aro = handler.request().clone();
-        let response_object = handler.to_response()?;
+        let response = handler.to_response()?;
         let return_uri = aro.return_uri();
         match aro.response_mode() {
             ResponseMode::DirectPost => {
+                let AuthorizationResponse::Unencoded(response_object) = response else {
+                    bail!("unexpected AuthorizationResponse format")
+                };
                 let body = response_object
                     .serializable()
                     .flatten_for_form()
@@ -91,7 +108,10 @@ pub trait Wallet: Profile + RequestVerification + Sync {
                     .context("failed to post authorization response")?;
 
                 let status = response.status();
-                let text = response.text().await.context("text")?;
+                let text = response
+                    .text()
+                    .await
+                    .context("could not parse response as a UTF8 string")?;
 
                 if !status.is_success() {
                     bail!("error submitting authorization response ({status}): {text}")
@@ -102,7 +122,32 @@ pub trait Wallet: Profile + RequestVerification + Sync {
                     .ok()
                     .map(|PostRedirection { redirect_uri }| redirect_uri))
             }
-            ResponseMode::DirectPostJwt => todo!(),
+            ResponseMode::DirectPostJwt => {
+                let AuthorizationResponse::Jwt(jwt) = response else {
+                    bail!("unexpected AuthorizationResponse format")
+                };
+                let response = http_client
+                    .post(return_uri.clone())
+                    .form(&jwt)
+                    .send()
+                    .await
+                    .context("failed to post authorization response")?;
+
+                let status = response.status();
+                let text = response
+                    .text()
+                    .await
+                    .context("could not parse response as a UTF8 string")?;
+
+                if !status.is_success() {
+                    bail!("error submitting authorization response ({status}): {text}")
+                }
+
+                Ok(serde_json::from_str(&text)
+                    .map_err(|e| warn!("response did not contain a redirect: {e}"))
+                    .ok()
+                    .map(|PostRedirection { redirect_uri }| redirect_uri))
+            }
             ResponseMode::Unsupported(rm) => bail!("unsupported response_mode {rm}"),
         }
     }

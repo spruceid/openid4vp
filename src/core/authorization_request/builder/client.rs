@@ -3,12 +3,10 @@ use base64::prelude::*;
 use serde_json::{json, Value as Json};
 use x509_cert::{der::Encode, Certificate};
 
-use crate::core::{
-    authorization_request::{
-        parameters::{ClientId, ClientIdScheme},
-        AuthorizationRequestObject,
-    },
-    verifier::request_signer::RequestSigner,
+use crate::core::authorization_request::{
+    builder::request_signer::RequestSigner,
+    parameters::{ClientId, ClientIdScheme},
+    AuthorizationRequestObject,
 };
 
 #[derive(Debug, Clone)]

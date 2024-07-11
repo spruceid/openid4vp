@@ -5,5 +5,3 @@ pub mod object;
 pub mod profile;
 pub mod response;
 pub(crate) mod util;
-pub mod verifier;
-pub mod wallet;

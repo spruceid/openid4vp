@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use anyhow::{bail, Context, Result};
 use ssi::did_resolve::DIDResolver;
 use tracing::{debug, warn};
@@ -13,46 +15,57 @@ use crate::core::{
     },
     metadata::{parameters::wallet::AuthorizationEndpoint, WalletMetadata},
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    profile::Verifier,
+    profile::{PresentationBuilder, Verifier, VerifierSession},
 };
 
-use self::{by_reference::ByReference, client::Client};
-
-use super::{
-    request_signer::{P256Signer, RequestSigner},
-    Session,
-};
+use by_reference::ByReference;
+use client::Client;
+use request_signer::{P256Signer, RequestSigner};
 
 mod by_reference;
 mod client;
+pub mod request_signer;
 
 #[derive(Debug, Clone)]
-pub struct SessionBuilder<P: Verifier, S: RequestSigner = P256Signer> {
+pub struct SessionBuilder<S, V, PB, RS: RequestSigner = P256Signer> {
+    session: PhantomData<S>,
+    verifier: V,
     wallet_metadata: WalletMetadata,
-    client: Option<Client<S>>,
+    presentation_builder: PB,
+    client: Option<Client<RS>>,
     pass_by_reference: ByReference,
     request_params: UntypedObject,
-    profile: P,
 }
 
-impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
-    pub fn new(profile: P, wallet_metadata: WalletMetadata) -> Self {
+impl<
+        S: VerifierSession<Verifier = V>,
+        V: Verifier<PresentationBuilder = PB>,
+        PB: PresentationBuilder<Element = E>,
+        RS: RequestSigner,
+        E,
+    > SessionBuilder<S, V, PB, RS>
+{
+    pub fn new(verifier: V, wallet_metadata: WalletMetadata) -> Self {
         Self {
+            session: PhantomData::default(),
+            verifier,
             wallet_metadata,
+            presentation_builder: PB::default(),
             client: None,
             pass_by_reference: ByReference::False,
             request_params: UntypedObject::default(),
-            profile,
         }
     }
 
-    pub async fn build(self) -> Result<Session<P>> {
+    pub async fn build(self) -> Result<S> {
         let Self {
+            session: _,
+            verifier,
             wallet_metadata,
+            presentation_builder,
             client,
             pass_by_reference,
             mut request_params,
-            profile,
         } = self;
 
         let authorization_endpoint = wallet_metadata
@@ -63,6 +76,8 @@ impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
         let Some(client) = client else {
             bail!("client is required, see `with_X_client_id` functions")
         };
+
+        let presentation_definition = presentation_builder.build()?;
 
         let client_id = client.id();
         let client_id_scheme = client.scheme();
@@ -76,12 +91,13 @@ impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
 
         let _ = request_params.insert(client_id.clone());
         let _ = request_params.insert(client_id_scheme.clone());
+        let _ = request_params.insert(presentation_definition);
 
         let request_object: AuthorizationRequestObject = request_params
             .try_into()
             .context("unable to construct Authorization Request Object from provided parameters")?;
 
-        profile.validate_request(&wallet_metadata, &request_object)?;
+        verifier.validate_request(&wallet_metadata, &request_object)?;
 
         let request_object_jwt = client.generate_request_object_jwt(&request_object).await?;
 
@@ -96,12 +112,7 @@ impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
         }
         .to_url(authorization_endpoint)?;
 
-        Ok(Session {
-            profile,
-            authorization_request,
-            request_object,
-            request_object_jwt,
-        })
+        Ok(S::build(verifier, authorization_request))
     }
 
     /// Encode the Authorization Request directly in the `request` parameter.
@@ -116,12 +127,18 @@ impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
         self
     }
 
-    pub fn presentation_builder() -> P::PresentationBuilder {
-        P::PresentationBuilder::default()
-    }
-
     pub fn with_request_parameter<T: TypedParameter>(mut self, t: T) -> Self {
         self.request_params.insert(t);
+        self
+    }
+
+    pub fn with_requested_element(mut self, element: E) -> Self {
+        self.presentation_builder = self.presentation_builder.with_requested_element(element);
+        self
+    }
+
+    pub fn with_presentation_id(mut self, id: String) -> Self {
+        self.presentation_builder = self.presentation_builder.with_presentation_id(id);
         self
     }
 
@@ -131,7 +148,7 @@ impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
         vm: String,
         signer: T,
         resolver: &dyn DIDResolver,
-    ) -> Result<SessionBuilder<P, T>> {
+    ) -> Result<SessionBuilder<S, V, PB, T>> {
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
         ))?;
@@ -147,10 +164,12 @@ impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
         }
 
         let SessionBuilder {
+            session,
+            verifier,
             wallet_metadata,
+            presentation_builder,
             pass_by_reference,
             request_params,
-            profile,
             ..
         } = self;
 
@@ -161,16 +180,22 @@ impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
         });
 
         Ok(SessionBuilder {
+            session,
             wallet_metadata,
             client,
+            presentation_builder,
             pass_by_reference,
             request_params,
-            profile,
+            verifier,
         })
     }
 
     /// Configure the [ClientId] and set the [ClientIdScheme] to `x509_san_dns`.
-    pub fn with_x509_san_dns_client_id(mut self, x5c: Vec<Certificate>, signer: S) -> Result<Self> {
+    pub fn with_x509_san_dns_client_id(
+        mut self,
+        x5c: Vec<Certificate>,
+        signer: RS,
+    ) -> Result<Self> {
         // TODO: Check certificate chain.
         let leaf = &x5c[0];
         let id = if let Some(san) = leaf
@@ -206,7 +231,11 @@ impl<P: Verifier, S: RequestSigner> SessionBuilder<P, S> {
     }
 
     /// Configure the [ClientId] and set the [ClientIdScheme] to `x509_san_uri`.
-    pub fn with_x509_san_uri_client_id(mut self, x5c: Vec<Certificate>, signer: S) -> Result<Self> {
+    pub fn with_x509_san_uri_client_id(
+        mut self,
+        x5c: Vec<Certificate>,
+        signer: RS,
+    ) -> Result<Self> {
         // TODO: Check certificate chain.
         let leaf = &x5c[0];
         let id = if let Some(san) = leaf

@@ -9,9 +9,15 @@ use super::object::{ParsingErrorContext, UntypedObject};
 pub mod parameters;
 
 #[derive(Debug, Clone)]
-pub struct AuthorizationResponse(UntypedObject, VpToken, PresentationSubmission);
+pub enum AuthorizationResponse {
+    Unencoded(UnencodedAuthorizationResponse),
+    Jwt(JwtAuthorizationResponse),
+}
 
-impl AuthorizationResponse {
+#[derive(Debug, Clone)]
+pub struct UnencodedAuthorizationResponse(UntypedObject, VpToken, PresentationSubmission);
+
+impl UnencodedAuthorizationResponse {
     pub fn as_query(self) -> Result<String, Error> {
         Ok(serde_urlencoded::to_string(self.0)?)
     }
@@ -22,11 +28,17 @@ impl AuthorizationResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JwtAuthorizationResponse {
+    /// Can be JWT or JWE.
+    pub response: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostRedirection {
     pub redirect_uri: Url,
 }
 
-impl TryFrom<UntypedObject> for AuthorizationResponse {
+impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
     type Error = Error;
 
     fn try_from(value: UntypedObject) -> Result<Self, Self::Error> {
