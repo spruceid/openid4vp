@@ -46,9 +46,21 @@ impl From<VpToken> for Json {
     }
 }
 
-// TODO: Better type.
 #[derive(Debug, Clone)]
-pub struct PresentationSubmission(pub Json);
+pub struct PresentationSubmission {
+    raw: Json,
+    parsed: crate::presentation_exchange::PresentationSubmission,
+}
+
+impl PresentationSubmission {
+    pub fn into_parsed(self) -> crate::presentation_exchange::PresentationSubmission {
+        self.parsed
+    }
+
+    pub fn parsed(&self) -> &crate::presentation_exchange::PresentationSubmission {
+        &self.parsed
+    }
+}
 
 impl TypedParameter for PresentationSubmission {
     const KEY: &'static str = "presentation_submission";
@@ -57,13 +69,14 @@ impl TypedParameter for PresentationSubmission {
 impl TryFrom<Json> for PresentationSubmission {
     type Error = Error;
 
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(value))
+    fn try_from(raw: Json) -> Result<Self, Self::Error> {
+        let parsed = serde_json::from_value(raw.clone())?;
+        Ok(Self { raw, parsed })
     }
 }
 
 impl From<PresentationSubmission> for Json {
     fn from(value: PresentationSubmission) -> Self {
-        value.0
+        value.raw
     }
 }

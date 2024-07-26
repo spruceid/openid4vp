@@ -15,6 +15,7 @@ const DID: &str = "did";
 const ENTITY_ID: &str = "entity_id";
 const PREREGISTERED: &str = "pre-registered";
 const REDIRECT_URI: &str = "redirect_uri";
+const VERIFIER_ATTESTATION: &str = "verifier_attestation";
 const X509_SAN_DNS: &str = "x509_san_dns";
 const X509_SAN_URI: &str = "x509_san_uri";
 
@@ -27,6 +28,7 @@ pub enum ClientIdScheme {
     EntityId,
     PreRegistered,
     RedirectUri,
+    VerifierAttestation,
     X509SanDns,
     X509SanUri,
     Other(String),
@@ -61,23 +63,10 @@ impl From<String> for ClientIdScheme {
             ENTITY_ID => ClientIdScheme::EntityId,
             PREREGISTERED => ClientIdScheme::PreRegistered,
             REDIRECT_URI => ClientIdScheme::RedirectUri,
+            VERIFIER_ATTESTATION => ClientIdScheme::VerifierAttestation,
             X509_SAN_DNS => ClientIdScheme::X509SanDns,
             X509_SAN_URI => ClientIdScheme::X509SanUri,
             _ => ClientIdScheme::Other(s),
-        }
-    }
-}
-
-impl From<ClientIdScheme> for String {
-    fn from(cis: ClientIdScheme) -> Self {
-        match cis {
-            ClientIdScheme::Did => DID.into(),
-            ClientIdScheme::EntityId => ENTITY_ID.into(),
-            ClientIdScheme::PreRegistered => PREREGISTERED.into(),
-            ClientIdScheme::RedirectUri => REDIRECT_URI.into(),
-            ClientIdScheme::X509SanDns => X509_SAN_DNS.into(),
-            ClientIdScheme::X509SanUri => X509_SAN_URI.into(),
-            ClientIdScheme::Other(u) => u,
         }
     }
 }
@@ -94,7 +83,7 @@ impl TryFrom<Json> for ClientIdScheme {
 
 impl From<ClientIdScheme> for Json {
     fn from(value: ClientIdScheme) -> Self {
-        Json::String(value.into())
+        Json::String(value.to_string())
     }
 }
 
@@ -105,6 +94,7 @@ impl fmt::Display for ClientIdScheme {
             ClientIdScheme::EntityId => ENTITY_ID,
             ClientIdScheme::PreRegistered => PREREGISTERED,
             ClientIdScheme::RedirectUri => REDIRECT_URI,
+            ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION.into(),
             ClientIdScheme::X509SanDns => X509_SAN_DNS,
             ClientIdScheme::X509SanUri => X509_SAN_URI,
             ClientIdScheme::Other(o) => o,
@@ -176,7 +166,7 @@ impl ClientMetadata {
                 ));
         }
 
-        bail!("")
+        bail!("the client metadata was not passed by reference or value")
     }
 }
 
@@ -439,7 +429,6 @@ impl From<State> for Json {
     }
 }
 
-// TODO: Revisit the inner parsed type.
 #[derive(Debug, Clone)]
 pub struct PresentationDefinition {
     raw: Json,

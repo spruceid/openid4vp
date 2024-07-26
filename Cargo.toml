@@ -23,6 +23,7 @@ serde_qs = "0.12.0"
 serde_urlencoded = "0.7.1"
 ssi = "0.7.0"
 thiserror = "1.0.49"
+tokio = "1.32.0"
 tracing = "0.1.37"
 url = { version = "2.4.1", features = ["serde"] }
 x509-cert = "0.2.4"

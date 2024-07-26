@@ -1,3 +1,0 @@
-[submodule "test/presentation-exchange"]
-	path = test/presentation-exchange
-	url = https://github.com/decentralized-identity/presentation-exchange

@@ -28,8 +28,6 @@ pub mod x509_san_uri;
 #[async_trait]
 pub trait RequestVerification {
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `did`.
-    ///
-    /// See default implementation [did].
     async fn did(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -51,17 +49,20 @@ pub trait RequestVerification {
     ) -> Result<(), Error>;
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `redirect_uri`.
-    ///
-    /// See default implementation [redirect_uri].
     async fn redirect_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error>;
 
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `verifier_attestation`.
+    async fn verifier_attestation(
+        &self,
+        decoded_request: &AuthorizationRequestObject,
+        request_jwt: String,
+    ) -> Result<(), Error>;
+
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
-    ///
-    /// See default implementation [x509_san_uri].
     async fn x509_san_dns(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -69,8 +70,6 @@ pub trait RequestVerification {
     ) -> Result<(), Error>;
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_uri`.
-    ///
-    /// See default implementation [x509_san_uri].
     async fn x509_san_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -110,6 +109,7 @@ pub(crate) async fn verify_request<WP: Wallet + ?Sized>(
         ClientIdScheme::EntityId => profile.entity_id(&request, jwt).await?,
         ClientIdScheme::PreRegistered => profile.preregistered(&request, jwt).await?,
         ClientIdScheme::RedirectUri => profile.redirect_uri(&request, jwt).await?,
+        ClientIdScheme::VerifierAttestation => profile.verifier_attestation(&request, jwt).await?,
         ClientIdScheme::X509SanDns => profile.x509_san_dns(&request, jwt).await?,
         ClientIdScheme::X509SanUri => profile.x509_san_uri(&request, jwt).await?,
         ClientIdScheme::Other(scheme) => profile.other(scheme, &request, jwt).await?,

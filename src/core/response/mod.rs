@@ -15,7 +15,11 @@ pub enum AuthorizationResponse {
 }
 
 #[derive(Debug, Clone)]
-pub struct UnencodedAuthorizationResponse(UntypedObject, VpToken, PresentationSubmission);
+pub struct UnencodedAuthorizationResponse(
+    pub UntypedObject,
+    pub VpToken,
+    pub PresentationSubmission,
+);
 
 impl UnencodedAuthorizationResponse {
     pub fn as_query(self) -> Result<String, Error> {

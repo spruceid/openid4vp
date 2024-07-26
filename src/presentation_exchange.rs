@@ -1,37 +1,6 @@
 use crate::utils::NonEmptyVec;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-
-// TODO does openidconnect have a Request type?
-#[derive(Debug, Deserialize)]
-pub struct ResponseRequest {
-    _id_token: serde_json::Value, // IdTokenSIOP, // CoreIdTokenClaims,
-    _vp_token: VpToken,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MdlVpToken {
-    pub presentation_submission: PresentationSubmission,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct VpTokenIdToken {
-    pub presentation_submission: PresentationSubmission,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct VpToken {
-    pub presentation_definition: PresentationDefinition,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RequestObject {
-    pub presentation_definition: PresentationDefinition,
-    pub presentation_definition_uri: Option<String>,
-    pub client_id_scheme: Option<String>,
-    pub client_metadata: Option<Value>,
-    pub client_metadata_uri: Option<String>,
-}
+use serde_json::Map;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationDefinition {
@@ -56,8 +25,6 @@ pub struct InputDescriptor {
     pub format: Option<serde_json::Value>, // TODO
     #[serde(skip_serializing_if = "Option::is_none")]
     pub constraints: Option<Constraints>, // TODO shouldn't be optional
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema: Option<serde_json::Value>, // TODO shouldn't exist anymore
 }
 
 // TODO must have at least one
@@ -182,57 +149,49 @@ pub(crate) mod tests {
 
     #[test]
     fn request_example() {
-        let value = json!({
-                "id_token": {
-                    "email": null
-                },
-                "vp_token": {
-                    "presentation_definition": {
-                        "id": "vp token example",
-                        "input_descriptors": [
-                            {
-                                "id": "id card credential",
-                                "format": {
-                                    "ldp_vc": {
-                                        "proof_type": [
-                                            "Ed25519Signature2018"
-                                        ]
-                                    }
-                                },
-                                "constraints": {
-                                    "fields": [
-                                        {
-                                            "path": [
-                                                "$.type"
-                                            ],
-                                            "filter": {
-                                                "type": "string",
-                                                "pattern": "IDCardCredential"
-                                            }
-                                        }
-                                    ]
-                                }
+        let value = json!(
+            {
+                "id": "vp token example",
+                "input_descriptors": [
+                    {
+                        "id": "id card credential",
+                        "format": {
+                            "ldp_vc": {
+                                "proof_type": [
+                                    "Ed25519Signature2018"
+                                ]
                             }
-                        ]
+                        },
+                        "constraints": {
+                            "fields": [
+                                {
+                                    "path": [
+                                        "$.type"
+                                    ],
+                                    "filter": {
+                                        "type": "string",
+                                        "pattern": "IDCardCredential"
+                                    }
+                                }
+                            ]
+                        }
                     }
-                }
+                ]
             }
         );
-        let _: ResponseRequest = serde_path_to_error::deserialize(value)
-            .map_err(|e| e.path().to_string())
-            .unwrap();
-        // assert_eq!(serde_json::to_value(res).unwrap(), value);
+        let _: PresentationDefinition = serde_json::from_value(value).unwrap();
     }
 
     #[derive(Deserialize)]
     pub struct PresentationDefinitionTest {
-        _presentation_definition: PresentationDefinition,
+        #[serde(alias = "presentation_definition")]
+        _pd: PresentationDefinition,
     }
 
     #[test]
     fn presentation_definition_suite() {
         let paths =
-            fs::read_dir("test/presentation-exchange/test/presentation-definition").unwrap();
+            fs::read_dir("tests/presentation-exchange/test/presentation-definition").unwrap();
         for path in paths {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {
@@ -253,16 +212,16 @@ pub(crate) mod tests {
         }
     }
 
-    // TODO use VP type?
     #[derive(Deserialize)]
     pub struct PresentationSubmissionTest {
-        _presentation_submission: PresentationSubmission,
+        #[serde(alias = "presentation_submission")]
+        _ps: PresentationSubmission,
     }
 
     #[test]
     fn presentation_submission_suite() {
         let paths =
-            fs::read_dir("test/presentation-exchange/test/presentation-submission").unwrap();
+            fs::read_dir("tests/presentation-exchange/test/presentation-submission").unwrap();
         for path in paths {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {
@@ -288,13 +247,14 @@ pub(crate) mod tests {
 
     #[derive(Deserialize)]
     pub struct SubmissionRequirementsTest {
-        _submission_requirements: Vec<SubmissionRequirement>,
+        #[serde(alias = "submission_requirements")]
+        _sr: Vec<SubmissionRequirement>,
     }
 
     #[test]
     fn submission_requirements_suite() {
         let paths =
-            fs::read_dir("test/presentation-exchange/test/submission-requirements").unwrap();
+            fs::read_dir("tests/presentation-exchange/test/submission-requirements").unwrap();
         for path in paths {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {

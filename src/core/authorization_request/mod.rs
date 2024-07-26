@@ -19,7 +19,6 @@ use super::{
     util::default_http_client,
 };
 
-pub mod builder;
 pub mod parameters;
 pub mod verification;
 

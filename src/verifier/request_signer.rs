@@ -12,6 +12,7 @@ pub trait RequestSigner {
     async fn sign(&self, payload: &[u8]) -> Vec<u8>;
 }
 
+#[derive(Debug)]
 pub struct P256Signer {
     key: SigningKey,
     jwk: JWK,
