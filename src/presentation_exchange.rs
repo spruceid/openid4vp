@@ -1,4 +1,4 @@
-use crate::utils::NonEmptyVec;
+pub use crate::utils::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 
@@ -101,10 +101,10 @@ pub struct DescriptorMap {
 
 #[derive(Deserialize)]
 pub struct SubmissionRequirementBaseBase {
-    _name: Option<String>,
-    _purpose: Option<String>,
+    pub name: Option<String>,
+    pub purpose: Option<String>,
     #[serde(flatten)]
-    _property_set: Option<Map<String, serde_json::Value>>,
+    pub property_set: Option<Map<String, serde_json::Value>>,
 }
 
 #[derive(Deserialize)]
@@ -132,10 +132,10 @@ pub enum SubmissionRequirement {
 #[derive(Deserialize)]
 pub struct SubmissionRequirementPick {
     #[serde(flatten)]
-    _submission_requirement: SubmissionRequirementBase,
-    _count: Option<u64>,
-    _min: Option<u64>,
-    _max: Option<u64>,
+    pub submission_requirement: SubmissionRequirementBase,
+    pub count: Option<u64>,
+    pub min: Option<u64>,
+    pub max: Option<u64>,
 }
 
 #[cfg(test)]

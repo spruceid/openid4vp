@@ -3,56 +3,18 @@ use async_trait::async_trait;
 use tracing::warn;
 use url::Url;
 
-use super::{
+use crate::core::{
     authorization_request::{
-        parameters::{PresentationDefinition, ResponseMode},
-        verification::RequestVerification,
-        AuthorizationRequest, AuthorizationRequestObject,
+        parameters::ResponseMode, verification::RequestVerifier, AuthorizationRequest,
+        AuthorizationRequestObject,
     },
-    credential_format::CredentialFormat,
     metadata::WalletMetadata,
     response::{AuthorizationResponse, PostRedirection},
     util::default_http_client,
 };
 
-/// A specific profile of OID4VP.
-pub trait Profile {
-    /// Credential Format used in this profile.
-    type CredentialFormat: CredentialFormat;
-
-    /// Perform additional profile-specific checks on outbound and inbound requests.
-    fn validate_request(
-        &self,
-        wallet_metadata: &WalletMetadata,
-        request_object: &AuthorizationRequestObject,
-    ) -> Result<(), Error>;
-}
-
-pub trait Verifier: Profile {
-    type PresentationBuilder: PresentationBuilder;
-    type VerifiedResponse;
-}
-
-pub trait VerifierSession {
-    type Verifier: Verifier;
-
-    fn build(verifier: Self::Verifier, authorization_request: Url) -> Self;
-    fn verify(
-        self,
-        response: AuthorizationResponse,
-    ) -> Result<<Self::Verifier as Verifier>::VerifiedResponse, Error>;
-}
-
-pub trait PresentationBuilder: Default {
-    type Element;
-
-    fn with_presentation_id(self, id: String) -> Self;
-    fn with_requested_element(self, element: Self::Element) -> Self;
-    fn build(self) -> Result<PresentationDefinition, Error>;
-}
-
 #[async_trait]
-pub trait Wallet: Profile + RequestVerification + Sync {
+pub trait Wallet: RequestVerifier + Sync {
     type PresentationHandler: PresentationHandler;
 
     fn wallet_metadata(&self) -> &WalletMetadata;

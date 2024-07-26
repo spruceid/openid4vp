@@ -1,4 +1,5 @@
 pub mod core;
 pub mod presentation_exchange;
-pub mod utils;
+mod utils;
 pub mod verifier;
+pub mod wallet;

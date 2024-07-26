@@ -1,16 +1,18 @@
-use crate::core::{
-    metadata::{
-        parameters::{
-            verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
-            wallet::{
-                AuthorizationEncryptionAlgValuesSupported,
-                AuthorizationEncryptionEncValuesSupported,
+use crate::{
+    core::{
+        metadata::{
+            parameters::{
+                verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
+                wallet::{
+                    AuthorizationEncryptionAlgValuesSupported,
+                    AuthorizationEncryptionEncValuesSupported,
+                },
             },
+            WalletMetadata,
         },
-        WalletMetadata,
+        object::{ParsingErrorContext, TypedParameter, UntypedObject},
     },
-    object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    profile::{Profile, Wallet},
+    wallet::Wallet,
 };
 use anyhow::{bail, Context, Error, Result};
 use async_trait::async_trait;
@@ -25,56 +27,71 @@ pub mod x509_san_dns;
 pub mod x509_san_uri;
 
 /// Verifies Authorization Request Objects.
+#[allow(unused_variables)]
 #[async_trait]
-pub trait RequestVerification {
+pub trait RequestVerifier {
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `did`.
     async fn did(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Error> {
+        bail!("'did' client verification not implemented")
+    }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `entity_id`.
     async fn entity_id(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Error> {
+        bail!("'entity' client verification not implemented")
+    }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `pre-registered`.
     async fn preregistered(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Error> {
+        bail!("'pre-registered' client verification not implemented")
+    }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `redirect_uri`.
     async fn redirect_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Error> {
+        bail!("'redirect_uri' client verification not implemented")
+    }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `verifier_attestation`.
     async fn verifier_attestation(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Error> {
+        bail!("'verifier_attestation' client verification not implemented")
+    }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
     async fn x509_san_dns(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Error> {
+        bail!("'x509_san_dns' client verification not implemented")
+    }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_uri`.
     async fn x509_san_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Error> {
+        bail!("'x509_san_uri' client verification not implemented")
+    }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is any other value.
     async fn other(
@@ -82,11 +99,13 @@ pub trait RequestVerification {
         client_id_scheme: &str,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Error> {
+        bail!("'{client_id_scheme}' client verification not implemented")
+    }
 }
 
-pub(crate) async fn verify_request<WP: Wallet + ?Sized>(
-    profile: &WP,
+pub(crate) async fn verify_request<W: Wallet + ?Sized>(
+    wallet: &W,
     jwt: String,
     http_client: &reqwest::Client,
 ) -> Result<AuthorizationRequestObject> {
@@ -94,34 +113,27 @@ pub(crate) async fn verify_request<WP: Wallet + ?Sized>(
         .context("unable to decode Authorization Request Object JWT")?
         .try_into()?;
 
-    validate_request_against_metadata::<WP>(
-        profile,
-        &request,
-        profile.wallet_metadata(),
-        http_client,
-    )
-    .await?;
+    validate_request_against_metadata(wallet.wallet_metadata(), &request, http_client).await?;
 
     let client_id_scheme = request.client_id_scheme();
 
     match client_id_scheme {
-        ClientIdScheme::Did => profile.did(&request, jwt).await?,
-        ClientIdScheme::EntityId => profile.entity_id(&request, jwt).await?,
-        ClientIdScheme::PreRegistered => profile.preregistered(&request, jwt).await?,
-        ClientIdScheme::RedirectUri => profile.redirect_uri(&request, jwt).await?,
-        ClientIdScheme::VerifierAttestation => profile.verifier_attestation(&request, jwt).await?,
-        ClientIdScheme::X509SanDns => profile.x509_san_dns(&request, jwt).await?,
-        ClientIdScheme::X509SanUri => profile.x509_san_uri(&request, jwt).await?,
-        ClientIdScheme::Other(scheme) => profile.other(scheme, &request, jwt).await?,
+        ClientIdScheme::Did => wallet.did(&request, jwt).await?,
+        ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
+        ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
+        ClientIdScheme::RedirectUri => wallet.redirect_uri(&request, jwt).await?,
+        ClientIdScheme::VerifierAttestation => wallet.verifier_attestation(&request, jwt).await?,
+        ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
+        ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
+        ClientIdScheme::Other(scheme) => wallet.other(scheme, &request, jwt).await?,
     };
 
     Ok(request)
 }
 
-pub(crate) async fn validate_request_against_metadata<P: Profile + ?Sized>(
-    profile: &P,
-    request: &AuthorizationRequestObject,
+pub(crate) async fn validate_request_against_metadata(
     wallet_metadata: &WalletMetadata,
+    request: &AuthorizationRequestObject,
     http_client: &reqwest::Client,
 ) -> Result<(), Error> {
     let client_id_scheme = request.client_id_scheme();
@@ -174,7 +186,5 @@ pub(crate) async fn validate_request_against_metadata<P: Profile + ?Sized>(
         }
     }
 
-    profile
-        .validate_request(wallet_metadata, request)
-        .context("unable to validate request according to profile-specific checks:")
+    Ok(())
 }

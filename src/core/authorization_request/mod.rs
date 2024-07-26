@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use url::Url;
 
+use crate::wallet::Wallet;
+
 use self::{
     parameters::{
         ClientId, ClientIdScheme, Nonce, PresentationDefinition, PresentationDefinitionUri,
@@ -15,7 +17,6 @@ use self::{
 
 use super::{
     object::{ParsingErrorContext, UntypedObject},
-    profile::Wallet,
     util::default_http_client,
 };
 
@@ -64,9 +65,9 @@ impl AuthorizationRequest {
     /// [RequestObject].
     ///
     /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.
-    pub async fn validate_with_http_client<WP: Wallet + ?Sized>(
+    pub async fn validate_with_http_client<W: Wallet + ?Sized>(
         self,
-        wallet_profile: &WP,
+        wallet: &W,
         http_client: &reqwest::Client,
     ) -> Result<AuthorizationRequestObject> {
         let jwt = match self.request_indirection {
@@ -82,7 +83,7 @@ impl AuthorizationRequest {
                 .await
                 .context(format!("failed to parse data from {url}"))?,
         };
-        let aro = verify_request(wallet_profile, jwt, http_client)
+        let aro = verify_request(wallet, jwt, http_client)
             .await
             .context("unable to validate Authorization Request")?;
         if self.client_id.as_str() != aro.client_id().0.as_str() {
@@ -93,20 +94,6 @@ impl AuthorizationRequest {
             );
         }
         Ok(aro)
-    }
-
-    /// Validate the [AuthorizationRequest] according to the client_id scheme and return the parsed
-    /// [RequestObject].
-    ///
-    /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.
-    ///
-    /// This method uses the library default http client to fetch the request object if it is passed by reference.
-    pub async fn validate<WP: Wallet + ?Sized>(
-        self,
-        wallet_profile: &WP,
-    ) -> Result<AuthorizationRequestObject> {
-        self.validate_with_http_client(wallet_profile, &default_http_client()?)
-            .await
     }
 
     /// Encode as [Url], using the `authorization_endpoint` as a base.
