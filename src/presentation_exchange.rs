@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 // TODO does openidconnect have a Request type?
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ResponseRequest {
-    _id_token: serde_json::Value, // IdTokenSIOP, // CoreIdTokenClaims,
-    _vp_token: VpToken,
+    id_token: serde_json::Value, // IdTokenSIOP, // CoreIdTokenClaims,
+    vp_token: VpToken,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -129,10 +129,10 @@ pub struct DescriptorMap {
     pub id: String,
     pub format: String, // TODO should be enum of supported formats
     pub path: String,
-    //pub path_nested: Option<Box<DescriptorMap>>,
+    pub path_nested: Option<Box<DescriptorMap>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SubmissionRequirementBaseBase {
     _name: Option<String>,
     _purpose: Option<String>,
@@ -140,7 +140,7 @@ pub struct SubmissionRequirementBaseBase {
     _property_set: Option<Map<String, serde_json::Value>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SubmissionRequirementBase {
     From {
@@ -155,14 +155,14 @@ pub enum SubmissionRequirementBase {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "rule", rename_all = "snake_case")]
 pub enum SubmissionRequirement {
     All(SubmissionRequirementBase),
     Pick(SubmissionRequirementPick),
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SubmissionRequirementPick {
     #[serde(flatten)]
     _submission_requirement: SubmissionRequirementBase,
@@ -224,9 +224,9 @@ pub(crate) mod tests {
         // assert_eq!(serde_json::to_value(res).unwrap(), value);
     }
 
-    #[derive(Deserialize)]
+    #[derive(Serialize, Deserialize)]
     pub struct PresentationDefinitionTest {
-        _presentation_definition: PresentationDefinition,
+        presentation_definition: PresentationDefinition,
     }
 
     #[test]
@@ -254,9 +254,9 @@ pub(crate) mod tests {
     }
 
     // TODO use VP type?
-    #[derive(Deserialize)]
+    #[derive(Serialize, Deserialize)]
     pub struct PresentationSubmissionTest {
-        _presentation_submission: PresentationSubmission,
+        presentation_submission: PresentationSubmission,
     }
 
     #[test]
@@ -286,9 +286,9 @@ pub(crate) mod tests {
         }
     }
 
-    #[derive(Deserialize)]
+    #[derive(Serialize, Deserialize)]
     pub struct SubmissionRequirementsTest {
-        _submission_requirements: Vec<SubmissionRequirement>,
+        submission_requirements: Vec<SubmissionRequirement>,
     }
 
     #[test]
