@@ -37,7 +37,7 @@ impl Verifier {
     }
 
     /// Begin building a new authorization request (credential presentation).
-    pub fn build_authorization_request<'a>(&'a self) -> RequestBuilder<'a> {
+    pub fn build_authorization_request(&self) -> RequestBuilder<'_> {
         RequestBuilder::new(self)
     }
 

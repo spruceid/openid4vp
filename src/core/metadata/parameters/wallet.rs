@@ -250,7 +250,7 @@ mod test {
 
     #[test]
     fn response_types_supported() {
-        let exp = vec![ResponseType::VpToken];
+        let exp = [ResponseType::VpToken];
         let ResponseTypesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));
         assert!(v.iter().all(|x| exp.contains(x)));
@@ -258,7 +258,7 @@ mod test {
 
     #[test]
     fn client_id_schemes_supported() {
-        let exp = vec![ClientIdScheme::RedirectUri, ClientIdScheme::X509SanUri];
+        let exp = [ClientIdScheme::RedirectUri, ClientIdScheme::X509SanUri];
         let ClientIdSchemesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));
         assert!(v.iter().all(|x| exp.contains(x)));
@@ -266,7 +266,7 @@ mod test {
 
     #[test]
     fn request_object_signing_alg_values_supported() {
-        let exp = vec!["ES256".to_string()];
+        let exp = ["ES256".to_string()];
         let RequestObjectSigningAlgValuesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));
         assert!(v.iter().all(|x| exp.contains(x)));
@@ -284,7 +284,7 @@ mod test {
 
     #[test]
     fn authorization_encryption_alg_values_supported() {
-        let exp = vec!["ECDH-ES".to_string()];
+        let exp = ["ECDH-ES".to_string()];
         let AuthorizationEncryptionAlgValuesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));
         assert!(v.iter().all(|x| exp.contains(x)));
@@ -292,7 +292,7 @@ mod test {
 
     #[test]
     fn authorization_encryption_enc_values_supported() {
-        let exp = vec!["A256GCM".to_string()];
+        let exp = ["A256GCM".to_string()];
         let AuthorizationEncryptionEncValuesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));
         assert!(v.iter().all(|x| exp.contains(x)));

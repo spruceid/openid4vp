@@ -58,7 +58,7 @@ pub fn validate<V: Verifier>(
         bail!("'x5c' header was not an array")
     };
 
-    let Json::String(b64_x509) = x5chain.get(0).context("'x5c' was an empty array")? else {
+    let Json::String(b64_x509) = x5chain.first().context("'x5c' was an empty array")? else {
         bail!("'x5c' header was not an array of strings");
     };
 

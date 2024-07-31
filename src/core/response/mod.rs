@@ -19,11 +19,11 @@ pub enum AuthorizationResponse {
 
 impl AuthorizationResponse {
     pub fn from_x_www_form_urlencoded(bytes: &[u8]) -> Result<Self> {
-        if let Ok(jwt) = serde_urlencoded::from_bytes(&bytes) {
+        if let Ok(jwt) = serde_urlencoded::from_bytes(bytes) {
             return Ok(Self::Jwt(jwt));
         }
 
-        let flattened = serde_urlencoded::from_bytes::<BTreeMap<String, String>>(&bytes)
+        let flattened = serde_urlencoded::from_bytes::<BTreeMap<String, String>>(bytes)
             .context("failed to construct flat map")?;
         let map = flattened
             .into_iter()
@@ -33,7 +33,7 @@ impl AuthorizationResponse {
             })
             .collect();
 
-        return Ok(Self::Unencoded(UntypedObject(map).try_into()?));
+        Ok(Self::Unencoded(UntypedObject(map).try_into()?))
     }
 }
 

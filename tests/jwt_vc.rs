@@ -127,7 +127,7 @@ impl RequestVerifier for JwtVcWallet {
     ) -> Result<()> {
         did::verify_with_resolver(
             self.metadata(),
-            &decoded_request,
+            decoded_request,
             request_jwt,
             Some(self.trusted_dids()),
             DIDKey.to_resolver(),

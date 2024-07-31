@@ -94,7 +94,7 @@ impl fmt::Display for ClientIdScheme {
             ClientIdScheme::EntityId => ENTITY_ID,
             ClientIdScheme::PreRegistered => PREREGISTERED,
             ClientIdScheme::RedirectUri => REDIRECT_URI,
-            ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION.into(),
+            ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION,
             ClientIdScheme::X509SanDns => X509_SAN_DNS,
             ClientIdScheme::X509SanUri => X509_SAN_URI,
             ClientIdScheme::Other(o) => o,

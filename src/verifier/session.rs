@@ -92,7 +92,7 @@ impl SessionStore for MemoryStore {
     }
 
     async fn remove_session(&self, uuid: Uuid) -> Result<()> {
-        if let Some(_) = self.store.try_lock()?.remove(&uuid) {
+        if self.store.try_lock()?.remove(&uuid).is_some() {
             return Ok(());
         }
 
