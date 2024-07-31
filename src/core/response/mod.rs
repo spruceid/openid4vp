@@ -1,5 +1,8 @@
-use anyhow::Error;
+use std::collections::BTreeMap;
+
+use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use url::Url;
 
 use self::parameters::{PresentationSubmission, VpToken};
@@ -14,6 +17,26 @@ pub enum AuthorizationResponse {
     Jwt(JwtAuthorizationResponse),
 }
 
+impl AuthorizationResponse {
+    pub fn from_x_www_form_urlencoded(bytes: &[u8]) -> Result<Self> {
+        if let Ok(jwt) = serde_urlencoded::from_bytes(&bytes) {
+            return Ok(Self::Jwt(jwt));
+        }
+
+        let flattened = serde_urlencoded::from_bytes::<BTreeMap<String, String>>(&bytes)
+            .context("failed to construct flat map")?;
+        let map = flattened
+            .into_iter()
+            .map(|(k, v)| {
+                let v = serde_json::from_str::<Value>(&v).unwrap_or(Value::String(v));
+                (k, v)
+            })
+            .collect();
+
+        return Ok(Self::Unencoded(UntypedObject(map).try_into()?));
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UnencodedAuthorizationResponse(
     pub UntypedObject,
@@ -22,12 +45,13 @@ pub struct UnencodedAuthorizationResponse(
 );
 
 impl UnencodedAuthorizationResponse {
-    pub fn as_query(self) -> Result<String, Error> {
-        Ok(serde_urlencoded::to_string(self.0)?)
-    }
-
-    pub fn serializable(self) -> UntypedObject {
-        self.0
+    /// Encode the Authorization Response as 'application/x-www-form-urlencoded'.
+    pub fn into_x_www_form_urlencoded(self) -> Result<String> {
+        let mut inner = self.0;
+        inner.insert(self.1);
+        inner.insert(self.2);
+        serde_urlencoded::to_string(inner.flatten_for_form()?)
+            .context("failed to encode response as 'application/x-www-form-urlencoded'")
     }
 }
 
@@ -35,6 +59,14 @@ impl UnencodedAuthorizationResponse {
 pub struct JwtAuthorizationResponse {
     /// Can be JWT or JWE.
     pub response: String,
+}
+
+impl JwtAuthorizationResponse {
+    /// Encode the Authorization Response as 'application/x-www-form-urlencoded'.
+    pub fn into_x_www_form_urlencoded(self) -> Result<String> {
+        serde_urlencoded::to_string(self)
+            .context("failed to encode response as 'application/x-www-form-urlencoded'")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,5 +81,45 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
         let vp_token = value.get().parsing_error()?;
         let presentation_submission = value.get().parsing_error()?;
         Ok(Self(value, vp_token, presentation_submission))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use serde_json::json;
+
+    use crate::core::object::UntypedObject;
+
+    use super::{JwtAuthorizationResponse, UnencodedAuthorizationResponse};
+
+    #[test]
+    fn jwt_authorization_response_to_form_urlencoded() {
+        let response = JwtAuthorizationResponse {
+            response: "header.body.signature".into(),
+        };
+        assert_eq!(
+            response.into_x_www_form_urlencoded().unwrap(),
+            "response=header.body.signature",
+        )
+    }
+
+    #[test]
+    fn unencoded_authorization_response_to_form_urlencoded() {
+        let object: UntypedObject = serde_json::from_value(json!(
+            {
+                "presentation_submission": {
+                    "id": "id",
+                    "definition_id": "definition_id",
+                    "descriptor_map": []
+                },
+                "vp_token": "string"
+            }
+        ))
+        .unwrap();
+        let response = UnencodedAuthorizationResponse::try_from(object).unwrap();
+        assert_eq!(
+            response.into_x_www_form_urlencoded().unwrap(),
+            "presentation_submission=%7B%22definition_id%22%3A%22definition_id%22%2C%22descriptor_map%22%3A%5B%5D%2C%22id%22%3A%22id%22%7D&vp_token=string",
+        )
     }
 }

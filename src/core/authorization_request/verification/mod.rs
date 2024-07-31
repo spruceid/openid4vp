@@ -1,14 +1,11 @@
 use crate::{
     core::{
-        metadata::{
-            parameters::{
-                verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
-                wallet::{
-                    AuthorizationEncryptionAlgValuesSupported,
-                    AuthorizationEncryptionEncValuesSupported,
-                },
+        metadata::parameters::{
+            verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
+            wallet::{
+                AuthorizationEncryptionAlgValuesSupported,
+                AuthorizationEncryptionEncValuesSupported, ClientIdSchemesSupported,
             },
-            WalletMetadata,
         },
         object::{ParsingErrorContext, TypedParameter, UntypedObject},
     },
@@ -23,8 +20,8 @@ use super::{
 };
 
 pub mod did;
-pub mod x509_san_dns;
-pub mod x509_san_uri;
+pub mod verifier;
+pub mod x509_san;
 
 /// Verifies Authorization Request Objects.
 #[allow(unused_variables)]
@@ -107,13 +104,12 @@ pub trait RequestVerifier {
 pub(crate) async fn verify_request<W: Wallet + ?Sized>(
     wallet: &W,
     jwt: String,
-    http_client: &reqwest::Client,
 ) -> Result<AuthorizationRequestObject> {
     let request: AuthorizationRequestObject = ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
         .context("unable to decode Authorization Request Object JWT")?
         .try_into()?;
 
-    validate_request_against_metadata(wallet.wallet_metadata(), &request, http_client).await?;
+    validate_request_against_metadata(wallet, &request).await?;
 
     let client_id_scheme = request.client_id_scheme();
 
@@ -131,14 +127,15 @@ pub(crate) async fn verify_request<W: Wallet + ?Sized>(
     Ok(request)
 }
 
-pub(crate) async fn validate_request_against_metadata(
-    wallet_metadata: &WalletMetadata,
+pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
+    wallet: &W,
     request: &AuthorizationRequestObject,
-    http_client: &reqwest::Client,
 ) -> Result<(), Error> {
+    let wallet_metadata = wallet.metadata();
+
     let client_id_scheme = request.client_id_scheme();
     if !wallet_metadata
-        .client_id_schemes_supported()
+        .get_or_default::<ClientIdSchemesSupported>()?
         .0
         .contains(client_id_scheme)
     {
@@ -148,7 +145,7 @@ pub(crate) async fn validate_request_against_metadata(
         )
     }
 
-    let client_metadata = ClientMetadata::resolve_with_http_client(request, http_client)
+    let client_metadata = ClientMetadata::resolve(request, wallet.http_client())
         .await?
         .0;
 

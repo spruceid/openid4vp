@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
@@ -60,7 +60,7 @@ impl UntypedObject {
     }
 
     /// Flatten the structure for posting as a form.
-    pub(crate) fn flatten_for_form(self) -> Result<HashMap<String, String>> {
+    pub(crate) fn flatten_for_form(self) -> Result<BTreeMap<String, String>> {
         self.0
             .into_iter()
             .map(|(k, v)| {

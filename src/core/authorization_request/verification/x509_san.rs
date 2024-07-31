@@ -1,23 +1,27 @@
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Context, Result};
 use base64::prelude::*;
-use p256::ecdsa::signature::Verifier as _;
 use serde_json::{Map, Value as Json};
-use tracing::{debug, warn};
+use tracing::debug;
 use x509_cert::{
     der::{referenced::OwnedToRef, Decode},
     ext::pkix::{name::GeneralName, SubjectAltName},
-    spki::SubjectPublicKeyInfoRef,
     Certificate,
 };
 
-use crate::core::{
-    authorization_request::AuthorizationRequestObject,
-    metadata::{parameters::wallet::RequestObjectSigningAlgValuesSupported, WalletMetadata},
-    object::ParsingErrorContext,
+use crate::{
+    core::{
+        authorization_request::AuthorizationRequestObject,
+        metadata::{parameters::wallet::RequestObjectSigningAlgValuesSupported, WalletMetadata},
+        object::ParsingErrorContext,
+    },
+    verifier::client::X509SanVariant,
 };
 
-/// Default implementation of request validation for `client_id_scheme` `x509_san_uri`.
+use super::verifier::Verifier;
+
+/// Default implementation of request validation for `client_id_scheme` `x509_san_dns`.
 pub fn validate<V: Verifier>(
+    x509_san_variant: X509SanVariant,
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
@@ -65,21 +69,7 @@ pub fn validate<V: Verifier>(
     let leaf_cert = Certificate::from_der(&leaf_cert_der)
         .context("leaf certificate in 'x5c' was not valid DER")?;
 
-    // NOTE: Fallback to common name is removed in latest drafts of OID4VP.
-    if leaf_cert.tbs_certificate.get::<SubjectAltName>() == Ok(None) {
-        warn!("x509 certificate does not contain Subject Alternative Name, falling back to Common Name");
-        if !leaf_cert
-            .tbs_certificate
-            .subject
-            .0
-            .iter()
-            .flat_map(|n| n.0.iter())
-            .filter_map(|n| n.to_string().strip_prefix("CN=").map(ToOwned::to_owned))
-            .any(|cn| cn == client_id)
-        {
-            bail!("client_id does not match Common Name and x509 certificate does not contain Subject Alternative Name")
-        }
-    } else if !leaf_cert
+    if !leaf_cert
         .tbs_certificate
         .filter::<SubjectAltName>()
         .filter_map(|r| match r {
@@ -90,9 +80,16 @@ pub fn validate<V: Verifier>(
             }
         })
         .flatten()
-        .filter_map(|gn| match gn {
-            GeneralName::UniformResourceIdentifier(uri) => Some(uri.to_string()),
-            _ => {
+        .filter_map(|gn| match (gn, x509_san_variant) {
+            (GeneralName::DnsName(uri), X509SanVariant::Dns) => Some(uri.to_string()),
+            (gn, X509SanVariant::Dns) => {
+                debug!("found non-DNS SAN: {gn:?}");
+                None
+            }
+            (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Uri) => {
+                Some(uri.to_string())
+            }
+            (gn, X509SanVariant::Uri) => {
                 debug!("found non-URI SAN: {gn:?}");
                 None
             }
@@ -125,31 +122,4 @@ pub fn validate<V: Verifier>(
         .context("request signature could not be verified")?;
 
     Ok(())
-}
-
-pub trait Verifier: Sized {
-    /// Construct a [Verifier] from [SubjectPublicKeyInfoRef].
-    ///
-    /// ## Params
-    /// * `spki` - the public key information necessary to construct a [Verifier].
-    /// * `algorithm` - the value taken from the `alg` header of the request, to hint at what curve should be used by the [Verifier].
-    fn from_spki(spki: SubjectPublicKeyInfoRef<'_>, algorithm: String) -> Result<Self>;
-    fn verify(&self, payload: &[u8], signature: &[u8]) -> Result<()>;
-}
-
-#[derive(Debug, Clone)]
-pub struct P256Verifier(p256::ecdsa::VerifyingKey);
-
-impl Verifier for P256Verifier {
-    fn from_spki(spki: SubjectPublicKeyInfoRef<'_>, algorithm: String) -> Result<Self> {
-        if algorithm != "ES256" {
-            bail!("P256Verifier cannot verify requests signed with '{algorithm}'")
-        }
-        spki.try_into().map(Self).map_err(Error::from)
-    }
-
-    fn verify(&self, payload: &[u8], signature: &[u8]) -> Result<()> {
-        let signature = p256::ecdsa::Signature::from_slice(signature)?;
-        self.0.verify(payload, &signature).map_err(Error::from)
-    }
 }

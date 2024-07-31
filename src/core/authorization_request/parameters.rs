@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::core::{
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    util::default_http_client,
+    util::{base_request, HttpClient},
 };
 use anyhow::{bail, Context, Error, Ok};
 use serde::{Deserialize, Serialize};
@@ -130,40 +130,39 @@ impl ClientMetadata {
     ///
     /// If the client metadata is not passed by reference or value if the Authorization Request Object,
     /// then this function will return an error.
-    ///
-    /// Uses the library's default http client.
-    pub async fn resolve(request: &AuthorizationRequestObject) -> Result<Self, Error> {
-        Self::resolve_with_http_client(request, &default_http_client()?).await
-    }
-
-    /// Resolves the client metadata from the Authorization Request Object.
-    ///
-    /// If the client metadata is not passed by reference or value if the Authorization Request Object,
-    /// then this function will return an error.
-    pub async fn resolve_with_http_client(
+    pub async fn resolve<H: HttpClient>(
         request: &AuthorizationRequestObject,
-        http_client: &reqwest::Client,
+        http_client: &H,
     ) -> Result<Self, Error> {
         if let Some(metadata) = request.get() {
             return metadata;
         }
 
         if let Some(metadata_uri) = request.get::<ClientMetadataUri>() {
-            let uri = metadata_uri.parsing_error()?;
-            return http_client
-                .get(uri.0.clone())
-                .send()
+            let uri = metadata_uri.parsing_error()?.0;
+            let request = base_request()
+                .method("GET")
+                .uri(uri.to_string())
+                .body(vec![])
+                .context("failed to build client metadata request")?;
+
+            let response = http_client
+                .execute(request)
                 .await
-                .context(format!("failed to GET {}", uri.0))?
-                .error_for_status()
-                .context(format!("failed to GET {}", uri.0))?
-                .json()
-                .await
-                .map(ClientMetadata)
+                .context(format!("failed to make client metadata request at {uri}"))?;
+
+            let status = response.status();
+
+            if !status.is_success() {
+                bail!("client metadata request was unsuccessful (status: {status})")
+            }
+
+            return serde_json::from_slice::<Json>(response.body())
                 .context(format!(
-                    "could not parse response from GET '{}' as JSON",
-                    uri.0
-                ));
+                "failed to parse client metadata response as JSON from {uri} (status: {status})"
+            ))?
+                .try_into()
+                .context("failed to parse client metadata from JSON");
         }
 
         bail!("the client metadata was not passed by reference or value")
@@ -281,7 +280,7 @@ impl TryFrom<Json> for ResponseUri {
 const DIRECT_POST: &str = "direct_post";
 const DIRECT_POST_JWT: &str = "direct_post.jwt";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(into = "String", from = "String")]
 pub enum ResponseMode {
     /// The `direct_post` response mode as defined in OID4VP.

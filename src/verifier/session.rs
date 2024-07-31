@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
 use anyhow::{bail, Error, Ok, Result};
 use async_trait::async_trait;
@@ -43,7 +43,7 @@ pub enum Outcome {
 
 /// Storage interface for session information.
 #[async_trait]
-pub trait SessionStore {
+pub trait SessionStore: Debug {
     /// Store a new authorization request session.
     async fn initiate(&self, session: Session) -> Result<()>;
 

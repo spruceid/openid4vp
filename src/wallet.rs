@@ -1,5 +1,6 @@
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
+use http::header::CONTENT_TYPE;
 use tracing::warn;
 use url::Url;
 
@@ -10,121 +11,78 @@ use crate::core::{
     },
     metadata::WalletMetadata,
     response::{AuthorizationResponse, PostRedirection},
-    util::default_http_client,
+    util::{base_request, HttpClient},
 };
 
 #[async_trait]
 pub trait Wallet: RequestVerifier + Sync {
-    type PresentationHandler: PresentationHandler;
+    type HttpClient: HttpClient + Send + Sync;
 
-    fn wallet_metadata(&self) -> &WalletMetadata;
+    fn metadata(&self) -> &WalletMetadata;
+    fn http_client(&self) -> &Self::HttpClient;
 
-    async fn to_handler(
-        &self,
-        request_object: &AuthorizationRequestObject,
-    ) -> Result<Self::PresentationHandler, Error>;
-
-    async fn handle_request_with_http_client(
-        &self,
-        url: Url,
-        http_client: &reqwest::Client,
-    ) -> Result<Self::PresentationHandler, Error> {
-        let ar =
-            AuthorizationRequest::from_url(url, &self.wallet_metadata().authorization_endpoint().0)
-                .context("unable to parse authorization request")?;
-        let aro = ar
-            .validate_with_http_client(self, http_client)
+    async fn validate_request(&self, url: Url) -> Result<AuthorizationRequestObject> {
+        let ar = AuthorizationRequest::from_url(url, &self.metadata().authorization_endpoint().0)
+            .context("unable to parse authorization request")?;
+        ar.validate(self)
             .await
-            .context("unable to validate authorization request")?;
-        self.to_handler(&aro).await
+            .context("unable to validate authorization request")
     }
 
-    /// Uses library default http client.
-    async fn handle_request(&self, url: Url) -> Result<Self::PresentationHandler, Error> {
-        self.handle_request_with_http_client(url, &default_http_client()?)
-            .await
-    }
-
-    async fn submit_response_with_http_client(
+    async fn submit_response(
         &self,
-        handler: Self::PresentationHandler,
-        http_client: reqwest::Client,
-    ) -> Result<Option<Url>, Error> {
-        let aro = handler.request().clone();
-        let response = handler.to_response()?;
-        let return_uri = aro.return_uri();
-        match aro.response_mode() {
+        request: AuthorizationRequestObject,
+        response: AuthorizationResponse,
+    ) -> Result<Option<Url>> {
+        let mut http_request_builder = base_request().uri(request.return_uri().as_str());
+
+        let http_request_body = match request.response_mode() {
             ResponseMode::DirectPost => {
-                let AuthorizationResponse::Unencoded(response_object) = response else {
+                http_request_builder = http_request_builder
+                    .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .method("POST");
+
+                let AuthorizationResponse::Unencoded(unencoded) = response else {
                     bail!("unexpected AuthorizationResponse format")
                 };
-                let body = response_object
-                    .serializable()
-                    .flatten_for_form()
-                    .context("unable to flatten authorization response")?;
-                let response = http_client
-                    .post(return_uri.clone())
-                    .form(&body)
-                    .send()
-                    .await
-                    .context("failed to post authorization response")?;
 
-                let status = response.status();
-                let text = response
-                    .text()
-                    .await
-                    .context("could not parse response as a UTF8 string")?;
-
-                if !status.is_success() {
-                    bail!("error submitting authorization response ({status}): {text}")
-                }
-
-                Ok(serde_json::from_str(&text)
-                    .map_err(|e| warn!("response did not contain a redirect: {e}"))
-                    .ok()
-                    .map(|PostRedirection { redirect_uri }| redirect_uri))
+                unencoded.into_x_www_form_urlencoded()?.into_bytes()
             }
             ResponseMode::DirectPostJwt => {
+                http_request_builder = http_request_builder
+                    .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .method("POST");
+
                 let AuthorizationResponse::Jwt(jwt) = response else {
                     bail!("unexpected AuthorizationResponse format")
                 };
-                let response = http_client
-                    .post(return_uri.clone())
-                    .form(&jwt)
-                    .send()
-                    .await
-                    .context("failed to post authorization response")?;
 
-                let status = response.status();
-                let text = response
-                    .text()
-                    .await
-                    .context("could not parse response as a UTF8 string")?;
-
-                if !status.is_success() {
-                    bail!("error submitting authorization response ({status}): {text}")
-                }
-
-                Ok(serde_json::from_str(&text)
-                    .map_err(|e| warn!("response did not contain a redirect: {e}"))
-                    .ok()
-                    .map(|PostRedirection { redirect_uri }| redirect_uri))
+                jwt.into_x_www_form_urlencoded()?.into_bytes()
             }
             ResponseMode::Unsupported(rm) => bail!("unsupported response_mode {rm}"),
-        }
-    }
+        };
 
-    /// Uses library default http client.
-    async fn submit_response(
-        &self,
-        handler: Self::PresentationHandler,
-    ) -> Result<Option<Url>, Error> {
-        self.submit_response_with_http_client(handler, default_http_client()?)
+        let http_request = http_request_builder
+            .body(http_request_body)
+            .context("failed to construct presentation submission request")?;
+        let http_response = self
+            .http_client()
+            .execute(http_request)
             .await
-    }
-}
+            .context("failed to make authorization response request")?;
 
-pub trait PresentationHandler: Send {
-    fn request(&self) -> &AuthorizationRequestObject;
-    fn to_response(self) -> Result<AuthorizationResponse, Error>;
+        let status = http_response.status();
+        let Ok(body) = String::from_utf8(http_response.into_body()) else {
+            bail!("failed to parse authorization response response as UTF-8 (status: {status})")
+        };
+
+        if !status.is_success() {
+            bail!("authorization response request was unsuccessful (status: {status}): {body}")
+        }
+
+        Ok(serde_json::from_str(&body)
+            .map_err(|e| warn!("response did not contain a redirect: {e}"))
+            .ok()
+            .map(|PostRedirection { redirect_uri }| redirect_uri))
+    }
 }

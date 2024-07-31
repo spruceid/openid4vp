@@ -5,10 +5,14 @@ use uuid::Uuid;
 use crate::{
     core::{
         authorization_request::{
-            parameters::{ResponseMode, ResponseUri},
+            self,
+            parameters::{ResponseMode, ResponseType, ResponseUri},
             AuthorizationRequest, AuthorizationRequestObject, RequestIndirection,
         },
-        metadata::{parameters::wallet::AuthorizationEndpoint, WalletMetadata},
+        metadata::{
+            parameters::wallet::{AuthorizationEndpoint, ClientIdSchemesSupported},
+            WalletMetadata,
+        },
         object::{ParsingErrorContext, TypedParameter, UntypedObject},
     },
     presentation_exchange::PresentationDefinition,
@@ -67,6 +71,19 @@ impl<'a> RequestBuilder<'a> {
             bail!("presentation definition is required, see `with_presentation_definition`")
         };
 
+        let _ = self.request_parameters.insert(
+            authorization_request::parameters::PresentationDefinition::try_from(
+                presentation_definition.clone(),
+            )
+            .context("failed to construct PresentationDefinition request parameter")?,
+        );
+
+        let _ = self
+            .request_parameters
+            .get::<ResponseType>()
+            .context("response type is required, see `with_request_parameter`")?
+            .context("error occurred when retrieving response type")?;
+
         match self
             .request_parameters
             .get::<ResponseMode>()
@@ -87,7 +104,7 @@ impl<'a> RequestBuilder<'a> {
         }
 
         if !wallet_metadata
-            .client_id_schemes_supported()
+            .get_or_default::<ClientIdSchemesSupported>()?
             .0
             .contains(client_id_scheme)
         {

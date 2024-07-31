@@ -20,7 +20,7 @@ use crate::core::authorization_request::{
 use super::request_signer::RequestSigner;
 
 #[async_trait]
-pub trait Client {
+pub trait Client: Debug {
     fn id(&self) -> &ClientId;
 
     fn scheme(&self) -> &ClientIdScheme;
@@ -31,20 +31,18 @@ pub trait Client {
     ) -> Result<String>;
 }
 
-pub trait Signer: RequestSigner + Debug + Send + Sync {}
-
 /// A [Client] with the `did` Client Identifier.
 #[derive(Debug, Clone)]
 pub struct DIDClient {
     id: ClientId,
     vm: String,
-    signer: Arc<dyn Signer>,
+    signer: Arc<dyn RequestSigner + Send + Sync>,
 }
 
 impl DIDClient {
     pub async fn new(
         vm: String,
-        signer: Arc<dyn Signer>,
+        signer: Arc<dyn RequestSigner + Send + Sync>,
         resolver: &dyn DIDResolver,
     ) -> Result<Self> {
         let (id, _f) = vm.rsplit_once('#').context(format!(
@@ -74,14 +72,14 @@ impl DIDClient {
 pub struct X509SanClient {
     id: ClientId,
     x5c: Vec<Certificate>,
-    signer: Arc<dyn Signer>,
+    signer: Arc<dyn RequestSigner + Send + Sync>,
     variant: X509SanVariant,
 }
 
 impl X509SanClient {
     pub fn new(
         x5c: Vec<Certificate>,
-        signer: Arc<dyn Signer>,
+        signer: Arc<dyn RequestSigner + Send + Sync>,
         variant: X509SanVariant,
     ) -> Result<Self> {
         let leaf = &x5c[0];

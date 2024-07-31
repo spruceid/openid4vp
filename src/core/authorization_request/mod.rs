@@ -17,7 +17,7 @@ use self::{
 
 use super::{
     object::{ParsingErrorContext, UntypedObject},
-    util::default_http_client,
+    util::{base_request, HttpClient},
 };
 
 pub mod parameters;
@@ -65,25 +65,42 @@ impl AuthorizationRequest {
     /// [RequestObject].
     ///
     /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.
-    pub async fn validate_with_http_client<W: Wallet + ?Sized>(
+    pub async fn validate<W: Wallet + ?Sized>(
         self,
         wallet: &W,
-        http_client: &reqwest::Client,
     ) -> Result<AuthorizationRequestObject> {
         let jwt = match self.request_indirection {
             RequestIndirection::ByValue(jwt) => jwt,
-            RequestIndirection::ByReference(url) => http_client
-                .get(url.clone())
-                .send()
-                .await
-                .context(format!("failed to GET {url}"))?
-                .error_for_status()
-                .context(format!("failed to GET {url}"))?
-                .text()
-                .await
-                .context(format!("failed to parse data from {url}"))?,
+            RequestIndirection::ByReference(url) => {
+                let request = base_request()
+                    .method("GET")
+                    .uri(url.to_string())
+                    .body(vec![])
+                    .context("failed to build authorization request request")?;
+
+                let response = wallet
+                    .http_client()
+                    .execute(request)
+                    .await
+                    .context(format!(
+                        "failed to make authorization request request at {url}"
+                    ))?;
+
+                let status = response.status();
+                let Ok(body) = String::from_utf8(response.into_body()) else {
+                    bail!("failed to parse authorization request response as UTF-8 from {url} (status: {status})")
+                };
+
+                if !status.is_success() {
+                    bail!(
+                        "authorization request request was unsuccessful (status: {status}): {body}"
+                    )
+                }
+
+                body
+            }
         };
-        let aro = verify_request(wallet, jwt, http_client)
+        let aro = verify_request(wallet, jwt)
             .await
             .context("unable to validate Authorization Request")?;
         if self.client_id.as_str() != aro.client_id().0.as_str() {
@@ -187,38 +204,37 @@ impl AuthorizationRequestObject {
         &self.2
     }
 
-    pub async fn resolve_presentation_definition_with_http_client(
+    pub async fn resolve_presentation_definition<H: HttpClient>(
         &self,
-        http_client: reqwest::Client,
+        http_client: &H,
     ) -> Result<PresentationDefinition> {
         match &self.5 {
             PresentationDefinitionIndirection::ByValue(by_value) => Ok(by_value.clone()),
             PresentationDefinitionIndirection::ByReference(by_reference) => {
-                let value: Json = http_client
-                    .get(by_reference.clone())
-                    .send()
-                    .await
+                let request = base_request()
+                    .method("GET")
+                    .uri(by_reference.to_string())
+                    .body(vec![])
+                    .context("failed to build presentation definition request")?;
+
+                let response = http_client.execute(request).await.context(format!(
+                    "failed to make presentation definition request at {by_reference}"
+                ))?;
+
+                let status = response.status();
+
+                if !status.is_success() {
+                    bail!("presentation definition request was unsuccessful (status: {status})")
+                }
+
+                serde_json::from_slice::<Json>(response.body())
                     .context(format!(
-                        "failed to GET Presentation Definition from '{by_reference}'"
-                    ))?
-                    .error_for_status()
-                    .context(format!(
-                        "failed to GET Presentation Definition from '{by_reference}'"
-                    ))?
-                    .json()
-                    .await
-                    .context(format!(
-                        "response received from '{by_reference}' was not JSON"
-                    ))?;
-                value.try_into()
+                    "failed to parse presentation definition response as JSON from {by_reference} (status: {status})"
+                ))?
+                .try_into()
+                .context("failed to parse presentation definition from JSON")
             }
         }
-    }
-
-    /// Uses the default library http client.
-    pub async fn resolve_presentation_definition(&self) -> Result<PresentationDefinition> {
-        self.resolve_presentation_definition_with_http_client(default_http_client()?)
-            .await
     }
 
     pub fn is_id_token_requested(&self) -> Option<bool> {

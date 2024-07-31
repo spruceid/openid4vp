@@ -62,6 +62,17 @@ impl PresentationSubmission {
     }
 }
 
+impl TryFrom<crate::presentation_exchange::PresentationSubmission> for PresentationSubmission {
+    type Error = Error;
+
+    fn try_from(
+        parsed: crate::presentation_exchange::PresentationSubmission,
+    ) -> Result<Self, Self::Error> {
+        let raw = serde_json::to_value(parsed.clone())?;
+        Ok(Self { raw, parsed })
+    }
+}
+
 impl TypedParameter for PresentationSubmission {
     const KEY: &'static str = "presentation_submission";
 }
