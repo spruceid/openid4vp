@@ -17,7 +17,7 @@ use self::{
 
 use super::{
     object::{ParsingErrorContext, UntypedObject},
-    util::{base_request, HttpClient},
+    util::{base_request, AsyncHttpClient},
 };
 
 pub mod parameters;
@@ -204,7 +204,7 @@ impl AuthorizationRequestObject {
         &self.2
     }
 
-    pub async fn resolve_presentation_definition<H: HttpClient>(
+    pub async fn resolve_presentation_definition<H: AsyncHttpClient>(
         &self,
         http_client: &H,
     ) -> Result<PresentationDefinition> {

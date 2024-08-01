@@ -11,12 +11,12 @@ use crate::core::{
     },
     metadata::WalletMetadata,
     response::{AuthorizationResponse, PostRedirection},
-    util::{base_request, HttpClient},
+    util::{base_request, AsyncHttpClient},
 };
 
 #[async_trait]
 pub trait Wallet: RequestVerifier + Sync {
-    type HttpClient: HttpClient + Send + Sync;
+    type HttpClient: AsyncHttpClient + Send + Sync;
 
     fn metadata(&self) -> &WalletMetadata;
     fn http_client(&self) -> &Self::HttpClient;

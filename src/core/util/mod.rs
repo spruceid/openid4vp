@@ -8,7 +8,7 @@ use http::{Request, Response};
 ///
 /// A trait is used here so to facilitate native HTTP/TLS when compiled for mobile applications.
 #[async_trait]
-pub trait HttpClient {
+pub trait AsyncHttpClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>>;
 }
 
@@ -32,7 +32,7 @@ impl ReqwestClient {
 
 #[cfg(feature = "reqwest")]
 #[async_trait]
-impl HttpClient for ReqwestClient {
+impl AsyncHttpClient for ReqwestClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
         let response = self
             .0

@@ -12,7 +12,7 @@ use oid4vp::{
         },
         metadata::WalletMetadata,
         response::AuthorizationResponse,
-        util::HttpClient,
+        util::AsyncHttpClient,
     },
     verifier::{
         request_signer::P256Signer,
@@ -137,7 +137,7 @@ impl RequestVerifier for JwtVcWallet {
 }
 
 #[async_trait]
-impl HttpClient for MockHttpClient {
+impl AsyncHttpClient for MockHttpClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
         // Only expect submission.
         let body = request.body();

@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::core::{
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    util::{base_request, HttpClient},
+    util::{base_request, AsyncHttpClient},
 };
 use anyhow::{bail, Context, Error, Ok};
 use serde::{Deserialize, Serialize};
@@ -130,7 +130,7 @@ impl ClientMetadata {
     ///
     /// If the client metadata is not passed by reference or value if the Authorization Request Object,
     /// then this function will return an error.
-    pub async fn resolve<H: HttpClient>(
+    pub async fn resolve<H: AsyncHttpClient>(
         request: &AuthorizationRequestObject,
         http_client: &H,
     ) -> Result<Self, Error> {
