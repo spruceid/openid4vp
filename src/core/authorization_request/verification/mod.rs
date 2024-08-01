@@ -60,7 +60,9 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'redirect_uri' client verification not implemented")
+        println!("[WARNING] 'redirect_uri' client verification not implemented");
+        // bail!("'redirect_uri' client verification not implemented")
+        Ok(())
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `verifier_attestation`.
