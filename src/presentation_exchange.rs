@@ -1,24 +1,6 @@
+pub use crate::utils::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-
-use crate::utils::NonEmptyVec;
-
-// TODO does openidconnect have a Request type?
-#[derive(Debug, Deserialize)]
-pub struct ResponseRequest {
-    id_token: serde_json::Value, // IdTokenSIOP, // CoreIdTokenClaims,
-    vp_token: VpToken,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct VpTokenIdToken {
-    pub presentation_submission: PresentationSubmission,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct VpToken {
-    pub presentation_definition: PresentationDefinition,
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationDefinition {
@@ -43,8 +25,6 @@ pub struct InputDescriptor {
     pub format: Option<serde_json::Value>, // TODO
     #[serde(skip_serializing_if = "Option::is_none")]
     pub constraints: Option<Constraints>, // TODO shouldn't be optional
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema: Option<serde_json::Value>, // TODO shouldn't exist anymore
 }
 
 // TODO must have at least one
@@ -69,6 +49,32 @@ pub struct ConstraintsField {
     pub filter: Option<serde_json::Value>, // TODO JSONSchema validation at deserialization time
     #[serde(skip_serializing_if = "Option::is_none")]
     pub optional: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent_to_retain: Option<bool>,
+}
+
+pub type ConstraintsFields = Vec<ConstraintsField>;
+
+impl ConstraintsField {
+    pub fn new(
+        path: NonEmptyVec<String>,
+        id: Option<String>,
+        purpose: Option<String>,
+        name: Option<String>,
+        filter: Option<serde_json::Value>,
+        optional: Option<bool>,
+        intent_to_retain: Option<bool>,
+    ) -> ConstraintsField {
+        ConstraintsField {
+            path,
+            id,
+            purpose,
+            name,
+            filter,
+            optional,
+            intent_to_retain,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,25 +86,25 @@ pub enum ConstraintsLimitDisclosure {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationSubmission {
-    id: String,
-    definition_id: String,
-    descriptor_map: Vec<DescriptorMap>,
+    pub id: String,
+    pub definition_id: String,
+    pub descriptor_map: Vec<DescriptorMap>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DescriptorMap {
-    id: String,
-    format: String, // TODO should be enum of supported formats
-    path: String,
-    path_nested: Option<Box<DescriptorMap>>,
+    pub id: String,
+    pub format: String, // TODO should be enum of supported formats
+    pub path: String,
+    //pub path_nested: Option<Box<DescriptorMap>>,
 }
 
 #[derive(Deserialize)]
 pub struct SubmissionRequirementBaseBase {
-    name: Option<String>,
-    purpose: Option<String>,
+    pub name: Option<String>,
+    pub purpose: Option<String>,
     #[serde(flatten)]
-    property_set: Option<Map<String, serde_json::Value>>,
+    pub property_set: Option<Map<String, serde_json::Value>>,
 }
 
 #[derive(Deserialize)]
@@ -126,10 +132,10 @@ pub enum SubmissionRequirement {
 #[derive(Deserialize)]
 pub struct SubmissionRequirementPick {
     #[serde(flatten)]
-    submission_requirement: SubmissionRequirementBase,
-    count: Option<u64>,
-    min: Option<u64>,
-    max: Option<u64>,
+    pub submission_requirement: SubmissionRequirementBase,
+    pub count: Option<u64>,
+    pub min: Option<u64>,
+    pub max: Option<u64>,
 }
 
 #[cfg(test)]
@@ -143,62 +149,54 @@ pub(crate) mod tests {
 
     #[test]
     fn request_example() {
-        let value = json!({
-                "id_token": {
-                    "email": null
-                },
-                "vp_token": {
-                    "presentation_definition": {
-                        "id": "vp token example",
-                        "input_descriptors": [
-                            {
-                                "id": "id card credential",
-                                "format": {
-                                    "ldp_vc": {
-                                        "proof_type": [
-                                            "Ed25519Signature2018"
-                                        ]
-                                    }
-                                },
-                                "constraints": {
-                                    "fields": [
-                                        {
-                                            "path": [
-                                                "$.type"
-                                            ],
-                                            "filter": {
-                                                "type": "string",
-                                                "pattern": "IDCardCredential"
-                                            }
-                                        }
-                                    ]
-                                }
+        let value = json!(
+            {
+                "id": "vp token example",
+                "input_descriptors": [
+                    {
+                        "id": "id card credential",
+                        "format": {
+                            "ldp_vc": {
+                                "proof_type": [
+                                    "Ed25519Signature2018"
+                                ]
                             }
-                        ]
+                        },
+                        "constraints": {
+                            "fields": [
+                                {
+                                    "path": [
+                                        "$.type"
+                                    ],
+                                    "filter": {
+                                        "type": "string",
+                                        "pattern": "IDCardCredential"
+                                    }
+                                }
+                            ]
+                        }
                     }
-                }
+                ]
             }
         );
-        let _: ResponseRequest = serde_path_to_error::deserialize(value)
-            .map_err(|e| e.path().to_string())
-            .unwrap();
-        // assert_eq!(serde_json::to_value(res).unwrap(), value);
+        let _: PresentationDefinition = serde_json::from_value(value).unwrap();
     }
 
     #[derive(Deserialize)]
     pub struct PresentationDefinitionTest {
-        presentation_definition: PresentationDefinition,
+        #[serde(alias = "presentation_definition")]
+        _pd: PresentationDefinition,
     }
 
     #[test]
     fn presentation_definition_suite() {
         let paths =
-            fs::read_dir("test/presentation-exchange/test/presentation-definition").unwrap();
+            fs::read_dir("tests/presentation-exchange/test/presentation-definition").unwrap();
         for path in paths {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {
                 if ext != OsStr::new("json")
-                    || vec!["VC_expiration_example.json", "VC_revocation_example.json"] // TODO bad format
+                    || ["VC_expiration_example.json", "VC_revocation_example.json"] // TODO bad format
                         .contains(&path.file_name().unwrap().to_str().unwrap())
                 {
                     continue;
@@ -214,21 +212,21 @@ pub(crate) mod tests {
         }
     }
 
-    // TODO use VP type?
     #[derive(Deserialize)]
     pub struct PresentationSubmissionTest {
-        presentation_submission: PresentationSubmission,
+        #[serde(alias = "presentation_submission")]
+        _ps: PresentationSubmission,
     }
 
     #[test]
     fn presentation_submission_suite() {
         let paths =
-            fs::read_dir("test/presentation-exchange/test/presentation-submission").unwrap();
+            fs::read_dir("tests/presentation-exchange/test/presentation-submission").unwrap();
         for path in paths {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {
                 if ext != OsStr::new("json")
-                    || vec![
+                    || [
                         "appendix_DIDComm_example.json",
                         "appendix_CHAPI_example.json",
                     ]
@@ -249,18 +247,19 @@ pub(crate) mod tests {
 
     #[derive(Deserialize)]
     pub struct SubmissionRequirementsTest {
-        submission_requirements: Vec<SubmissionRequirement>,
+        #[serde(alias = "submission_requirements")]
+        _sr: Vec<SubmissionRequirement>,
     }
 
     #[test]
     fn submission_requirements_suite() {
         let paths =
-            fs::read_dir("test/presentation-exchange/test/submission-requirements").unwrap();
+            fs::read_dir("tests/presentation-exchange/test/submission-requirements").unwrap();
         for path in paths {
             let path = path.unwrap().path();
             if let Some(ext) = path.extension() {
                 if ext != OsStr::new("json")
-                    || vec!["schema.json"].contains(&path.file_name().unwrap().to_str().unwrap())
+                    || ["schema.json"].contains(&path.file_name().unwrap().to_str().unwrap())
                 {
                     continue;
                 }
