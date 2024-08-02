@@ -163,11 +163,10 @@ impl ClientMetadata {
             ))?
                 .try_into()
                 .context("failed to parse client metadata from JSON");
-        } else {
-            // bail!("the client metadata was not passed by reference or value")
-            println!("[WARNING] the client metadata was not passed by reference or value");
-            return Ok(ClientMetadata(UntypedObject::default()))
         }
+
+        tracing::warn!("the client metadata was not passed by reference or value");
+        Ok(ClientMetadata(UntypedObject::default()))
     }
 }
 
