@@ -165,7 +165,8 @@ impl ClientMetadata {
                 .context("failed to parse client metadata from JSON");
         }
 
-        bail!("the client metadata was not passed by reference or value")
+        tracing::warn!("the client metadata was not passed by reference or value");
+        Ok(ClientMetadata(UntypedObject::default()))
     }
 }
 
