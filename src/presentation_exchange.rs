@@ -85,6 +85,16 @@ pub enum ConstraintsLimitDisclosure {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VerifiableFormat {
+    #[serde(rename = "jwt_vc_json")]
+    JwtVcJson,
+    #[serde(rename = "jwt_vp_json")]
+    JwtVpJson,
+    #[serde(rename = "ldp_vc")]
+    LdpVc,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationSubmission {
     pub id: String,
     pub definition_id: String,
@@ -94,9 +104,9 @@ pub struct PresentationSubmission {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DescriptorMap {
     pub id: String,
-    pub format: String, // TODO should be enum of supported formats
+    pub format: VerifiableFormat,
     pub path: String,
-    //pub path_nested: Option<Box<DescriptorMap>>,
+    pub path_nested: Option<Box<DescriptorMap>>,
 }
 
 #[derive(Deserialize)]

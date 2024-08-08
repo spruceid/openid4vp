@@ -6,17 +6,29 @@ use crate::core::{
 use anyhow::{bail, Context, Result};
 use base64::prelude::*;
 use serde_json::{Map, Value as Json};
-use ssi::did_resolve::{resolve_key, DIDResolver};
+use ssi::{
+    dids::{DIDResolver, VerificationMethodDIDResolver},
+    jwk::JWKResolver,
+    verification_methods::{
+        GenericVerificationMethod, InvalidVerificationMethod, MaybeJwkVerificationMethod,
+        VerificationMethodSet,
+    },
+};
 
 /// Default implementation of request validation for `client_id_scheme` `did`.
-pub async fn verify_with_resolver(
+pub async fn verify_with_resolver<M>(
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
     trusted_dids: Option<&[String]>,
-    resolver: &dyn DIDResolver,
-) -> Result<()> {
-    let (headers_b64, _, _) = ssi::jws::split_jws(&request_jwt)?;
+    resolver: &VerificationMethodDIDResolver<impl DIDResolver, M>,
+) -> Result<()>
+where
+    M: MaybeJwkVerificationMethod
+        + VerificationMethodSet
+        + TryFrom<GenericVerificationMethod, Error = InvalidVerificationMethod>,
+{
+    let (headers_b64, _, _) = ssi::claims::jws::split_jws(&request_jwt)?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
         .decode(headers_b64)
@@ -24,6 +36,8 @@ pub async fn verify_with_resolver(
 
     let mut headers = serde_json::from_slice::<Map<String, Json>>(&headers_json_bytes)
         .context("jwt headers were not valid json")?;
+
+    println!("{:?}", headers);
 
     let Json::String(alg) = headers
         .remove("alg")
@@ -64,11 +78,12 @@ pub async fn verify_with_resolver(
         }
     }
 
-    let jwk = resolve_key(&kid, resolver)
+    let jwk = resolver
+        .fetch_public_jwk(Some(&kid))
         .await
-        .context("unable to resolve verification method from 'kid' header")?;
+        .context("unable to fetch JWK from 'kid' header")?;
 
-    let _: Json = ssi::jwt::decode_verify(&request_jwt, &jwk)
+    let _: Json = ssi::claims::jwt::decode_verify(&request_jwt, &jwk)
         .context("request signature could not be verified")?;
 
     Ok(())
