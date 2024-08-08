@@ -1,11 +1,11 @@
-use std::{fmt::Debug, str::FromStr, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::{json, Value as Json};
 use ssi::{
-    dids::{DIDBuf, DIDResolver, VerificationMethodDIDResolver, DID},
+    dids::{DIDResolver, VerificationMethodDIDResolver},
     jwk::JWKResolver,
     verification_methods::{
         GenericVerificationMethod, InvalidVerificationMethod, MaybeJwkVerificationMethod,
