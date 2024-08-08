@@ -1,10 +1,17 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, str::FromStr, sync::Arc};
 
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::{json, Value as Json};
-use ssi::jwk::JWKResolver;
+use ssi::{
+    dids::{DIDBuf, DIDResolver, VerificationMethodDIDResolver, DID},
+    jwk::JWKResolver,
+    verification_methods::{
+        GenericVerificationMethod, InvalidVerificationMethod, MaybeJwkVerificationMethod,
+        VerificationMethodSet,
+    },
+};
 use tracing::debug;
 use x509_cert::{
     der::Encode,
@@ -40,11 +47,16 @@ pub struct DIDClient {
 }
 
 impl DIDClient {
-    pub async fn new(
+    pub async fn new<M>(
         vm: String,
         signer: Arc<dyn RequestSigner + Send + Sync>,
-        resolver: impl JWKResolver,
-    ) -> Result<Self> {
+        resolver: &VerificationMethodDIDResolver<impl DIDResolver, M>,
+    ) -> Result<Self>
+    where
+        M: MaybeJwkVerificationMethod
+            + VerificationMethodSet
+            + TryFrom<GenericVerificationMethod, Error = InvalidVerificationMethod>,
+    {
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
         ))?;

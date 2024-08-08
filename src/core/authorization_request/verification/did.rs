@@ -37,8 +37,6 @@ where
     let mut headers = serde_json::from_slice::<Map<String, Json>>(&headers_json_bytes)
         .context("jwt headers were not valid json")?;
 
-    println!("{:?}", headers);
-
     let Json::String(alg) = headers
         .remove("alg")
         .context("'alg' was missing from jwt headers")?

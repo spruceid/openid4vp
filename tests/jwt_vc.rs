@@ -41,15 +41,16 @@ pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
         .unwrap(),
     );
 
-    let public_key = p256::PublicKey::from_jwk_str(include_str!("examples/verifier.jwk"))
-        .expect("Failed to parse public key from jwk");
-
-    let resolver = JWK::from(public_key);
+    let resolver = VerificationMethodDIDResolver::new(DIDJWK);
 
     let client = Arc::new(
-        oid4vp::verifier::client::DIDClient::new(verifier_did_vm.clone(), signer.clone(), resolver)
-            .await
-            .unwrap(),
+        oid4vp::verifier::client::DIDClient::new::<AnyMethod>(
+            verifier_did_vm.clone(),
+            signer.clone(),
+            &resolver,
+        )
+        .await
+        .unwrap(),
     );
     let verifier = Arc::new(
         Verifier::builder()
