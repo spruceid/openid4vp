@@ -11,6 +11,7 @@ use oid4vp::{
 use serde_json::json;
 
 mod jwt_vc;
+mod jwt_vp;
 
 #[tokio::test]
 async fn w3c_vc_did_client_direct_post() {
@@ -45,6 +46,8 @@ async fn w3c_vc_did_client_direct_post() {
         .build(wallet.metadata().clone())
         .await
         .unwrap();
+
+    println!("Request: {:?}", request);
 
     let request = wallet.validate_request(request).await.unwrap();
 

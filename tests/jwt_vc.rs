@@ -2,7 +2,6 @@ use std::{str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use did_method_key::DIDKey;
 use http::{Request, Response};
 use oid4vp::{
     core::{
@@ -23,7 +22,7 @@ use oid4vp::{
 };
 use serde_json::json;
 use ssi::{
-    dids::{VerificationMethodDIDResolver, DIDJWK},
+    dids::{DIDKey, DIDResolver, VerificationMethodDIDResolver, DIDJWK},
     prelude::AnyMethod,
     JWK,
 };
@@ -41,16 +40,14 @@ pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
         .unwrap(),
     );
 
-    let resolver = VerificationMethodDIDResolver::new(DIDJWK);
+    // let jwk = JWK::from_str(include_str!("examples/verifier.jwk")).unwrap();
+    // let did_jwk = DIDJWK::generate(&jwk);
+    // let resolver = VerificationMethodDIDResolver::new(did_jwk);
 
     let client = Arc::new(
-        oid4vp::verifier::client::DIDClient::new::<AnyMethod>(
-            verifier_did_vm.clone(),
-            signer.clone(),
-            &resolver,
-        )
-        .await
-        .unwrap(),
+        oid4vp::verifier::client::DIDClient::new(verifier_did_vm.clone(), signer.clone(), DIDKey)
+            .await
+            .unwrap(),
     );
     let verifier = Arc::new(
         Verifier::builder()
@@ -132,14 +129,12 @@ impl RequestVerifier for JwtVcWallet {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<()> {
-        let resolver = VerificationMethodDIDResolver::new(DIDJWK);
-
-        did::verify_with_resolver::<AnyMethod>(
+        did::verify_with_resolver(
             self.metadata(),
             decoded_request,
             request_jwt,
             Some(self.trusted_dids()),
-            &resolver,
+            DIDKey,
         )
         .await
     }
