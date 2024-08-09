@@ -119,7 +119,7 @@ mod test {
         let response = UnencodedAuthorizationResponse::try_from(object).unwrap();
         assert_eq!(
             response.into_x_www_form_urlencoded().unwrap(),
-            "presentation_submission=%7B%22definition_id%22%3A%22definition_id%22%2C%22descriptor_map%22%3A%5B%5D%2C%22id%22%3A%22id%22%7D&vp_token=string",
+            "presentation_submission=%7B%22id%22%3A%22id%22%2C%22definition_id%22%3A%22definition_id%22%2C%22descriptor_map%22%3A%5B%5D%7D&vp_token=string",
         )
     }
 }

@@ -1,34 +1,189 @@
+use crate::json_schema_validation::SchemaValidator;
 pub use crate::utils::NonEmptyVec;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 
+/// A JSONPath is a string that represents a path to a specific value within a JSON object.
+pub type JsonPath = String;
+
+/// The claim format type is used in the input description object to specify the format of the claim.
+///
+/// Registry of claim format type: https://identity.foundation/claim-format-registry/#registry
+///
+/// Documentation based on the [spec](https://identity.foundation/presentation-exchange/spec/v2.0.0/#claim-format-designations)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ClaimFormat {
+    /// The format is a JSON Web Token (JWT) as defined by [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519)
+    /// that will be submitted in the form of a JWT encoded string. Expression of
+    /// supported algorithms in relation to this format MUST be conveyed using an `alg`
+    /// property paired with values that are identifiers from the JSON Web Algorithms
+    /// registry [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518).
+    #[serde(rename = "jwt")]
+    Jwt,
+    /// These formats are JSON Web Tokens (JWTs) [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519) that will be submitted in the form of a
+    /// JWT-encoded string, with a payload extractable from it defined according to the
+    /// JSON Web Token (JWT) [section] of the W3C [VC-DATA-MODEL](https://identity.foundation/claim-format-registry/#term:vc-data-model)
+    /// specification. Expression of supported algorithms in relation to these formats MUST be conveyed using an JWT alg
+    /// property paired with values that are identifiers from the JSON Web Algorithms registry in
+    /// [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518) Section 3.
+    #[serde(rename = "jwt_vc")]
+    JwtVc,
+    /// See [JwtVc](JwtVc) for more information.
+    #[serde(rename = "jwt_vp")]
+    JwtVp,
+    /// The format is a Linked-Data Proof that will be submitted as an object.
+    /// Expression of supported algorithms in relation to these formats MUST be
+    /// conveyed using a proof_type property with values that are identifiers from
+    /// the Linked Data Cryptographic Suite Registry [LDP-Registry](https://identity.foundation/claim-format-registry/#term:ldp-registry).
+    #[serde(rename = "ldp")]
+    Ldp,
+    /// Verifiable Credentials or Verifiable Presentations signed with Linked Data Proof formats.
+    /// These are descriptions of formats normatively defined in the W3C Verifiable Credentials
+    /// specification [VC-DATA-MODEL](https://identity.foundation/claim-format-registry/#term:vc-data-model),
+    /// and will be submitted in the form of a JSON object. Expression of supported algorithms in relation to
+    /// these formats MUST be conveyed using a proof_type property paired with values that are identifiers from the
+    /// Linked Data Cryptographic Suite Registry (LDP-Registry).
+    #[serde(rename = "ldp_vc")]
+    LdpVc,
+    /// See [LdpVc](LdpVc) for more information.
+    #[serde(rename = "ldp_vp")]
+    LdpVp,
+    /// This format is for Verifiable Credentials using AnonCreds.
+    /// AnonCreds is a VC format that adds important
+    /// privacy-protecting ZKP (zero-knowledge proof) capabilities
+    /// to the core VC assurances.
+    #[serde(rename = "ac_vc")]
+    AcVc,
+    /// This format is for Verifiable Presentations using AnonCreds.
+    /// AnonCreds is a VC format that adds important privacy-protecting ZKP
+    /// (zero-knowledge proof) capabilities to the core VC assurances.
+    #[serde(rename = "ac_vp")]
+    AcVp,
+    /// The format is defined by ISO/IEC 18013-5:2021 [ISO.18013-5](https://identity.foundation/claim-format-registry/#term:iso.18013-5)
+    /// whcih defines a mobile driving license (mDL) Credential in the mobile document (mdoc) format.
+    /// Although ISO/IEC 18013-5:2021 ISO.18013-5 is specific to mobile driving licenses (mDLs),
+    /// the Credential format can be utilized with any type of Credential (or mdoc document types).
+    #[serde(rename = "mso_mdoc")]
+    MsoMDoc,
+}
+
+/// A presentation definition is a JSON object that describes the information a Verifier requires of a Holder.
+///
+/// > Presentation Definitions are objects that articulate what proofs a Verifier requires.
+/// These help the Verifier to decide how or whether to interact with a Holder.
+/// Presentation Definitions are composed of inputs, which describe the forms and details of the
+/// proofs they require, and optional sets of selection rules, to allow Holders flexibility
+/// in cases where different types of proofs may satisfy an input requirement.
+///
+/// > For more information, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationDefinition {
-    pub id: String, // Uuid,
-    pub input_descriptors: Vec<InputDescriptor>,
+    id: uuid::Uuid,
+    input_descriptors: Vec<InputDescriptor>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub purpose: Option<String>,
+    purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub format: Option<serde_json::Value>, // TODO
+    format: Option<ClaimFormat>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+impl PresentationDefinition {
+    pub fn new(id: uuid::Uuid, input_descriptor: InputDescriptor) -> Self {
+        Self {
+            id,
+            input_descriptors: vec![input_descriptor],
+            ..Default::default()
+        }
+    }
+
+    /// Add a new input descriptor to the presentation definition.
+    pub fn add_input_descriptors(mut self, input_descriptor: InputDescriptor) -> Self {
+        self.input_descriptors.push(input_descriptor);
+        self
+    }
+
+    /// Set the name of the presentation definition.
+    pub fn set_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    /// Set the purpose of the presentation definition.
+    pub fn set_purpose(mut self, purpose: String) -> Self {
+        self.purpose = Some(purpose);
+        self
+    }
+
+    /// Attach a format to the presentation definition.
+    pub fn set_format(mut self, format: ClaimFormat) -> Self {
+        self.format = Some(format);
+        self
+    }
+}
+
+/// Input Descriptors are objects used to describe the information a Verifier requires of a Holder.
+/// All Input Descriptors MUST be satisfied, unless otherwise specified by a Feature.
+///
+/// See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InputDescriptor {
-    pub id: String,
+    id: String,
+    constraints: Constraints,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub purpose: Option<String>,
+    purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub format: Option<serde_json::Value>, // TODO
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub constraints: Option<Constraints>, // TODO shouldn't be optional
+    format: Option<serde_json::Value>, // TODO
 }
 
-// TODO must have at least one
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+impl InputDescriptor {
+    /// Create a new instance of the input descriptor with the given id and constraints.
+    pub fn new(id: String, constraints: Constraints) -> Self {
+        Self {
+            id,
+            constraints,
+            ..Default::default()
+        }
+    }
+
+    /// Set the name of the input descriptor.
+    pub fn set_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    /// Set the purpose of the input descriptor.
+    ///
+    /// The purpose of the input descriptor is an optional field.
+    ///
+    /// If present, the purpose MUST be a string that describes the purpose for which the Claim's data is being requested.
+    pub fn set_purpose(mut self, purpose: String) -> Self {
+        self.purpose = Some(purpose);
+        self
+    }
+
+    /// Set the format of the input descriptor.
+    ///
+    /// The Input Descriptor Object MAY contain a format property. If present,
+    /// its value MUST be an object with one or more properties matching the registered
+    /// Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
+    /// This format property is identical in value signature to the top-level format object,
+    /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
+    pub fn set_format(mut self, format: serde_json::Value) -> Self {
+        self.format = Some(format);
+        self
+    }
+}
+
+/// Constraints are objects used to describe the constraints that a Holder must satisfy to fulfill an Input Descriptor.
+///
+/// A constraint object MAY be empty, or it may include a `fields` and/or `limit_disclosure` property.
+///
+/// For more information, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Constraints {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fields: Option<Vec<ConstraintsField>>,
@@ -36,17 +191,46 @@ pub struct Constraints {
     pub limit_disclosure: Option<ConstraintsLimitDisclosure>,
 }
 
+impl Constraints {
+    /// Returns an empty Constraints object.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a new field constraint to the constraints list.
+    pub fn add_constraint(mut self, field: ConstraintsField) -> Self {
+        self.fields.get_or_insert_with(Vec::new).push(field);
+        self
+    }
+
+    /// Set the limit disclosure value.
+    pub fn set_limit_disclosure(mut self, limit_disclosure: ConstraintsLimitDisclosure) -> Self {
+        self.limit_disclosure = Some(limit_disclosure);
+        self
+    }
+}
+
+/// ConstraintsField objects are used to describe the constraints that a Holder must satisfy to fulfill an Input Descriptor.
+///
+/// For more information, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConstraintsField {
-    pub path: NonEmptyVec<String>, // TODO JsonPath validation at deserialization time
+    // JSON Regex path -> check regex against JSON structure to check if there is a match;
+    // TODO JsonPath validation at deserialization time
+    // Regular expression includes the path -> whether or not the JSON object contains a property.
+    /// `path` is a non empty list of [JsonPath](https://goessner.net/articles/JsonPath/) expressions.
+    ///
+    /// For syntax definition, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition
+    pub path: NonEmptyVec<JsonPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    // TODO: JSONSchema validation at deserialization time
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<serde_json::Value>, // TODO JSONSchema validation at deserialization time
+    pub filter: Option<SchemaValidator>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub optional: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,25 +239,93 @@ pub struct ConstraintsField {
 
 pub type ConstraintsFields = Vec<ConstraintsField>;
 
-impl ConstraintsField {
-    pub fn new(
-        path: NonEmptyVec<String>,
-        id: Option<String>,
-        purpose: Option<String>,
-        name: Option<String>,
-        filter: Option<serde_json::Value>,
-        optional: Option<bool>,
-        intent_to_retain: Option<bool>,
-    ) -> ConstraintsField {
-        ConstraintsField {
+impl From<NonEmptyVec<JsonPath>> for ConstraintsField {
+    fn from(path: NonEmptyVec<JsonPath>) -> Self {
+        Self {
             path,
-            id,
-            purpose,
-            name,
-            filter,
-            optional,
-            intent_to_retain,
+            id: None,
+            purpose: None,
+            name: None,
+            filter: None,
+            optional: None,
+            intent_to_retain: None,
         }
+    }
+}
+
+impl ConstraintsField {
+    /// Create a new instance of the constraints field with the given path.
+    ///
+    /// Tip: Use the [ConstraintsField::From](ConstraintsField::From) trait to convert a [NonEmptyVec](NonEmptyVec) of
+    /// [JsonPath](JsonPath) to a [ConstraintsField](ConstraintsField) if more than one path is known.
+    pub fn new(path: JsonPath) -> ConstraintsField {
+        ConstraintsField {
+            path: NonEmptyVec::new(path),
+            id: None,
+            purpose: None,
+            name: None,
+            filter: None,
+            optional: None,
+            intent_to_retain: None,
+        }
+    }
+
+    /// Add a new path to the constraints field.
+    pub fn add_path(mut self, path: JsonPath) -> Self {
+        self.path.push(path);
+        self
+    }
+
+    /// Set the id of the constraints field.
+    ///
+    /// The fields object MAY contain an id property. If present, its value MUST be a string that
+    /// is unique from every other field object’s id property, including those contained in other
+    /// Input Descriptor Objects.
+    pub fn set_id(mut self, id: String) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Set the purpose of the constraints field.
+    ///
+    /// If present, its value MUST be a string that describes the purpose for which the field is being requested.
+    pub fn set_purpose(mut self, purpose: String) -> Self {
+        self.purpose = Some(purpose);
+        self
+    }
+
+    /// Set the name of the constraints field.
+    ///
+    /// If present, its value MUST be a string, and SHOULD be a human-friendly
+    /// name that describes what the target field represents.
+    ///
+    /// For example, the name of the constraint could be "over_18" if the field is a date of birth.
+    pub fn set_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    /// Set the filter of the constraints field.
+    ///
+    /// If present its value MUST be a JSON Schema descriptor used to filter against
+    /// the values returned from evaluation of the JSONPath string expressions in the path array.
+    pub fn set_filter(mut self, filter: SchemaValidator) -> Self {
+        self.filter = Some(filter);
+        self
+    }
+
+    /// Set the optional value of the constraints field.
+    ///
+    /// The value of this property MUST be a boolean, wherein true indicates the
+    /// field is optional, and false or non-presence of the property indicates the
+    /// field is required. Even when the optional property is present, the value
+    /// located at the indicated path of the field MUST validate against the
+    /// JSON Schema filter, if a filter is present.
+    ///
+    /// For more information, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
+    pub fn set_optional(mut self, optional: bool) -> Self {
+        self.optional = Some(optional);
+        self
     }
 }
 
@@ -151,7 +403,7 @@ pub(crate) mod tests {
     fn request_example() {
         let value = json!(
             {
-                "id": "vp token example",
+                "id": "36682080-c2ed-4ba6-a4cd-37c86ef2da8c",
                 "input_descriptors": [
                     {
                         "id": "id card credential",

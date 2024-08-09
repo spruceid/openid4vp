@@ -16,6 +16,14 @@ mod jwt_vc;
 async fn w3c_vc_did_client_direct_post() {
     let (wallet, verifier) = jwt_vc::wallet_verifier().await;
 
+    // let
+
+    // let presentation_definition = PresentationDefinition::new(uuid::Uuid::new_v4())
+    //     .with_input_descriptors(input_descriptors)
+    //     .with_name(name)
+    //     .with_purpose(purpose)
+    //     .with_format(format)
+
     let presentation_definition: PresentationDefinition = serde_json::from_value(json!({
         "id": "0b4dd017-efa6-4a05-a269-9790fa3c22c2",
         "input_descriptors": [
@@ -27,7 +35,8 @@ async fn w3c_vc_did_client_direct_post() {
                             "JsonWebSignature2020"
                         ]
                     }
-                }
+                },
+                "constraints": {}
             }
         ]
     }))
