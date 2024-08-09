@@ -7,13 +7,13 @@ use serde_json::Map;
 /// A JSONPath is a string that represents a path to a specific value within a JSON object.
 pub type JsonPath = String;
 
-/// The claim format type is used in the input description object to specify the format of the claim.
+/// The claim format designation type is used in the input description object to specify the format of the claim.
 ///
 /// Registry of claim format type: https://identity.foundation/claim-format-registry/#registry
 ///
-/// Documentation based on the [spec](https://identity.foundation/presentation-exchange/spec/v2.0.0/#claim-format-designations)
+/// Documentation based on the [DIF Presentation Exchange Specification v2.0](https://identity.foundation/presentation-exchange/spec/v2.0.0/#claim-format-designations)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ClaimFormat {
+pub enum ClaimFormatDesignation {
     /// The format is a JSON Web Token (JWT) as defined by [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519)
     /// that will be submitted in the form of a JWT encoded string. Expression of
     /// supported algorithms in relation to this format MUST be conveyed using an `alg`
@@ -21,8 +21,8 @@ pub enum ClaimFormat {
     /// registry [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518).
     #[serde(rename = "jwt")]
     Jwt,
-    /// These formats are JSON Web Tokens (JWTs) [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519) that will be submitted in the form of a
-    /// JWT-encoded string, with a payload extractable from it defined according to the
+    /// These formats are JSON Web Tokens (JWTs) [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519)
+    /// that will be submitted in the form of a JWT-encoded string, with a payload extractable from it defined according to the
     /// JSON Web Token (JWT) [section] of the W3C [VC-DATA-MODEL](https://identity.foundation/claim-format-registry/#term:vc-data-model)
     /// specification. Expression of supported algorithms in relation to these formats MUST be conveyed using an JWT alg
     /// property paired with values that are identifiers from the JSON Web Algorithms registry in
@@ -61,7 +61,7 @@ pub enum ClaimFormat {
     #[serde(rename = "ac_vp")]
     AcVp,
     /// The format is defined by ISO/IEC 18013-5:2021 [ISO.18013-5](https://identity.foundation/claim-format-registry/#term:iso.18013-5)
-    /// whcih defines a mobile driving license (mDL) Credential in the mobile document (mdoc) format.
+    /// which defines a mobile driving license (mDL) Credential in the mobile document (mdoc) format.
     /// Although ISO/IEC 18013-5:2021 ISO.18013-5 is specific to mobile driving licenses (mDLs),
     /// the Credential format can be utilized with any type of Credential (or mdoc document types).
     #[serde(rename = "mso_mdoc")]
@@ -79,17 +79,23 @@ pub enum ClaimFormat {
 /// > For more information, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationDefinition {
-    id: uuid::Uuid,
+    id: uuid::Uuid, // TODO: The specification allows for non-uuid types, should we revert to using String type?
     input_descriptors: Vec<InputDescriptor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<ClaimFormat>,
+    format: Option<serde_json::Value>,
 }
 
 impl PresentationDefinition {
+    /// The Presentation Definition MUST contain an id property. The value of this property MUST be a string.
+    /// The string SHOULD provide a unique ID for the desired context.
+    ///
+    /// The Presentation Definition MUST contain an input_descriptors property. Its value MUST be an array of Input Descriptor Objects,
+    /// the composition of which are found [InputDescriptor] type.
+    ///
     pub fn new(id: uuid::Uuid, input_descriptor: InputDescriptor) -> Self {
         Self {
             id,
@@ -104,10 +110,20 @@ impl PresentationDefinition {
         self
     }
 
+    /// Return the input descriptors of the presentation definition.
+    pub fn input_descriptors(&self) -> &Vec<InputDescriptor> {
+        &self.input_descriptors
+    }
+
     /// Set the name of the presentation definition.
     pub fn set_name(mut self, name: String) -> Self {
         self.name = Some(name);
         self
+    }
+
+    /// Return the name of the presentation definition.
+    pub fn name(&self) -> Option<&String> {
+        self.name.as_ref()
     }
 
     /// Set the purpose of the presentation definition.
@@ -116,15 +132,43 @@ impl PresentationDefinition {
         self
     }
 
+    /// Return the purpose of the presentation definition.
+    pub fn purpose(&self) -> Option<&String> {
+        self.purpose.as_ref()
+    }
+
     /// Attach a format to the presentation definition.
-    pub fn set_format(mut self, format: ClaimFormat) -> Self {
+    ///
+    /// The Presentation Definition MAY include a format property. If present,
+    /// the value MUST be an object with one or more properties matching the
+    /// registered Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
+    ///
+    /// The properties inform the Holder of the Claim format configurations the Verifier can process.
+    /// The value for each claim format property MUST be an object composed as follows:
+    ///
+    /// The object MUST include a format-specific property (i.e., alg, proof_type)
+    /// that expresses which algorithms the Verifier supports for the format.
+    /// Its value MUST be an array of one or more format-specific algorithmic identifier references,
+    /// as noted in the Claim Format Designations section.
+    ///
+    /// See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition
+    pub fn set_format(mut self, format: serde_json::Value) -> Self {
         self.format = Some(format);
         self
     }
+
+    /// Return the format of the presentation definition.
+    pub fn format(&self) -> Option<&serde_json::Value> {
+        self.format.as_ref()
+    }
 }
 
-/// Input Descriptors are objects used to describe the information a Verifier requires of a Holder.
-/// All Input Descriptors MUST be satisfied, unless otherwise specified by a Feature.
+/// Input Descriptors are objects used to describe the information a
+/// [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a
+/// [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
+///
+/// All Input Descriptors MUST be satisfied, unless otherwise specified by a
+/// [Feature](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:feature).
 ///
 /// See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -141,6 +185,14 @@ pub struct InputDescriptor {
 
 impl InputDescriptor {
     /// Create a new instance of the input descriptor with the given id and constraints.
+    ///
+    /// The Input Descriptor Object MUST contain an id property. The value of the id
+    /// property MUST be a string that does not conflict with the id of another
+    /// Input Descriptor Object in the same Presentation Definition.
+    ///
+    /// The Input Descriptor Object MUST contain a constraints property.
+    ///
+    /// See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
     pub fn new(id: String, constraints: Constraints) -> Self {
         Self {
             id,
@@ -149,20 +201,46 @@ impl InputDescriptor {
         }
     }
 
+    /// Return the id of the input descriptor.
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+
+    /// Return the constraints of the input descriptor.
+    pub fn constraints(&self) -> &Constraints {
+        &self.constraints
+    }
+
     /// Set the name of the input descriptor.
     pub fn set_name(mut self, name: String) -> Self {
         self.name = Some(name);
         self
     }
 
+    /// Return the name of the input descriptor.
+    pub fn name(&self) -> Option<&String> {
+        self.name.as_ref()
+    }
+
     /// Set the purpose of the input descriptor.
     ///
     /// The purpose of the input descriptor is an optional field.
     ///
-    /// If present, the purpose MUST be a string that describes the purpose for which the Claim's data is being requested.
+    /// If present, the purpose MUST be a string that describes the purpose for which the
+    /// [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim)'s
+    /// data is being requested.
     pub fn set_purpose(mut self, purpose: String) -> Self {
         self.purpose = Some(purpose);
         self
+    }
+
+    /// Return the purpose of the input descriptor.
+    ///
+    /// If present, the purpose MUST be a string that describes the purpose for which the
+    /// [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim)'s
+    /// data is being requested.
+    pub fn purpose(&self) -> Option<&String> {
+        self.purpose.as_ref()
     }
 
     /// Set the format of the input descriptor.
@@ -170,11 +248,24 @@ impl InputDescriptor {
     /// The Input Descriptor Object MAY contain a format property. If present,
     /// its value MUST be an object with one or more properties matching the registered
     /// Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
+    ///
     /// This format property is identical in value signature to the top-level format object,
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
     pub fn set_format(mut self, format: serde_json::Value) -> Self {
         self.format = Some(format);
         self
+    }
+
+    /// Return the format of the input descriptor.
+    ///
+    /// The Input Descriptor Object MAY contain a format property. If present,
+    /// its value MUST be an object with one or more properties matching the registered
+    /// Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
+    ///
+    /// This format property is identical in value signature to the top-level format object,
+    /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
+    pub fn format(&self) -> Option<&serde_json::Value> {
+        self.format.as_ref()
     }
 }
 
@@ -203,10 +294,20 @@ impl Constraints {
         self
     }
 
+    /// Returns the fields of the constraints object.
+    pub fn fields(&self) -> Option<&Vec<ConstraintsField>> {
+        self.fields.as_ref()
+    }
+
     /// Set the limit disclosure value.
     pub fn set_limit_disclosure(mut self, limit_disclosure: ConstraintsLimitDisclosure) -> Self {
         self.limit_disclosure = Some(limit_disclosure);
         self
+    }
+
+    /// Returns the limit disclosure value.
+    pub fn limit_disclosure(&self) -> Option<&ConstraintsLimitDisclosure> {
+        self.limit_disclosure.as_ref()
     }
 }
 
@@ -218,6 +319,7 @@ pub struct ConstraintsField {
     // JSON Regex path -> check regex against JSON structure to check if there is a match;
     // TODO JsonPath validation at deserialization time
     // Regular expression includes the path -> whether or not the JSON object contains a property.
+    //
     /// `path` is a non empty list of [JsonPath](https://goessner.net/articles/JsonPath/) expressions.
     ///
     /// For syntax definition, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition
@@ -276,6 +378,11 @@ impl ConstraintsField {
         self
     }
 
+    /// Return the paths of the constraints field.
+    pub fn path(&self) -> &NonEmptyVec<JsonPath> {
+        &self.path
+    }
+
     /// Set the id of the constraints field.
     ///
     /// The fields object MAY contain an id property. If present, its value MUST be a string that
@@ -286,12 +393,22 @@ impl ConstraintsField {
         self
     }
 
+    /// Return the id of the constraints field.
+    pub fn id(&self) -> Option<&String> {
+        self.id.as_ref()
+    }
+
     /// Set the purpose of the constraints field.
     ///
     /// If present, its value MUST be a string that describes the purpose for which the field is being requested.
     pub fn set_purpose(mut self, purpose: String) -> Self {
         self.purpose = Some(purpose);
         self
+    }
+
+    /// Return the purpose of the constraints field.
+    pub fn purpose(&self) -> Option<&String> {
+        self.purpose.as_ref()
     }
 
     /// Set the name of the constraints field.
@@ -305,6 +422,11 @@ impl ConstraintsField {
         self
     }
 
+    /// Return the name of the constraints field.
+    pub fn name(&self) -> Option<&String> {
+        self.name.as_ref()
+    }
+
     /// Set the filter of the constraints field.
     ///
     /// If present its value MUST be a JSON Schema descriptor used to filter against
@@ -312,6 +434,11 @@ impl ConstraintsField {
     pub fn set_filter(mut self, filter: SchemaValidator) -> Self {
         self.filter = Some(filter);
         self
+    }
+
+    /// Return the filter of the constraints field.
+    pub fn filter(&self) -> Option<&SchemaValidator> {
+        self.filter.as_ref()
     }
 
     /// Set the optional value of the constraints field.
@@ -326,6 +453,11 @@ impl ConstraintsField {
     pub fn set_optional(mut self, optional: bool) -> Self {
         self.optional = Some(optional);
         self
+    }
+
+    /// Return the optional value of the constraints field.
+    pub fn optional(&self) -> bool {
+        self.optional.unwrap_or(false)
     }
 }
 
