@@ -68,15 +68,15 @@ pub enum ClaimFormatDesignation {
     MsoMDoc,
 }
 
-/// A presentation definition is a JSON object that describes the information a Verifier requires of a Holder.
+/// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
-/// > Presentation Definitions are objects that articulate what proofs a Verifier requires.
-/// These help the Verifier to decide how or whether to interact with a Holder.
+/// > Presentation Definitions are objects that articulate what proofs a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires.
+/// These help the [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) to decide how or whether to interact with a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 /// Presentation Definitions are composed of inputs, which describe the forms and details of the
-/// proofs they require, and optional sets of selection rules, to allow Holders flexibility
+/// proofs they require, and optional sets of selection rules, to allow [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder)s flexibility
 /// in cases where different types of proofs may satisfy an input requirement.
 ///
-/// > For more information, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition
+/// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationDefinition {
     id: uuid::Uuid, // TODO: The specification allows for non-uuid types, should we revert to using String type?
@@ -143,15 +143,15 @@ impl PresentationDefinition {
     /// the value MUST be an object with one or more properties matching the
     /// registered Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
     ///
-    /// The properties inform the Holder of the Claim format configurations the Verifier can process.
+    /// The properties inform the [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder) of the Claim format configurations the [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) can process.
     /// The value for each claim format property MUST be an object composed as follows:
     ///
     /// The object MUST include a format-specific property (i.e., alg, proof_type)
-    /// that expresses which algorithms the Verifier supports for the format.
+    /// that expresses which algorithms the [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) supports for the format.
     /// Its value MUST be an array of one or more format-specific algorithmic identifier references,
     /// as noted in the Claim Format Designations section.
     ///
-    /// See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition
+    /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
     pub fn set_format(mut self, format: serde_json::Value) -> Self {
         self.format = Some(format);
         self
@@ -170,7 +170,7 @@ impl PresentationDefinition {
 /// All Input Descriptors MUST be satisfied, unless otherwise specified by a
 /// [Feature](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:feature).
 ///
-/// See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
+/// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InputDescriptor {
     id: String,
@@ -192,7 +192,7 @@ impl InputDescriptor {
     ///
     /// The Input Descriptor Object MUST contain a constraints property.
     ///
-    /// See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
+    /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
     pub fn new(id: String, constraints: Constraints) -> Self {
         Self {
             id,
@@ -269,11 +269,11 @@ impl InputDescriptor {
     }
 }
 
-/// Constraints are objects used to describe the constraints that a Holder must satisfy to fulfill an Input Descriptor.
+/// Constraints are objects used to describe the constraints that a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder) must satisfy to fulfill an Input Descriptor.
 ///
 /// A constraint object MAY be empty, or it may include a `fields` and/or `limit_disclosure` property.
 ///
-/// For more information, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
+/// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Constraints {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -311,9 +311,9 @@ impl Constraints {
     }
 }
 
-/// ConstraintsField objects are used to describe the constraints that a Holder must satisfy to fulfill an Input Descriptor.
+/// ConstraintsField objects are used to describe the constraints that a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder) must satisfy to fulfill an Input Descriptor.
 ///
-/// For more information, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
+/// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConstraintsField {
     // JSON Regex path -> check regex against JSON structure to check if there is a match;
@@ -322,7 +322,7 @@ pub struct ConstraintsField {
     //
     /// `path` is a non empty list of [JsonPath](https://goessner.net/articles/JsonPath/) expressions.
     ///
-    /// For syntax definition, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition
+    /// For syntax definition, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
     pub path: NonEmptyVec<JsonPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -449,7 +449,7 @@ impl ConstraintsField {
     /// located at the indicated path of the field MUST validate against the
     /// JSON Schema filter, if a filter is present.
     ///
-    /// For more information, see: https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
+    /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
     pub fn set_optional(mut self, optional: bool) -> Self {
         self.optional = Some(optional);
         self
