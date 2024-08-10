@@ -1,10 +1,13 @@
 use crate::json_schema_validation::SchemaValidator;
 pub use crate::utils::NonEmptyVec;
 
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 
 /// A JSONPath is a string that represents a path to a specific value within a JSON object.
+///
+/// For syntax details, see [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
 pub type JsonPath = String;
 
 /// The claim format designation type is used in the input description object to specify the format of the claim.
@@ -72,6 +75,7 @@ pub enum ClaimFormatDesignation {
 ///
 /// > Presentation Definitions are objects that articulate what proofs a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires.
 /// These help the [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) to decide how or whether to interact with a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
+///
 /// Presentation Definitions are composed of inputs, which describe the forms and details of the
 /// proofs they require, and optional sets of selection rules, to allow [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder)s flexibility
 /// in cases where different types of proofs may satisfy an input requirement.
@@ -104,6 +108,11 @@ impl PresentationDefinition {
         }
     }
 
+    /// Return the id of the presentation definition.
+    pub fn id(&self) -> &uuid::Uuid {
+        &self.id
+    }
+
     /// Add a new input descriptor to the presentation definition.
     pub fn add_input_descriptors(mut self, input_descriptor: InputDescriptor) -> Self {
         self.input_descriptors.push(input_descriptor);
@@ -113,6 +122,11 @@ impl PresentationDefinition {
     /// Return the input descriptors of the presentation definition.
     pub fn input_descriptors(&self) -> &Vec<InputDescriptor> {
         &self.input_descriptors
+    }
+
+    /// Return a mutable reference to the input descriptors of the presentation definition.
+    pub fn input_descriptors_mut(&mut self) -> &mut Vec<InputDescriptor> {
+        &mut self.input_descriptors
     }
 
     /// Set the name of the presentation definition.
@@ -173,7 +187,7 @@ impl PresentationDefinition {
 /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InputDescriptor {
-    id: String,
+    id: uuid::Uuid,
     constraints: Constraints,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -190,10 +204,11 @@ impl InputDescriptor {
     /// property MUST be a string that does not conflict with the id of another
     /// Input Descriptor Object in the same Presentation Definition.
     ///
+    ///
     /// The Input Descriptor Object MUST contain a constraints property.
     ///
     /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
-    pub fn new(id: String, constraints: Constraints) -> Self {
+    pub fn new(id: uuid::Uuid, constraints: Constraints) -> Self {
         Self {
             id,
             constraints,
@@ -201,8 +216,19 @@ impl InputDescriptor {
         }
     }
 
+    /// Create a new instance of an input descriptor with a random UUID.
+    ///
+    /// The Input Descriptor Object MUST contain a constraints property.
+    pub fn new_random(constraints: Constraints) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4(),
+            constraints,
+            ..Default::default()
+        }
+    }
+
     /// Return the id of the input descriptor.
-    pub fn id(&self) -> &String {
+    pub fn id(&self) -> &uuid::Uuid {
         &self.id
     }
 
@@ -277,9 +303,9 @@ impl InputDescriptor {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Constraints {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fields: Option<Vec<ConstraintsField>>,
+    fields: Option<Vec<ConstraintsField>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit_disclosure: Option<ConstraintsLimitDisclosure>,
+    limit_disclosure: Option<ConstraintsLimitDisclosure>,
 }
 
 impl Constraints {
@@ -300,6 +326,16 @@ impl Constraints {
     }
 
     /// Set the limit disclosure value.
+    ///
+    /// For all [Claims](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claims) submitted in relation to [InputDescriptor] Objects that include a `constraints`
+    /// object with a `limit_disclosure` property set to the string value `required`,
+    /// ensure that the data submitted is limited to the entries specified in the `fields` property of the `constraints` object.
+    /// If the `fields` property IS NOT present, or contains zero field objects, the submission SHOULD NOT include any data from the Claim.
+    ///
+    /// For example, a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) may simply want to know whether a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder) has a valid, signed [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim) of a particular type,
+    /// without disclosing any of the data it contains.
+    ///
+    /// For more information: see [https://identity.foundation/presentation-exchange/spec/v2.0.0/#limited-disclosure-submissions](https://identity.foundation/presentation-exchange/spec/v2.0.0/#limited-disclosure-submissions)
     pub fn set_limit_disclosure(mut self, limit_disclosure: ConstraintsLimitDisclosure) -> Self {
         self.limit_disclosure = Some(limit_disclosure);
         self
@@ -319,24 +355,20 @@ pub struct ConstraintsField {
     // JSON Regex path -> check regex against JSON structure to check if there is a match;
     // TODO JsonPath validation at deserialization time
     // Regular expression includes the path -> whether or not the JSON object contains a property.
-    //
-    /// `path` is a non empty list of [JsonPath](https://goessner.net/articles/JsonPath/) expressions.
-    ///
-    /// For syntax definition, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
-    pub path: NonEmptyVec<JsonPath>,
+    path: NonEmptyVec<JsonPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub purpose: Option<String>,
+    purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    name: Option<String>,
     // TODO: JSONSchema validation at deserialization time
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<SchemaValidator>,
+    filter: Option<SchemaValidator>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub optional: Option<bool>,
+    optional: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub intent_to_retain: Option<bool>,
+    intent_to_retain: Option<bool>,
 }
 
 pub type ConstraintsFields = Vec<ConstraintsField>;
@@ -379,6 +411,10 @@ impl ConstraintsField {
     }
 
     /// Return the paths of the constraints field.
+    ///
+    /// `path` is a non empty list of [JsonPath](https://goessner.net/articles/JsonPath/) expressions.
+    ///
+    /// For syntax definition, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
     pub fn path(&self) -> &NonEmptyVec<JsonPath> {
         &self.path
     }
@@ -468,19 +504,124 @@ pub enum ConstraintsLimitDisclosure {
     Preferred,
 }
 
+/// Presentation Submissions are objects embedded within target
+/// [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim) negotiation
+/// formats that express how the inputs presented as proofs to a
+/// [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) are
+/// provided in accordance with the requirements specified in a [PresentationDefinition].
+///
+/// Embedded Presentation Submission objects MUST be located within target data format as
+/// the value of a `presentation_submission` property.
+///
+/// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationSubmission {
-    pub id: String,
-    pub definition_id: String,
-    pub descriptor_map: Vec<DescriptorMap>,
+    id: uuid::Uuid,
+    definition_id: uuid::Uuid,
+    descriptor_map: Vec<DescriptorMap>,
 }
 
+impl PresentationSubmission {
+    /// The presentation submission MUST contain an id property. The value of this property MUST be a UUID.
+    ///
+    /// The presentation submission object MUST contain a `definition_id` property. The value of this property MUST be the id value of a valid [PresentationDefinition::id()].
+    pub fn new(
+        id: uuid::Uuid,
+        definition_id: uuid::Uuid,
+        descriptor_map: Vec<DescriptorMap>,
+    ) -> Self {
+        Self {
+            id,
+            definition_id,
+            descriptor_map,
+        }
+    }
+
+    /// Return the id of the presentation submission.
+    pub fn id(&self) -> &uuid::Uuid {
+        &self.id
+    }
+
+    /// Return the definition id of the presentation submission.
+    pub fn definition_id(&self) -> &uuid::Uuid {
+        &self.definition_id
+    }
+
+    /// Return the descriptor map of the presentation submission.
+    pub fn descriptor_map(&self) -> &Vec<DescriptorMap> {
+        &self.descriptor_map
+    }
+
+    /// Return a mutable reference to the descriptor map of the presentation submission.
+    pub fn descriptor_map_mut(&mut self) -> &mut Vec<DescriptorMap> {
+        &mut self.descriptor_map
+    }
+}
+
+/// Descriptor Maps are objects used to describe the information a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder) provides to a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier).
+///
+/// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DescriptorMap {
-    pub id: String,
-    pub format: String, // TODO should be enum of supported formats
-    pub path: String,
-    //pub path_nested: Option<Box<DescriptorMap>>,
+    id: uuid::Uuid,
+    format: ClaimFormatDesignation,
+    path: JsonPath,
+    path_nested: Option<Box<DescriptorMap>>,
+}
+
+impl DescriptorMap {
+    /// The descriptor map MUST include an `id` property. The value of this property MUST be a string that matches the `id` property of the [InputDescriptor::id()] in the Presentation Definition that this [PresentationSubmission] is related to.
+    ///
+    /// The descriptor map object MUST include a `format` property. The value of this property MUST be a string that matches one of the [ClaimFormatDesignation]. This denotes the data format of the [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim).
+    ///
+    /// The descriptor map object MUST include a `path` property. The value of this property MUST be a [JSONPath](https://goessner.net/articles/JsonPath/) string expression. The path property indicates the [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim) submitted in relation to the identified [InputDescriptor], when executed against the top-level of the object the [PresentationSubmission] is embedded within.
+    ///
+    /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
+    pub fn new(id: uuid::Uuid, format: ClaimFormatDesignation, path: JsonPath) -> Self {
+        Self {
+            id,
+            format,
+            path,
+            path_nested: None,
+        }
+    }
+
+    /// Return the id of the descriptor map.
+    pub fn id(&self) -> &uuid::Uuid {
+        &self.id
+    }
+
+    /// Return the format of the descriptor map.
+    pub fn format(&self) -> &ClaimFormatDesignation {
+        &self.format
+    }
+
+    /// Return the path of the descriptor map.
+    pub fn path(&self) -> &JsonPath {
+        &self.path
+    }
+
+    /// Set the nested path of the descriptor map.
+    ///
+    /// The format of a path_nested object mirrors that of a [DescriptorMap] property. The nesting may be any number of levels deep.
+    /// The `id` property MUST be the same for each level of nesting.
+    ///
+    /// The path property inside each `path_nested` property provides a relative path within a given nested value.
+    ///
+    /// For more information on nested paths, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries](https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries)
+    ///
+    /// Errors:
+    /// - The id of the nested path must be the same as the parent id.
+    pub fn set_path_nested(mut self, path_nested: DescriptorMap) -> Result<Self> {
+        // Check the id of the nested path is the same as the parent id.
+        if path_nested.id() != self.id() {
+            bail!("The id of the nested path must be the same as the parent id.")
+        }
+
+        self.path_nested = Some(Box::new(path_nested));
+
+        Ok(self)
+    }
 }
 
 #[derive(Deserialize)]
