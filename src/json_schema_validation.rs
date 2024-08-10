@@ -1,3 +1,4 @@
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -60,7 +61,7 @@ impl PartialEq for SchemaValidator {
 impl Eq for SchemaValidator {}
 
 impl SchemaValidator {
-    pub fn validate(&self, value: &Value) -> Result<(), String> {
+    pub fn validate(&self, value: &Value) -> Result<()> {
         match self.schema_type {
             SchemaType::String => self.validate_string(value),
             SchemaType::Number => self.validate_number(value),
@@ -71,102 +72,102 @@ impl SchemaValidator {
         }
     }
 
-    pub fn validate_string(&self, value: &Value) -> Result<(), String> {
-        let s = value.as_str().ok_or("Expected a string")?;
+    pub fn validate_string(&self, value: &Value) -> Result<()> {
+        let s = value.as_str().context("Expected a string")?;
 
         if let Some(min_length) = self.min_length {
             if s.len() < min_length {
-                return Err(format!(
+                bail!(
                     "String length {} is less than minimum {}",
                     s.len(),
                     min_length
-                ));
+                );
             }
         }
 
         if let Some(max_length) = self.max_length {
             if s.len() > max_length {
-                return Err(format!(
+                bail!(
                     "String length {} is greater than maximum {}",
                     s.len(),
                     max_length
-                ));
+                );
             }
         }
 
         if let Some(pattern) = &self.pattern {
             // Note: In a real implementation, you'd use a regex library here
             if !s.contains(pattern) {
-                return Err(format!("String does not match pattern: {}", pattern));
+                bail!("String does not match pattern: {}", pattern);
             }
         }
 
         Ok(())
     }
 
-    pub fn validate_number(&self, value: &Value) -> Result<(), String> {
-        let n = value.as_f64().ok_or("Expected a number")?;
+    pub fn validate_number(&self, value: &Value) -> Result<()> {
+        let n = value.as_f64().context("Expected a number")?;
 
         if let Some(minimum) = self.minimum {
             if n < minimum {
-                return Err(format!("Number {} is less than minimum {}", n, minimum));
+                bail!("Number {} is less than minimum {}", n, minimum);
             }
         }
 
         if let Some(maximum) = self.maximum {
             if n > maximum {
-                return Err(format!("Number {} is greater than maximum {}", n, maximum));
+                bail!("Number {} is greater than maximum {}", n, maximum);
             }
         }
 
         Ok(())
     }
 
-    pub fn validate_integer(&self, value: &Value) -> Result<(), String> {
-        let n = value.as_i64().ok_or("Expected an integer")?;
+    pub fn validate_integer(&self, value: &Value) -> Result<()> {
+        let n = value.as_i64().context("Expected an integer")?;
 
         if let Some(minimum) = self.minimum {
             if (n as f64) < minimum {
-                return Err(format!("Integer {} is less than minimum {}", n, minimum));
+                bail!("Integer {} is less than minimum {}", n, minimum);
             }
         }
 
         if let Some(maximum) = self.maximum {
             if n as f64 > maximum {
-                return Err(format!("Integer {} is greater than maximum {}", n, maximum));
+                bail!("Integer {} is greater than maximum {}", n, maximum);
             }
         }
 
         Ok(())
     }
 
-    pub fn validate_boolean(&self, value: &Value) -> Result<(), String> {
+    pub fn validate_boolean(&self, value: &Value) -> Result<()> {
         if !value.is_boolean() {
-            return Err("Expected a boolean".to_string());
+            bail!("Expected a boolean".to_string());
         }
         Ok(())
     }
 
-    pub fn validate_array(&self, value: &Value) -> Result<(), String> {
-        let arr = value.as_array().ok_or("Expected an array")?;
+    pub fn validate_array(&self, value: &Value) -> Result<()> {
+        let arr = value.as_array().context("Expected an array")?;
 
         if let Some(min_length) = self.min_length {
             if arr.len() < min_length {
-                return Err(format!(
+                bail!(
                     "Array length {} is less than minimum {}",
                     arr.len(),
                     min_length
-                ));
+                );
             }
         }
 
         if let Some(max_length) = self.max_length {
             if arr.len() > max_length {
-                return Err(format!(
+                bail!(
                     "Array length {} is greater than maximum {}",
                     arr.len(),
                     max_length
-                ));
+                );
             }
         }
 
@@ -174,19 +175,19 @@ impl SchemaValidator {
             for (index, item) in arr.iter().enumerate() {
                 item_validator
                     .validate(item)
-                    .map_err(|e| format!("Error in array item {}: {}", index, e))?;
+                    .context(format!("Error in array item {}", index))?;
             }
         }
 
         Ok(())
     }
 
-    pub fn validate_object(&self, value: &Value) -> Result<(), String> {
-        let obj = value.as_object().ok_or("Expected an object")?;
+    pub fn validate_object(&self, value: &Value) -> Result<()> {
+        let obj = value.as_object().context("Expected an object")?;
 
         for required_prop in &self.required {
             if !obj.contains_key(required_prop) {
-                return Err(format!("Missing required property: {}", required_prop));
+                bail!("Missing required property: {}", required_prop);
             }
         }
 
@@ -194,7 +195,7 @@ impl SchemaValidator {
             if let Some(prop_value) = obj.get(prop_name) {
                 prop_validator
                     .validate(prop_value)
-                    .map_err(|e| format!("Error in property {}: {}", prop_name, e))?;
+                    .context(format!("Error in property {}", prop_name))?;
             }
         }
 
