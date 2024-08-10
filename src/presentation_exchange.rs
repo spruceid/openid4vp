@@ -679,7 +679,7 @@ pub(crate) mod tests {
                 "id": "36682080-c2ed-4ba6-a4cd-37c86ef2da8c",
                 "input_descriptors": [
                     {
-                        "id": "id card credential",
+                        "id": "d05a7f51-ac09-43af-8864-e00f0175f2c7",
                         "format": {
                             "ldp_vc": {
                                 "proof_type": [
