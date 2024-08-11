@@ -108,8 +108,8 @@ mod test {
         let object: UntypedObject = serde_json::from_value(json!(
             {
                 "presentation_submission": {
-                    "id": "id",
-                    "definition_id": "definition_id",
+                    "id": "d05a7f51-ac09-43af-8864-e00f0175f2c7",
+                    "definition_id": "f619e64a-8f80-4b71-8373-30cf07b1e4f2",
                     "descriptor_map": []
                 },
                 "vp_token": "string"
@@ -119,7 +119,7 @@ mod test {
         let response = UnencodedAuthorizationResponse::try_from(object).unwrap();
         assert_eq!(
             response.into_x_www_form_urlencoded().unwrap(),
-            "presentation_submission=%7B%22definition_id%22%3A%22definition_id%22%2C%22descriptor_map%22%3A%5B%5D%2C%22id%22%3A%22id%22%7D&vp_token=string",
+            "presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D&vp_token=string",
         )
     }
 }
