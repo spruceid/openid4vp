@@ -34,10 +34,20 @@ pub enum ClaimFormat {
         // The algorithm used to sign the JWT verifiable credential.
         alg: Vec<String>,
     },
+    #[serde(rename = "jwt_vc_json")]
+    JwtVcJson {
+        // Used in the OID4VP specification for wallet methods supported.
+        alg_values_supported: Vec<String>,
+    },
     #[serde(rename = "jwt_vp")]
     JwtVp {
         // The algorithm used to sign the JWT verifiable presentation.
         alg: Vec<String>,
+    },
+    #[serde(rename = "jwt_vp_json")]
+    JwtVpJson {
+        // Used in the OID4VP specification for wallet methods supported.
+        alg_values_supported: Vec<String>,
     },
     #[serde(rename = "ldp")]
     Ldp {
@@ -82,7 +92,9 @@ impl ClaimFormat {
         match self {
             ClaimFormat::Jwt { .. } => ClaimFormatDesignation::Jwt,
             ClaimFormat::JwtVc { .. } => ClaimFormatDesignation::JwtVc,
+            ClaimFormat::JwtVcJson { .. } => ClaimFormatDesignation::JwtVcJson,
             ClaimFormat::JwtVp { .. } => ClaimFormatDesignation::JwtVp,
+            ClaimFormat::JwtVpJson { .. } => ClaimFormatDesignation::JwtVpJson,
             ClaimFormat::Ldp { .. } => ClaimFormatDesignation::Ldp,
             ClaimFormat::LdpVc { .. } => ClaimFormatDesignation::LdpVc,
             ClaimFormat::LdpVp { .. } => ClaimFormatDesignation::LdpVp,
@@ -99,7 +111,7 @@ impl ClaimFormat {
 /// Registry of claim format type: https://identity.foundation/claim-format-registry/#registry
 ///
 /// Documentation based on the [DIF Presentation Exchange Specification v2.0](https://identity.foundation/presentation-exchange/spec/v2.0.0/#claim-format-designations)
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ClaimFormatDesignation {
     /// The format is a JSON Web Token (JWT) as defined by [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519)
     /// that will be submitted in the form of a JWT encoded string. Expression of
@@ -116,9 +128,15 @@ pub enum ClaimFormatDesignation {
     /// [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518) Section 3.
     #[serde(rename = "jwt_vc")]
     JwtVc,
+    /// JwtVcJson is used by `vp_formats_supported` in the OID4VP metadata.
+    #[serde(rename = "jwt_vc_json")]
+    JwtVcJson,
     /// See [JwtVc](JwtVc) for more information.
     #[serde(rename = "jwt_vp")]
     JwtVp,
+    /// JwtVpJson is used by `vp_formats_supported` in the OID4VP metadata.
+    #[serde(rename = "jwt_vp_json")]
+    JwtVpJson,
     /// The format is a Linked-Data Proof that will be submitted as an object.
     /// Expression of supported algorithms in relation to these formats MUST be
     /// conveyed using a proof_type property with values that are identifiers from

@@ -1,9 +1,14 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
 
 use anyhow::Error;
 use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value as Json};
+use ssi_jwk::Algorithm;
+
+use crate::presentation_exchange::{ClaimFormat, ClaimFormatDesignation};
 
 use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
 
@@ -65,19 +70,25 @@ impl WalletMetadata {
 
         let response_types_supported = ResponseTypesSupported(vec![ResponseType::VpToken]);
 
-        let mut format_definition = Map::new();
-        format_definition.insert(
-            "alg_values_supported".to_owned(),
-            Json::Array(vec![Json::String("ES256".to_owned())]),
+        let alg_values_supported = vec![Algorithm::ES256.to_string()];
+
+        let mut vp_formats_supported = HashMap::new();
+        vp_formats_supported.insert(
+            ClaimFormatDesignation::JwtVpJson,
+            ClaimFormat::JwtVpJson {
+                alg_values_supported: alg_values_supported.clone(),
+            },
         );
-        let format_definition = Json::Object(format_definition);
-        let mut vp_formats_supported = Map::new();
-        vp_formats_supported.insert("jwt_vp_json".to_owned(), format_definition.clone());
-        vp_formats_supported.insert("jwt_vc_json".to_owned(), format_definition.clone());
+        vp_formats_supported.insert(
+            ClaimFormatDesignation::JwtVcJson,
+            ClaimFormat::JwtVcJson {
+                alg_values_supported: alg_values_supported.clone(),
+            },
+        );
         let vp_formats_supported = VpFormatsSupported(vp_formats_supported);
 
         let request_object_signing_alg_values_supported =
-            RequestObjectSigningAlgValuesSupported(vec!["ES256".to_owned()]);
+            RequestObjectSigningAlgValuesSupported(alg_values_supported);
 
         let mut object = UntypedObject::default();
 

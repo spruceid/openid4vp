@@ -13,7 +13,7 @@ pub struct UntypedObject(pub(crate) Map<String, Json>);
 // TODO: Replace anyhow error type.
 /// A strongly typed parameter that can represent metadata entries or request parameters.
 pub trait TypedParameter:
-    TryFrom<Json, Error = anyhow::Error> + Into<Json> + Clone + std::fmt::Debug
+    TryFrom<Json, Error = anyhow::Error> + TryInto<Json> + Clone + std::fmt::Debug
 {
     const KEY: &'static str;
 }
@@ -51,12 +51,17 @@ impl UntypedObject {
     /// # Errors
     /// Returns an error if there was already an entry in the Object, but it could not be parsed from JSON.
     pub fn insert<T: TypedParameter>(&mut self, t: T) -> Option<Result<T>> {
-        Some(
-            self.0
-                .insert(T::KEY.to_owned(), t.into())?
-                .try_into()
-                .map_err(Into::into),
-        )
+        match t.try_into() {
+            Err(_) => {
+                return Some(Err(Error::msg("failed to parse typed parameter")));
+            }
+            Ok(value) => Some(
+                self.0
+                    .insert(T::KEY.to_owned(), value)?
+                    .try_into()
+                    .map_err(Into::into),
+            ),
+        }
     }
 
     /// Flatten the structure for posting as a form.
