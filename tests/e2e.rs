@@ -23,53 +23,53 @@ mod jwt_vc;
 async fn w3c_vc_did_client_direct_post() {
     let (wallet, verifier) = jwt_vc::wallet_verifier().await;
 
-    let presentation_definition = PresentationDefinition::new(
-        uuid::Uuid::new_v4(),
-        InputDescriptor::new(
-            uuid::Uuid::new_v4(),
-            Constraints::new().add_constraint(
-                ConstraintsField::new(
-                    "$.vp.verifiableCredential[0].credentialSubject.postalCode".into(),
-                )
-                .set_name("Check Postal Code".into())
-                .set_purpose(String::from(
-                    "Check whether you live within our school district.",
-                )),
-            ),
-        )
-        .set_name(String::from("School District Proof"))
-        .set_purpose(String::from(
-            "We need to know if you live within our school district.",
-        ))
-        .set_format(ClaimFormat::JwtVp {
-            alg: vec![Algorithm::ES256.to_string()],
-        }),
-    );
+    // let presentation_definition = PresentationDefinition::new(
+    //     uuid::Uuid::new_v4(),
+    //     InputDescriptor::new(
+    //         uuid::Uuid::new_v4(),
+    //         Constraints::new().add_constraint(
+    //             ConstraintsField::new(
+    //                 "$.vp.verifiableCredential[0].credentialSubject.postalCode".into(),
+    //             )
+    //             .set_name("Check Postal Code".into())
+    //             .set_purpose(String::from(
+    //                 "Check whether you live within our school district.",
+    //             )),
+    //         ),
+    //     )
+    //     .set_name(String::from("School District Proof"))
+    //     .set_purpose(String::from(
+    //         "We need to know if you live within our school district.",
+    //     ))
+    //     .set_format(ClaimFormat::JwtVp {
+    //         alg: vec![Algorithm::ES256.to_string()],
+    //     }),
+    // );
 
     // Save the presentation definition to a `presentation-exchange/test/presentation-definition/postal-code.json` file.
-    std::fs::write(
-        "presentation-exchange/test/presentation-definition/postal-code.json",
-        serde_json::to_string_pretty(&presentation_definition).unwrap(),
-    )
-    .expect("Unable to write file");
+    // std::fs::write(
+    //     "presentation-exchange/test/presentation-definition/postal-code.json",
+    //     serde_json::to_string_pretty(&presentation_definition).unwrap(),
+    // )
+    // .expect("Unable to write file");
 
-    // let presentation_definition: PresentationDefinition = serde_json::from_value(json!({
-    //     "id": "0b4dd017-efa6-4a05-a269-9790fa3c22c2",
-    //     "input_descriptors": [
-    //         {
-    //             "id": "064255a8-a0fa-4108-9ded-429f83003350",
-    //             "format": {
-    //                 "jwt_vc_json": {
-    //                     "proof_type": [
-    //                         "JsonWebSignature2020"
-    //                     ]
-    //                 }
-    //             },
-    //             "constraints": {}
-    //         }
-    //     ]
-    // }))
-    // .unwrap();
+    let presentation_definition: PresentationDefinition = serde_json::from_value(json!({
+        "id": "0b4dd017-efa6-4a05-a269-9790fa3c22c2",
+        "input_descriptors": [
+            {
+                "id": "064255a8-a0fa-4108-9ded-429f83003350",
+                "format": {
+                    "jwt_vc_json": {
+                        "proof_type": [
+                            "JsonWebSignature2020"
+                        ]
+                    }
+                },
+                "constraints": {}
+            }
+        ]
+    }))
+    .unwrap();
 
     let client_metadata = UntypedObject::default();
 

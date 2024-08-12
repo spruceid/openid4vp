@@ -24,14 +24,13 @@ pub async fn verify_with_resolver(
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
     trusted_dids: Option<&[String]>,
-    // resolver: &VerificationMethodDIDResolver<impl DIDResolver, M>,
-    resolver: impl DIDResolver,
-) -> Result<()>
-// where
-//     M: MaybeJwkVerificationMethod
-//         + VerificationMethodSet
-//         + TryFrom<GenericVerificationMethod, Error = InvalidVerificationMethod>,
-{
+    resolver: &VerificationMethodDIDResolver<
+        impl DIDResolver,
+        impl MaybeJwkVerificationMethod
+            + VerificationMethodSet
+            + TryFrom<GenericVerificationMethod, Error = InvalidVerificationMethod>,
+    >,
+) -> Result<()> {
     let (headers_b64, _, _) = ssi::claims::jws::split_jws(&request_jwt)?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
@@ -82,23 +81,10 @@ pub async fn verify_with_resolver(
 
     let did = DIDBuf::from_str(did)?;
 
-    let resolution_output = resolver
-        .resolve(did.as_did())
-        // .fetch_public_jwk(Some(&vm))
+    let jwk = resolver
+        .fetch_public_jwk(Some(&kid))
         .await
         .context("unable to resolve key from verification method")?;
-
-    let key = resolution_output
-        .document
-        .verification_method
-        .iter()
-        .find(|method| method.type_ == "JsonWebSignature2020")
-        .map(|method| method.properties.get("publicKeyJwk"))
-        .flatten()
-        .context("verification method not found in DID document")?;
-
-    let jwk: JWK = serde_json::from_value(key.clone())
-        .context("unable to parse JWK from verification method")?;
 
     let _: Json = ssi::claims::jwt::decode_verify(&request_jwt, &jwk)
         .context("request signature could not be verified")?;

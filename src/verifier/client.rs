@@ -51,42 +51,23 @@ impl DIDClient {
     pub async fn new(
         vm: String,
         signer: Arc<dyn RequestSigner + Send + Sync>,
-        resolver: impl DIDResolver, // resolver: &VerificationMethodDIDResolver<impl DIDResolver, M>,
-    ) -> Result<Self>
-// where
-    //     M: MaybeJwkVerificationMethod
-    //         + VerificationMethodSet
-    //         + TryFrom<GenericVerificationMethod, Error = InvalidVerificationMethod>,
-    {
+        resolver: &VerificationMethodDIDResolver<
+            impl DIDResolver,
+            impl MaybeJwkVerificationMethod
+                + VerificationMethodSet
+                + TryFrom<GenericVerificationMethod, Error = InvalidVerificationMethod>,
+        >,
+    ) -> Result<Self> {
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
         ))?;
 
-        // let did = DIDBuf::from_str(id)?;
-        let Ok(did_url_buf) = DIDURLBuf::from_string(vm.clone()) else {
-            bail!("expected a DID verification method, received '{vm}'")
-        };
-
-        let resolution_output = resolver
-            .dereference(did_url_buf.as_did_url())
-            // .resolve(did.as_did())
-            // .fetch_public_jwk(Some(&vm))
+        let jwk = resolver
+            .fetch_public_jwk(Some(&vm))
             .await
             .context("unable to resolve key from verification method")?;
 
-        // let key = resolution_output
-        //     .document
-        //     .verification_method
-        //     .iter()
-        //     .find(|method| method.type_ == "JsonWebSignature2020")
-        //     .map(|method| method.properties.get("publicKeyJwk"))
-        //     .flatten()
-        //     .context("verification method not found in DID document")?;
-
-        // let jwk: JWK = serde_json::from_value(key.clone())
-        //     .context("unable to parse JWK from verification method")?;
-
-        if &jwk != signer.jwk() {
+        if &*jwk != signer.jwk() {
             bail!(
                 "verification method resolved from DID document did not match public key of signer"
             )
