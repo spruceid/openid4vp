@@ -1,9 +1,9 @@
 use anyhow::{bail, Context, Result};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-// TODO: Consider using `Value` type from `serde_json`
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SchemaType {
@@ -96,8 +96,9 @@ impl SchemaValidator {
         }
 
         if let Some(pattern) = &self.pattern {
-            // Note: In a real implementation, you'd use a regex library here
-            if !s.contains(pattern) {
+            let regex_pattern = Regex::new(pattern).context("Invalid regex pattern")?;
+
+            if !regex_pattern.is_match(pattern) {
                 bail!("String does not match pattern: {}", pattern);
             }
         }
