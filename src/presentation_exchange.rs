@@ -67,6 +67,11 @@ pub enum ClaimFormat {
     },
     #[serde(rename = "mso_mdoc")]
     MsoMDoc(serde_json::Value),
+    #[serde(untagged)]
+    Other {
+        name: String,
+        value: serde_json::Value,
+    },
 }
 
 impl ClaimFormat {
@@ -84,6 +89,7 @@ impl ClaimFormat {
             ClaimFormat::AcVc { .. } => ClaimFormatDesignation::AcVc,
             ClaimFormat::AcVp { .. } => ClaimFormatDesignation::AcVp,
             ClaimFormat::MsoMDoc(_) => ClaimFormatDesignation::MsoMDoc,
+            ClaimFormat::Other { name, .. } => ClaimFormatDesignation::Other(name.to_owned()),
         }
     }
 }
@@ -147,6 +153,11 @@ pub enum ClaimFormatDesignation {
     /// the Credential format can be utilized with any type of Credential (or mdoc document types).
     #[serde(rename = "mso_mdoc")]
     MsoMDoc,
+    /// Other claim format designations not covered by the above.
+    ///
+    /// The value of this variant is the name of the claim format designation.
+    #[serde(untagged)]
+    Other(String),
 }
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
