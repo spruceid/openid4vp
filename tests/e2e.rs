@@ -4,18 +4,11 @@ use oid4vp::{
         object::UntypedObject,
         response::{parameters::VpToken, AuthorizationResponse, UnencodedAuthorizationResponse},
     },
-    presentation_exchange::{
-        ClaimFormat, Constraints, ConstraintsField, InputDescriptor, JsonPath,
-        PresentationDefinition, PresentationSubmission,
-    },
+    presentation_exchange::{PresentationDefinition, PresentationSubmission},
     verifier::session::{Outcome, Status},
     wallet::Wallet,
 };
 use serde_json::json;
-use ssi::{
-    claims::data_integrity::suites::JsonWebSignature2020,
-    crypto::{algorithm::ES256, Algorithm},
-};
 
 mod jwt_vc;
 

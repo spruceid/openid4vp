@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::core::{
     authorization_request::AuthorizationRequestObject,
     metadata::{parameters::wallet::RequestObjectSigningAlgValuesSupported, WalletMetadata},
@@ -9,13 +7,12 @@ use anyhow::{bail, Context, Result};
 use base64::prelude::*;
 use serde_json::{Map, Value as Json};
 use ssi::{
-    dids::{DIDBuf, DIDResolver, VerificationMethodDIDResolver},
+    dids::{DIDResolver, VerificationMethodDIDResolver},
     jwk::JWKResolver,
     verification_methods::{
         GenericVerificationMethod, InvalidVerificationMethod, MaybeJwkVerificationMethod,
         VerificationMethodSet,
     },
-    JWK,
 };
 
 /// Default implementation of request validation for `client_id_scheme` `did`.
@@ -78,8 +75,6 @@ pub async fn verify_with_resolver(
             bail!("'client_id' ({did}) is not in the list of trusted dids")
         }
     }
-
-    let did = DIDBuf::from_str(did)?;
 
     let jwk = resolver
         .fetch_public_jwk(Some(&kid))

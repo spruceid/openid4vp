@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -22,9 +22,8 @@ use oid4vp::{
 };
 use serde_json::json;
 use ssi::{
-    dids::{DIDKey, DIDResolver, VerificationMethodDIDResolver, DIDJWK},
-    prelude::{AnyJwkMethod, AnyMethod},
-    JWK,
+    dids::{DIDKey, VerificationMethodDIDResolver},
+    prelude::AnyJwkMethod,
 };
 
 pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
