@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::{json, Value as Json};
 use ssi::{
-    dids::{DIDBuf, DIDResolver, VerificationMethodDIDResolver},
+    dids::{DIDBuf, DIDResolver, DIDURLBuf, VerificationMethodDIDResolver, DIDURL},
     jwk::JWKResolver,
     verification_methods::{
         GenericVerificationMethod, InvalidVerificationMethod, MaybeJwkVerificationMethod,
@@ -62,25 +62,29 @@ impl DIDClient {
             "expected a DID verification method, received '{vm}'"
         ))?;
 
-        let did = DIDBuf::from_str(id)?;
+        // let did = DIDBuf::from_str(id)?;
+        let Ok(did_url_buf) = DIDURLBuf::from_string(vm.clone()) else {
+            bail!("expected a DID verification method, received '{vm}'")
+        };
 
         let resolution_output = resolver
-            .resolve(did.as_did())
+            .dereference(did_url_buf.as_did_url())
+            // .resolve(did.as_did())
             // .fetch_public_jwk(Some(&vm))
             .await
             .context("unable to resolve key from verification method")?;
 
-        let key = resolution_output
-            .document
-            .verification_method
-            .iter()
-            .find(|method| method.type_ == "JsonWebSignature2020")
-            .map(|method| method.properties.get("publicKeyJwk"))
-            .flatten()
-            .context("verification method not found in DID document")?;
+        // let key = resolution_output
+        //     .document
+        //     .verification_method
+        //     .iter()
+        //     .find(|method| method.type_ == "JsonWebSignature2020")
+        //     .map(|method| method.properties.get("publicKeyJwk"))
+        //     .flatten()
+        //     .context("verification method not found in DID document")?;
 
-        let jwk: JWK = serde_json::from_value(key.clone())
-            .context("unable to parse JWK from verification method")?;
+        // let jwk: JWK = serde_json::from_value(key.clone())
+        //     .context("unable to parse JWK from verification method")?;
 
         if &jwk != signer.jwk() {
             bail!(

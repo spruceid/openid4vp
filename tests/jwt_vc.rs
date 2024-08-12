@@ -45,9 +45,13 @@ pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
     // let resolver = VerificationMethodDIDResolver::new(did_jwk);
 
     let client = Arc::new(
-        oid4vp::verifier::client::DIDClient::new(verifier_did_vm.clone(), signer.clone(), DIDKey)
-            .await
-            .unwrap(),
+        oid4vp::verifier::client::DIDClient::new(
+            verifier_did_vm.clone(),
+            signer.clone(),
+            DIDJWK.into_vm_resolver(),
+        )
+        .await
+        .unwrap(),
     );
     let verifier = Arc::new(
         Verifier::builder()
