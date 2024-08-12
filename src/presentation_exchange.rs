@@ -10,6 +10,84 @@ use serde_json::Map;
 /// For syntax details, see [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
 pub type JsonPath = String;
 
+/// The Presentation Definition MAY include a format property. The value MUST be an object with one or
+/// more properties matching the registered [ClaimFormatDesignation] (e.g., jwt, jwt_vc, jwt_vp, etc.).
+/// The properties inform the Holder of the Claim format configurations the Verifier can process.
+/// The value for each claim format property MUST be an object composed as follows:
+///
+/// The object MUST include a format-specific property (i.e., alg, proof_type) that expresses which
+/// algorithms the Verifier supports for the format. Its value MUST be an array of one or more
+/// format-specific algorithmic identifier references, as noted in the [ClaimFormatDesignation].
+///
+/// See [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
+/// for an example schema.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum ClaimFormat {
+    #[serde(rename = "jwt")]
+    Jwt {
+        // The algorithm used to sign the JWT.
+        alg: Vec<String>,
+    },
+    #[serde(rename = "jwt_vc")]
+    JwtVc {
+        // The algorithm used to sign the JWT verifiable credential.
+        alg: Vec<String>,
+    },
+    #[serde(rename = "jwt_vp")]
+    JwtVp {
+        // The algorithm used to sign the JWT verifiable presentation.
+        alg: Vec<String>,
+    },
+    #[serde(rename = "ldp")]
+    Ldp {
+        // The proof type used to sign the linked data proof.
+        // e.g., "JsonWebSignature2020", "Ed25519Signature2018", "EcdsaSecp256k1Signature2019", "RsaSignature2018"
+        proof_type: Vec<String>,
+    },
+    #[serde(rename = "ldp_vc")]
+    LdpVc {
+        // The proof type used to sign the linked data proof verifiable credential.
+        proof_type: Vec<String>,
+    },
+    #[serde(rename = "ldp_vp")]
+    LdpVp {
+        // The proof type used to sign the linked data proof verifiable presentation.
+        proof_type: Vec<String>,
+    },
+    #[serde(rename = "ac_vc")]
+    AcVc {
+        // The proof type used to sign the anoncreds verifiable credential.
+        proof_type: Vec<String>,
+    },
+    #[serde(rename = "ac_vp")]
+    AcVp {
+        // The proof type used to sign the anoncreds verifiable presentation.
+        proof_type: Vec<String>,
+    },
+    #[serde(rename = "mso_mdoc")]
+    MsoMDoc(serde_json::Value),
+}
+
+impl ClaimFormat {
+    /// Returns the designated format of the claim.
+    ///
+    /// e.g., jwt, jwt_vc, jwt_vp, ldp, ldp_vc, ldp_vp, ac_vc, ac_vp, mso_mdoc
+    pub fn designation(&self) -> ClaimFormatDesignation {
+        match self {
+            ClaimFormat::Jwt { .. } => ClaimFormatDesignation::Jwt,
+            ClaimFormat::JwtVc { .. } => ClaimFormatDesignation::JwtVc,
+            ClaimFormat::JwtVp { .. } => ClaimFormatDesignation::JwtVp,
+            ClaimFormat::Ldp { .. } => ClaimFormatDesignation::Ldp,
+            ClaimFormat::LdpVc { .. } => ClaimFormatDesignation::LdpVc,
+            ClaimFormat::LdpVp { .. } => ClaimFormatDesignation::LdpVp,
+            ClaimFormat::AcVc { .. } => ClaimFormatDesignation::AcVc,
+            ClaimFormat::AcVp { .. } => ClaimFormatDesignation::AcVp,
+            ClaimFormat::MsoMDoc(_) => ClaimFormatDesignation::MsoMDoc,
+        }
+    }
+}
+
 /// The claim format designation type is used in the input description object to specify the format of the claim.
 ///
 /// Registry of claim format type: https://identity.foundation/claim-format-registry/#registry
@@ -90,7 +168,7 @@ pub struct PresentationDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<serde_json::Value>,
+    format: Option<ClaimFormat>,
 }
 
 impl PresentationDefinition {
@@ -130,6 +208,9 @@ impl PresentationDefinition {
     }
 
     /// Set the name of the presentation definition.
+    ///
+    /// The [PresentationDefinition] MAY contain a name property. If present, its value SHOULD be a
+    /// human-friendly string intended to constitute a distinctive designation of the Presentation Definition.
     pub fn set_name(mut self, name: String) -> Self {
         self.name = Some(name);
         self
@@ -141,6 +222,9 @@ impl PresentationDefinition {
     }
 
     /// Set the purpose of the presentation definition.
+    ///
+    /// The [PresentationDefinition] MAY contain a purpose property. If present, its value MUST be a string that
+    /// describes the purpose for which the Presentation Definition's inputs are being used for.
     pub fn set_purpose(mut self, purpose: String) -> Self {
         self.purpose = Some(purpose);
         self
@@ -166,13 +250,13 @@ impl PresentationDefinition {
     /// as noted in the Claim Format Designations section.
     ///
     /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
-    pub fn set_format(mut self, format: serde_json::Value) -> Self {
+    pub fn set_format(mut self, format: ClaimFormat) -> Self {
         self.format = Some(format);
         self
     }
 
     /// Return the format of the presentation definition.
-    pub fn format(&self) -> Option<&serde_json::Value> {
+    pub fn format(&self) -> Option<&ClaimFormat> {
         self.format.as_ref()
     }
 }
@@ -194,7 +278,7 @@ pub struct InputDescriptor {
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<serde_json::Value>, // TODO
+    format: Option<ClaimFormat>,
 }
 
 impl InputDescriptor {
@@ -277,7 +361,7 @@ impl InputDescriptor {
     ///
     /// This format property is identical in value signature to the top-level format object,
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn set_format(mut self, format: serde_json::Value) -> Self {
+    pub fn set_format(mut self, format: ClaimFormat) -> Self {
         self.format = Some(format);
         self
     }
@@ -290,7 +374,7 @@ impl InputDescriptor {
     ///
     /// This format property is identical in value signature to the top-level format object,
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn format(&self) -> Option<&serde_json::Value> {
+    pub fn format(&self) -> Option<&ClaimFormat> {
         self.format.as_ref()
     }
 }
