@@ -3,7 +3,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 #[cfg(feature = "p256")]
 use p256::ecdsa::{signature::Signer, Signature, SigningKey};
-use ssi::jwk::JWK;
+use ssi_jwk::JWK;
 
 use std::fmt::Debug;
 

@@ -4,13 +4,11 @@ use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::{json, Value as Json};
-use ssi::{
-    dids::{DIDResolver, VerificationMethodDIDResolver},
-    jwk::JWKResolver,
-    verification_methods::{
-        GenericVerificationMethod, InvalidVerificationMethod, MaybeJwkVerificationMethod,
-        VerificationMethodSet,
-    },
+use ssi_dids::{DIDResolver, VerificationMethodDIDResolver};
+use ssi_jwk::JWKResolver;
+use ssi_verification_methods::{
+    GenericVerificationMethod, InvalidVerificationMethod, MaybeJwkVerificationMethod,
+    VerificationMethodSet,
 };
 use tracing::debug;
 use x509_cert::{
