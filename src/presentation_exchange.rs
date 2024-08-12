@@ -161,7 +161,7 @@ pub enum ClaimFormatDesignation {
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationDefinition {
-    id: uuid::Uuid, // TODO: The specification allows for non-uuid types, should we revert to using String type?
+    id: String,
     input_descriptors: Vec<InputDescriptor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -178,7 +178,7 @@ impl PresentationDefinition {
     /// The Presentation Definition MUST contain an input_descriptors property. Its value MUST be an array of Input Descriptor Objects,
     /// the composition of which are found [InputDescriptor] type.
     ///
-    pub fn new(id: uuid::Uuid, input_descriptor: InputDescriptor) -> Self {
+    pub fn new(id: String, input_descriptor: InputDescriptor) -> Self {
         Self {
             id,
             input_descriptors: vec![input_descriptor],
@@ -187,7 +187,7 @@ impl PresentationDefinition {
     }
 
     /// Return the id of the presentation definition.
-    pub fn id(&self) -> &uuid::Uuid {
+    pub fn id(&self) -> &String {
         &self.id
     }
 
@@ -271,7 +271,7 @@ impl PresentationDefinition {
 /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InputDescriptor {
-    id: uuid::Uuid,
+    id: String,
     constraints: Constraints,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -292,7 +292,7 @@ impl InputDescriptor {
     /// The Input Descriptor Object MUST contain a constraints property.
     ///
     /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
-    pub fn new(id: uuid::Uuid, constraints: Constraints) -> Self {
+    pub fn new(id: String, constraints: Constraints) -> Self {
         Self {
             id,
             constraints,
@@ -300,19 +300,8 @@ impl InputDescriptor {
         }
     }
 
-    /// Create a new instance of an input descriptor with a random UUID.
-    ///
-    /// The Input Descriptor Object MUST contain a constraints property.
-    pub fn new_random(constraints: Constraints) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4(),
-            constraints,
-            ..Default::default()
-        }
-    }
-
     /// Return the id of the input descriptor.
-    pub fn id(&self) -> &uuid::Uuid {
+    pub fn id(&self) -> &String {
         &self.id
     }
 
@@ -606,7 +595,7 @@ pub struct PresentationSubmission {
 }
 
 impl PresentationSubmission {
-    /// The presentation submission MUST contain an id property. The value of this property MUST be a UUID.
+    /// The presentation submission MUST contain an id property. The value of this property MUST be a unique identifier, i.e. a UUID.
     ///
     /// The presentation submission object MUST contain a `definition_id` property. The value of this property MUST be the id value of a valid [PresentationDefinition::id()].
     pub fn new(
