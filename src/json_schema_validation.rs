@@ -98,7 +98,7 @@ impl SchemaValidator {
         if let Some(pattern) = &self.pattern {
             let regex_pattern = Regex::new(pattern).context("Invalid regex pattern")?;
 
-            if regex_pattern.is_match(pattern) {
+            if !regex_pattern.is_match(pattern) {
                 bail!("String does not match pattern: {}", pattern);
             }
         }
