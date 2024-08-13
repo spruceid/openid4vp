@@ -24,11 +24,6 @@ pub type JsonPath = String;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ClaimFormat {
-    #[serde(rename = "jwt")]
-    Jwt {
-        // The algorithm used to sign the JWT.
-        alg: Vec<String>,
-    },
     #[serde(rename = "jwt_vc")]
     JwtVc {
         // The algorithm used to sign the JWT verifiable credential.
@@ -48,6 +43,11 @@ pub enum ClaimFormat {
     JwtVpJson {
         // Used in the OID4VP specification for wallet methods supported.
         alg_values_supported: Vec<String>,
+    },
+    #[serde(rename = "jwt")]
+    Jwt {
+        // The algorithm used to sign the JWT.
+        alg: Vec<String>,
     },
     #[serde(rename = "ldp")]
     Ldp {
@@ -619,19 +619,19 @@ pub enum ConstraintsLimitDisclosure {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationSubmission {
     id: uuid::Uuid,
-    definition_id: uuid::Uuid,
+    definition_id: String,
     descriptor_map: Vec<DescriptorMap>,
 }
 
 impl PresentationSubmission {
     /// The presentation submission MUST contain an id property. The value of this property MUST be a unique identifier, i.e. a UUID.
     ///
-    /// The presentation submission object MUST contain a `definition_id` property. The value of this property MUST be the id value of a valid [PresentationDefinition::id()].
-    pub fn new(
-        id: uuid::Uuid,
-        definition_id: uuid::Uuid,
-        descriptor_map: Vec<DescriptorMap>,
-    ) -> Self {
+    /// The presentation submission object MUST contain a `definition_id` property.
+    /// The value of this property MUST be the id value of a valid [PresentationDefinition::id()].
+    ///
+    /// The object MUST include a `descriptor_map` property. The value of this property MUST be an array of
+    /// Input [DescriptorMap] Objects.
+    pub fn new(id: uuid::Uuid, definition_id: String, descriptor_map: Vec<DescriptorMap>) -> Self {
         Self {
             id,
             definition_id,
@@ -645,7 +645,7 @@ impl PresentationSubmission {
     }
 
     /// Return the definition id of the presentation submission.
-    pub fn definition_id(&self) -> &uuid::Uuid {
+    pub fn definition_id(&self) -> &String {
         &self.definition_id
     }
 
@@ -665,21 +665,21 @@ impl PresentationSubmission {
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DescriptorMap {
-    id: uuid::Uuid,
+    id: String,
     format: ClaimFormatDesignation,
     path: JsonPath,
     path_nested: Option<Box<DescriptorMap>>,
 }
 
 impl DescriptorMap {
-    /// The descriptor map MUST include an `id` property. The value of this property MUST be a string that matches the `id` property of the [InputDescriptor::id()] in the Presentation Definition that this [PresentationSubmission] is related to.
+    /// The descriptor map MUST include an `id` property. The value of this property MUST be a string that matches the `id` property of the [InputDescriptor::id()] in the [PresentationDefinition] that this [PresentationSubmission] is related to.
     ///
     /// The descriptor map object MUST include a `format` property. The value of this property MUST be a string that matches one of the [ClaimFormatDesignation]. This denotes the data format of the [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim).
     ///
     /// The descriptor map object MUST include a `path` property. The value of this property MUST be a [JSONPath](https://goessner.net/articles/JsonPath/) string expression. The path property indicates the [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim) submitted in relation to the identified [InputDescriptor], when executed against the top-level of the object the [PresentationSubmission] is embedded within.
     ///
     /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
-    pub fn new(id: uuid::Uuid, format: ClaimFormatDesignation, path: JsonPath) -> Self {
+    pub fn new(id: String, format: ClaimFormatDesignation, path: JsonPath) -> Self {
         Self {
             id,
             format,
@@ -689,7 +689,7 @@ impl DescriptorMap {
     }
 
     /// Return the id of the descriptor map.
-    pub fn id(&self) -> &uuid::Uuid {
+    pub fn id(&self) -> &String {
         &self.id
     }
 

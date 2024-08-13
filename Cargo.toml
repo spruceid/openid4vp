@@ -30,7 +30,7 @@ serde_qs = "0.12.0"
 serde_urlencoded = "0.7.1"
 ssi-claims = "0.1.0"
 ssi-dids = "0.2.0"
-ssi-jwk = "0.2.1"
+ssi-jwk = { version = "0.2.1", features = ["secp256r1"] }
 ssi-verification-methods = "0.1.1"
 thiserror = "1.0.49"
 tokio = "1.32.0"

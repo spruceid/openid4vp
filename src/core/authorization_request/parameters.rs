@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, ops::Deref};
 
 use crate::core::{
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
@@ -193,7 +193,28 @@ impl TryFrom<Json> for ClientMetadataUri {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Nonce(pub String);
+pub struct Nonce(String);
+
+impl From<String> for Nonce {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl Deref for Nonce {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Nonce {
+    pub fn random() -> Self {
+        // NOTE: consider replacing with rng rand crate.
+        Self(uuid::Uuid::new_v4().to_string())
+    }
+}
 
 impl TypedParameter for Nonce {
     const KEY: &'static str = "nonce";
