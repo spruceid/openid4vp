@@ -31,7 +31,7 @@ async fn w3c_vc_did_client_direct_post() {
         )
         .set_name("DID Key Identity Verification".into())
         .set_purpose("Check whether your identity key has been verified.".into())
-        .set_format(ClaimFormat::JwtVc {
+        .set_format(ClaimFormat::JwtVp {
             alg: vec![Algorithm::ES256.to_string()],
         }),
     );

@@ -22,7 +22,7 @@ pub type JsonPath = String;
 
 /// The predicate Feature introduces properties enabling Verifier to request that Holder apply a predicate and return the result.
 ///
-/// The predicate Feature extends the Input Descriptor Object constraints.fields object to add a predicate property.
+/// The predicate Feature extends the Input Descriptor Object `constraints.fields` object to add a predicate property.
 ///
 /// The value of predicate **MUST** be one of the following strings: `required` or `preferred`.
 ///
@@ -55,16 +55,6 @@ pub enum Predicate {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ClaimFormat {
-    #[serde(rename = "jwt_vc")]
-    JwtVc {
-        // The algorithm used to sign the JWT verifiable credential.
-        alg: Vec<String>,
-    },
-    #[serde(rename = "jwt_vc_json")]
-    JwtVcJson {
-        // Used in the OID4VP specification for wallet methods supported.
-        alg_values_supported: Vec<String>,
-    },
     #[serde(rename = "jwt_vp")]
     JwtVp {
         // The algorithm used to sign the JWT verifiable presentation.
@@ -75,15 +65,24 @@ pub enum ClaimFormat {
         // Used in the OID4VP specification for wallet methods supported.
         alg_values_supported: Vec<String>,
     },
+    #[serde(rename = "jwt_vc")]
+    JwtVc {
+        // The algorithm used to sign the JWT verifiable credential.
+        alg: Vec<String>,
+    },
+    #[serde(rename = "jwt_vc_json")]
+    JwtVcJson {
+        // Used in the OID4VP specification for wallet methods supported.
+        alg_values_supported: Vec<String>,
+    },
     #[serde(rename = "jwt")]
     Jwt {
         // The algorithm used to sign the JWT.
         alg: Vec<String>,
     },
-    #[serde(rename = "ldp")]
-    Ldp {
-        // The proof type used to sign the linked data proof.
-        // e.g., "JsonWebSignature2020", "Ed25519Signature2018", "EcdsaSecp256k1Signature2019", "RsaSignature2018"
+    #[serde(rename = "ldp_vp")]
+    LdpVp {
+        // The proof type used to sign the linked data proof verifiable presentation.
         proof_type: Vec<String>,
     },
     #[serde(rename = "ldp_vc")]
@@ -91,19 +90,20 @@ pub enum ClaimFormat {
         // The proof type used to sign the linked data proof verifiable credential.
         proof_type: Vec<String>,
     },
-    #[serde(rename = "ldp_vp")]
-    LdpVp {
-        // The proof type used to sign the linked data proof verifiable presentation.
-        proof_type: Vec<String>,
-    },
-    #[serde(rename = "ac_vc")]
-    AcVc {
-        // The proof type used to sign the anoncreds verifiable credential.
+    #[serde(rename = "ldp")]
+    Ldp {
+        // The proof type used to sign the linked data proof.
+        // e.g., "JsonWebSignature2020", "Ed25519Signature2018", "EcdsaSecp256k1Signature2019", "RsaSignature2018"
         proof_type: Vec<String>,
     },
     #[serde(rename = "ac_vp")]
     AcVp {
         // The proof type used to sign the anoncreds verifiable presentation.
+        proof_type: Vec<String>,
+    },
+    #[serde(rename = "ac_vc")]
+    AcVc {
+        // The proof type used to sign the anoncreds verifiable credential.
         proof_type: Vec<String>,
     },
     #[serde(rename = "mso_mdoc")]
