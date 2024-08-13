@@ -37,10 +37,10 @@ pub struct SchemaValidator {
     pattern: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     minimum: Option<f64>,
-    #[serde(rename = "exclusiveMinimum", skip_serializing_if = "Option::is_none")]
-    exclusive_minimum: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     maximum: Option<f64>,
+    #[serde(rename = "exclusiveMinimum", skip_serializing_if = "Option::is_none")]
+    exclusive_minimum: Option<f64>,
     #[serde(rename = "exclusiveMaximum", skip_serializing_if = "Option::is_none")]
     exclusive_maximum: Option<f64>,
     #[serde(rename = "multipleOf", skip_serializing_if = "Option::is_none")]
@@ -85,7 +85,7 @@ impl SchemaValidator {
         let s = value.as_str().context("Expected a string")?;
 
         if let Some(min_length) = self.min_length {
-            if s.len() < min_length {
+            if s.len() <= min_length {
                 bail!(
                     "String length {} is less than minimum {}",
                     s.len(),
@@ -95,7 +95,7 @@ impl SchemaValidator {
         }
 
         if let Some(max_length) = self.max_length {
-            if s.len() > max_length {
+            if s.len() >= max_length {
                 bail!(
                     "String length {} is greater than maximum {}",
                     s.len(),
@@ -119,14 +119,40 @@ impl SchemaValidator {
         let n = value.as_f64().context("Expected a number")?;
 
         if let Some(minimum) = self.minimum {
-            if n < minimum {
+            if n <= minimum {
                 bail!("Number {} is less than minimum {}", n, minimum);
             }
         }
 
         if let Some(maximum) = self.maximum {
-            if n > maximum {
+            if n >= maximum {
                 bail!("Number {} is greater than maximum {}", n, maximum);
+            }
+        }
+
+        if let Some(exclusive_minimum) = self.exclusive_minimum {
+            if n < exclusive_minimum {
+                bail!(
+                    "Number {} is less than or equal to exclusive minimum {}",
+                    n,
+                    exclusive_minimum
+                );
+            }
+        }
+
+        if let Some(exclusive_maximum) = self.exclusive_maximum {
+            if n > exclusive_maximum {
+                bail!(
+                    "Number {} is greater than or equal to exclusive maximum {}",
+                    n,
+                    exclusive_maximum
+                );
+            }
+        }
+
+        if let Some(multiple_of) = self.multiple_of {
+            if n % multiple_of != 0.0 {
+                bail!("Number {} is not a multiple of {}", n, multiple_of);
             }
         }
 
@@ -137,14 +163,40 @@ impl SchemaValidator {
         let n = value.as_i64().context("Expected an integer")?;
 
         if let Some(minimum) = self.minimum {
-            if (n as f64) < minimum {
+            if n <= minimum as i64 {
                 bail!("Integer {} is less than minimum {}", n, minimum);
             }
         }
 
         if let Some(maximum) = self.maximum {
-            if n as f64 > maximum {
+            if n >= maximum as i64 {
                 bail!("Integer {} is greater than maximum {}", n, maximum);
+            }
+        }
+
+        if let Some(exclusive_minimum) = self.exclusive_minimum {
+            if n < exclusive_minimum as i64 {
+                bail!(
+                    "Integer {} is less than or equal to exclusive minimum {}",
+                    n,
+                    exclusive_minimum
+                );
+            }
+        }
+
+        if let Some(exclusive_maximum) = self.exclusive_maximum {
+            if n > exclusive_maximum as i64 {
+                bail!(
+                    "Integer {} is greater than or equal to exclusive maximum {}",
+                    n,
+                    exclusive_maximum
+                );
+            }
+        }
+
+        if let Some(multiple_of) = self.multiple_of {
+            if n % multiple_of as i64 != 0 {
+                bail!("Integer {} is not a multiple of {}", n, multiple_of);
             }
         }
 
