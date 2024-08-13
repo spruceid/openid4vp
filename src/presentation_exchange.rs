@@ -1,14 +1,45 @@
-use crate::json_schema_validation::SchemaValidator;
-pub use crate::utils::NonEmptyVec;
+use std::collections::HashMap;
 
-use anyhow::{bail, Result};
+pub use crate::utils::NonEmptyVec;
+use crate::{
+    core::response::{AuthorizationResponse, UnencodedAuthorizationResponse},
+    json_schema_validation::SchemaValidator,
+};
+
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
+use ssi_claims::jwt::VerifiablePresentation;
+use ssi_dids::ssi_json_ld::{
+    object::value::FragmentRef,
+    syntax::{from_value, Value},
+};
 
 /// A JSONPath is a string that represents a path to a specific value within a JSON object.
 ///
 /// For syntax details, see [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
 pub type JsonPath = String;
+
+/// The predicate Feature introduces properties enabling Verifier to request that Holder apply a predicate and return the result.
+///
+/// The predicate Feature extends the Input Descriptor Object constraints.fields object to add a predicate property.
+///
+/// The value of predicate **MUST** be one of the following strings: `required` or `preferred`.
+///
+/// If the predicate property is not present, a Conformant Consumer **MUST NOT** return derived predicate values.
+///
+/// See: [https://identity.foundation/presentation-exchange/#predicate-feature](https://identity.foundation/presentation-exchange/#predicate-feature)
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum Predicate {
+    /// required - This indicates that the returned value **MUST** be the boolean result of
+    /// applying the value of the filter property to the result of evaluating the path property.
+    #[serde(rename = "required")]
+    Required,
+    /// preferred - This indicates that the returned value **SHOULD** be the boolean result of
+    /// applying the value of the filter property to the result of evaluating the path property.
+    #[serde(rename = "preferred")]
+    Preferred,
+}
 
 /// The Presentation Definition MAY include a format property. The value MUST be an object with one or
 /// more properties matching the registered [ClaimFormatDesignation] (e.g., jwt, jwt_vc, jwt_vp, etc.).
@@ -288,6 +319,57 @@ impl PresentationDefinition {
     pub fn format(&self) -> Option<&ClaimFormat> {
         self.format.as_ref()
     }
+
+    /// Validate a presentation submission against the presentation definition.
+    ///
+    /// Checks the underlying presentation submission parsed from the authorization response,
+    /// against the input descriptors of the presentation definition.
+    pub fn validate_authorization_response(
+        &self,
+        auth_response: &AuthorizationResponse,
+    ) -> Result<()> {
+        match auth_response {
+            AuthorizationResponse::Jwt(jwt) => {
+                bail!("Authorization Response Presentation Definition Validation Not Implemented.")
+            }
+            AuthorizationResponse::Unencoded(response) => {
+                let presentation_submission = response.presentation_submission().parsed();
+
+                let verifiable_presentation: VerifiablePresentation =
+                    ssi_claims::jwt::decode_unverified(&response.vp_token().0)?;
+
+                // Ensure the definition id matches the submission's definition id.
+                if presentation_submission.definition_id() != self.id() {
+                    bail!("Presentation Definition ID does not match the Presentation Submission.")
+                }
+
+                let descriptor_map: HashMap<String, DescriptorMap> = presentation_submission
+                    .descriptor_map()
+                    .iter()
+                    .map(|descriptor_map| (descriptor_map.id().to_owned(), descriptor_map.clone()))
+                    .collect();
+
+                for input_descriptor in self.input_descriptors().iter() {
+                    match descriptor_map.get(input_descriptor.id()) {
+                        None => {
+                            // TODO: Determine whether input descriptor must have a corresponding descriptor map.
+                            bail!("Input Descriptor ID not found in Descriptor Map.")
+                        }
+                        Some(descriptor) => {
+                            input_descriptor
+                                .validate_verifiable_presentation(
+                                    &verifiable_presentation,
+                                    descriptor,
+                                )
+                                .context("Input Descriptor Validation Failed.")?;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Input Descriptors are objects used to describe the information a
@@ -395,6 +477,69 @@ impl InputDescriptor {
     pub fn format(&self) -> Option<&ClaimFormat> {
         self.format.as_ref()
     }
+
+    /// Validate the input descriptor against the verifiable presentation and the descriptor map.
+    pub fn validate_verifiable_presentation(
+        &self,
+        verifiable_presentation: &VerifiablePresentation,
+        descriptor_map: &DescriptorMap,
+    ) -> Result<()> {
+        let vp = &verifiable_presentation.0;
+
+        let vp_json: serde_json::Value =
+            from_value(vp.clone()).context("failed to parse value into json type")?;
+
+        // The descriptor map must match the input descriptor.
+        if descriptor_map.id() != self.id() {
+            bail!("Input Descriptor ID does not match the Descriptor Map ID.")
+        }
+
+        if let Some(field_constraints) = self.constraints().fields() {
+            for constraint_field in field_constraints.iter() {
+                let mut selector = jsonpath_lib::selector(&vp_json);
+
+                // The root element is relative to the descriptor map path returned.
+                let Ok(root_element) = selector(descriptor_map.path()) else {
+                    bail!("Failed to select root element from verifiable presentation.")
+                };
+
+                let root_element = root_element
+                    .first()
+                    .ok_or(anyhow::anyhow!("Root element not found."))?;
+
+                let mut map_selector = jsonpath_lib::selector(root_element);
+
+                for field_path in constraint_field.path().iter() {
+                    let Ok(field_elements) = map_selector(field_path) else {
+                        // According the specification, found here:
+                        // [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation)
+                        // > If the result returned no JSONPath match, skip to the next path array element.
+                        continue;
+
+                        // bail!("Failed to select field element from verifiable presentation.");
+                    };
+
+                    if let Some(filter) = constraint_field.filter() {
+                        // TODO: possible trace a warning if a field is not valid.
+                        // TODO: Check the predicate feature value.
+                        let validated_fields = field_elements
+                            .iter()
+                            .find(|element| filter.validate(element).is_ok());
+
+                        if validated_fields.is_none() && !constraint_field.optional.unwrap_or(false)
+                        {
+                            bail!("Field did not pass filter validation.");
+                        }
+                    }
+
+                    // TODO: Check limit disclosure of data requested. Do not provide more data
+                    // than is necessary to satisfy the constraints.
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Constraints are objects used to describe the constraints that a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder) must satisfy to fulfill an Input Descriptor.
@@ -454,9 +599,6 @@ impl Constraints {
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConstraintsField {
-    // JSON Regex path -> check regex against JSON structure to check if there is a match;
-    // TODO JsonPath validation at deserialization time
-    // Regular expression includes the path -> whether or not the JSON object contains a property.
     path: NonEmptyVec<JsonPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<String>,
@@ -467,6 +609,9 @@ pub struct ConstraintsField {
     // TODO: JSONSchema validation at deserialization time
     #[serde(skip_serializing_if = "Option::is_none")]
     filter: Option<SchemaValidator>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    // Optional predicate value
+    predicate: Option<Predicate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     optional: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -483,6 +628,7 @@ impl From<NonEmptyVec<JsonPath>> for ConstraintsField {
             purpose: None,
             name: None,
             filter: None,
+            predicate: None,
             optional: None,
             intent_to_retain: None,
         }
@@ -501,6 +647,7 @@ impl ConstraintsField {
             purpose: None,
             name: None,
             filter: None,
+            predicate: None,
             optional: None,
             intent_to_retain: None,
         }
@@ -577,6 +724,29 @@ impl ConstraintsField {
     /// Return the filter of the constraints field.
     pub fn filter(&self) -> Option<&SchemaValidator> {
         self.filter.as_ref()
+    }
+
+    /// Set the predicate of the constraints field.
+    ///
+    /// When using the [Predicate Feature](https://identity.foundation/presentation-exchange/#predicate-feature),
+    /// the fields object **MAY** contain a predicate property. If the predicate property is present,
+    /// the filter property **MUST** also be present.
+    ///
+    /// See: [https://identity.foundation/presentation-exchange/#predicate-feature](https://identity.foundation/presentation-exchange/#predicate-feature)
+    pub fn set_predicate(mut self, predicate: Predicate) -> Self {
+        self.predicate = Some(predicate);
+        self
+    }
+
+    /// Return the predicate of the constraints field.
+    ///
+    /// When using the [Predicate Feature](https://identity.foundation/presentation-exchange/#predicate-feature),
+    /// the fields object **MAY** contain a predicate property. If the predicate property is present,
+    /// the filter property **MUST** also be present.
+    ///
+    /// See: [https://identity.foundation/presentation-exchange/#predicate-feature](https://identity.foundation/presentation-exchange/#predicate-feature)
+    pub fn predicate(&self) -> Option<&Predicate> {
+        self.predicate.as_ref()
     }
 
     /// Set the optional value of the constraints field.

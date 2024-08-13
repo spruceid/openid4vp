@@ -53,6 +53,16 @@ impl UnencodedAuthorizationResponse {
         serde_urlencoded::to_string(inner.flatten_for_form()?)
             .context("failed to encode response as 'application/x-www-form-urlencoded'")
     }
+
+    /// Return the Verifiable Presentation Token.
+    pub fn vp_token(&self) -> &VpToken {
+        &self.1
+    }
+
+    /// Return the Presentation Submission.
+    pub fn presentation_submission(&self) -> &PresentationSubmission {
+        &self.2
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

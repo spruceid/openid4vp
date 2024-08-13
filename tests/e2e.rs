@@ -92,7 +92,7 @@ async fn w3c_vc_did_client_direct_post() {
 
     let response = AuthorizationResponse::Unencoded(UnencodedAuthorizationResponse(
         Default::default(),
-        VpToken(include_str!("examples/vc.jwt").to_owned()),
+        VpToken(include_str!("examples/vp.jwt").to_owned()),
         presentation_submission.try_into().unwrap(),
     ));
 

@@ -21,21 +21,30 @@ pub enum SchemaType {
 ///
 /// For more information, see the field constraints filter property:
 ///
-/// https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object
+/// - [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
+///
+/// - [https://json-schema.org/understanding-json-schema](https://json-schema.org/understanding-json-schema)
+///
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SchemaValidator {
     #[serde(rename = "type")]
     schema_type: SchemaType,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "minLength", skip_serializing_if = "Option::is_none")]
     min_length: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "maxLength", skip_serializing_if = "Option::is_none")]
     max_length: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pattern: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     minimum: Option<f64>,
+    #[serde(rename = "exclusiveMinimum", skip_serializing_if = "Option::is_none")]
+    exclusive_minimum: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     maximum: Option<f64>,
+    #[serde(rename = "exclusiveMaximum", skip_serializing_if = "Option::is_none")]
+    exclusive_maximum: Option<f64>,
+    #[serde(rename = "multipleOf", skip_serializing_if = "Option::is_none")]
+    multiple_of: Option<f64>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     required: Vec<String>,
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
