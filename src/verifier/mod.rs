@@ -1,4 +1,4 @@
-use std::{fmt::Debug, future::Future, pin::Pin, sync::Arc};
+use std::{fmt::Debug, future::Future, sync::Arc};
 
 use anyhow::{bail, Context, Result};
 use client::Client;

@@ -1,28 +1,13 @@
 use std::collections::HashMap;
 
 pub use crate::utils::NonEmptyVec;
-use crate::{
-    core::response::{AuthorizationResponse, UnencodedAuthorizationResponse},
-    json_schema_validation::SchemaValidator,
-};
+use crate::{core::response::AuthorizationResponse, json_schema_validation::SchemaValidator};
 
 use anyhow::{bail, Context, Result};
-use did_method_key::DIDKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-use ssi_claims::{
-    jwt::{AnyRegisteredClaim, Issuer, RegisteredClaim, VerifiablePresentation},
-    CompactJWSString, VerificationParameters,
-};
-use ssi_dids::{
-    ssi_json_ld::{
-        object::value::FragmentRef,
-        syntax::{from_value, Value},
-    },
-    VerificationMethodDIDResolver, DIDJWK,
-};
-use ssi_jwk::JWK;
-use ssi_verification_methods::AnyJwkMethod;
+use ssi_claims::jwt::VerifiablePresentation;
+use ssi_dids::ssi_json_ld::syntax::from_value;
 
 /// A JSONPath is a string that represents a path to a specific value within a JSON object.
 ///
@@ -69,11 +54,6 @@ pub enum ClaimFormat {
         // The algorithm used to sign the JWT verifiable presentation.
         alg: Vec<String>,
     },
-    #[serde(rename = "jwt_vp_json")]
-    JwtVpJson {
-        // Used in the OID4VP specification for wallet methods supported.
-        alg_values_supported: Vec<String>,
-    },
     #[serde(rename = "jwt_vc")]
     JwtVc {
         // The algorithm used to sign the JWT verifiable credential.
@@ -81,6 +61,11 @@ pub enum ClaimFormat {
     },
     #[serde(rename = "jwt_vc_json")]
     JwtVcJson {
+        // Used in the OID4VP specification for wallet methods supported.
+        alg_values_supported: Vec<String>,
+    },
+    #[serde(rename = "jwt_vp_json")]
+    JwtVpJson {
         // Used in the OID4VP specification for wallet methods supported.
         alg_values_supported: Vec<String>,
     },
@@ -338,7 +323,7 @@ impl PresentationDefinition {
         auth_response: &AuthorizationResponse,
     ) -> Result<()> {
         match auth_response {
-            AuthorizationResponse::Jwt(jwt) => {
+            AuthorizationResponse::Jwt(_jwt) => {
                 bail!("Authorization Response Presentation Definition Validation Not Implemented.")
             }
             AuthorizationResponse::Unencoded(response) => {

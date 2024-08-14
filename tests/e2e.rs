@@ -31,15 +31,17 @@ async fn w3c_vc_did_client_direct_post() {
                     )
                     .set_name("Verify Identity Key".into())
                     .set_purpose("Check whether your identity key has been verified.".into())
-                    .set_filter(SchemaValidator::new(SchemaType::String))
+                    .set_filter(
+                        SchemaValidator::new(SchemaType::String).set_pattern("did:key:.*".into()),
+                    )
                     .set_predicate(Predicate::Required),
                 )
                 .set_limit_disclosure(ConstraintsLimitDisclosure::Required),
         )
         .set_name("DID Key Identity Verification".into())
         .set_purpose("Check whether your identity key has been verified.".into())
-        .set_format(ClaimFormat::JwtVp {
-            alg: vec![Algorithm::ES256.to_string()],
+        .set_format(ClaimFormat::JwtVcJson {
+            alg_values_supported: vec![Algorithm::ES256.to_string()],
         }),
     );
 
