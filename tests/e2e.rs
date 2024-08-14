@@ -1,3 +1,4 @@
+use oid4vp::json_schema_validation::{SchemaType, SchemaValidator};
 use oid4vp::presentation_exchange::*;
 
 use oid4vp::{
@@ -23,11 +24,17 @@ async fn w3c_vc_did_client_direct_post() {
         "did-key-id-proof".into(),
         InputDescriptor::new(
             "did-key-id".into(),
-            Constraints::new().add_constraint(
-                ConstraintsField::new("$.vp.verifiableCredential.credentialSubject.id".into())
+            Constraints::new()
+                .add_constraint(
+                    ConstraintsField::new(
+                        "$.vp.verifiableCredential[0].vc.credentialSubject.id".into(),
+                    )
                     .set_name("Verify Identity Key".into())
-                    .set_purpose("Check whether your identity key has been verified.".into()),
-            ),
+                    .set_purpose("Check whether your identity key has been verified.".into())
+                    .set_filter(SchemaValidator::new(SchemaType::String))
+                    .set_predicate(Predicate::Required),
+                )
+                .set_limit_disclosure(ConstraintsLimitDisclosure::Required),
         )
         .set_name("DID Key Identity Verification".into())
         .set_purpose("Check whether your identity key has been verified.".into())

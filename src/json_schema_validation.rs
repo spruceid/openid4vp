@@ -70,6 +70,84 @@ impl PartialEq for SchemaValidator {
 impl Eq for SchemaValidator {}
 
 impl SchemaValidator {
+    /// Creates a new schema validator with the given schema type.
+    pub fn new(schema_type: SchemaType) -> Self {
+        Self {
+            schema_type,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            minimum: None,
+            maximum: None,
+            exclusive_minimum: None,
+            exclusive_maximum: None,
+            multiple_of: None,
+            required: Vec::new(),
+            properties: HashMap::new(),
+            items: None,
+        }
+    }
+
+    pub fn set_schema_type(mut self, schema_type: SchemaType) -> Self {
+        self.schema_type = schema_type;
+        self
+    }
+
+    pub fn set_min_length(mut self, min_length: usize) -> Self {
+        self.min_length = Some(min_length);
+        self
+    }
+
+    pub fn set_max_length(mut self, max_length: usize) -> Self {
+        self.max_length = Some(max_length);
+        self
+    }
+
+    pub fn set_pattern(mut self, pattern: String) -> Self {
+        self.pattern = Some(pattern);
+        self
+    }
+
+    pub fn set_minimum(mut self, minimum: f64) -> Self {
+        self.minimum = Some(minimum);
+        self
+    }
+
+    pub fn set_maximum(mut self, maximum: f64) -> Self {
+        self.maximum = Some(maximum);
+        self
+    }
+
+    pub fn set_exclusive_minimum(mut self, exclusive_minimum: f64) -> Self {
+        self.exclusive_minimum = Some(exclusive_minimum);
+        self
+    }
+
+    pub fn set_exclusive_maximum(mut self, exclusive_maximum: f64) -> Self {
+        self.exclusive_maximum = Some(exclusive_maximum);
+        self
+    }
+
+    pub fn set_multiple_of(mut self, multiple_of: f64) -> Self {
+        self.multiple_of = Some(multiple_of);
+        self
+    }
+
+    pub fn add_required(mut self, required: String) -> Self {
+        self.required.push(required);
+        self
+    }
+
+    pub fn add_property(mut self, key: String, value: SchemaValidator) -> Self {
+        self.properties.insert(key, Box::new(value));
+        self
+    }
+
+    pub fn set_items(mut self, items: Box<SchemaValidator>) -> Self {
+        self.items = Some(items);
+        self
+    }
+
     pub fn validate(&self, value: &Value) -> Result<()> {
         match self.schema_type {
             SchemaType::String => self.validate_string(value),

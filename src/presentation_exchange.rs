@@ -7,13 +7,22 @@ use crate::{
 };
 
 use anyhow::{bail, Context, Result};
+use did_method_key::DIDKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-use ssi_claims::jwt::VerifiablePresentation;
-use ssi_dids::ssi_json_ld::{
-    object::value::FragmentRef,
-    syntax::{from_value, Value},
+use ssi_claims::{
+    jwt::{AnyRegisteredClaim, Issuer, RegisteredClaim, VerifiablePresentation},
+    CompactJWSString, VerificationParameters,
 };
+use ssi_dids::{
+    ssi_json_ld::{
+        object::value::FragmentRef,
+        syntax::{from_value, Value},
+    },
+    VerificationMethodDIDResolver, DIDJWK,
+};
+use ssi_jwk::JWK;
+use ssi_verification_methods::AnyJwkMethod;
 
 /// A JSONPath is a string that represents a path to a specific value within a JSON object.
 ///
@@ -324,7 +333,7 @@ impl PresentationDefinition {
     ///
     /// Checks the underlying presentation submission parsed from the authorization response,
     /// against the input descriptors of the presentation definition.
-    pub fn validate_authorization_response(
+    pub async fn validate_authorization_response(
         &self,
         auth_response: &AuthorizationResponse,
     ) -> Result<()> {
@@ -335,8 +344,25 @@ impl PresentationDefinition {
             AuthorizationResponse::Unencoded(response) => {
                 let presentation_submission = response.presentation_submission().parsed();
 
+                let jwt = response.vp_token().0.clone();
+
+                // TODO: Verify the JWT.
+                // let jws = CompactJWSString::from_string(jwt.clone()).context("Invalid JWT.")?;
+                // let resolver: VerificationMethodDIDResolver<DIDKey, AnyJwkMethod> =
+                //     VerificationMethodDIDResolver::new(DIDKey);
+                // let params = VerificationParameters::from_resolver(resolver);
+
+                // if let Err(e) = jws.verify(params).await {
+                //     bail!("JWT Verification Failed: {:?}", e)
+                // }
+
                 let verifiable_presentation: VerifiablePresentation =
-                    ssi_claims::jwt::decode_unverified(&response.vp_token().0)?;
+                    ssi_claims::jwt::decode_unverified(&jwt)?;
+
+                // let holder: Option<Issuer> =
+                //     Issuer::extract(AnyRegisteredClaim::from(verifiable_presentation.clone()));
+
+                // println!("Holder: {:?}", holder);
 
                 // Ensure the definition id matches the submission's definition id.
                 if presentation_submission.definition_id() != self.id() {
@@ -484,18 +510,32 @@ impl InputDescriptor {
         verifiable_presentation: &VerifiablePresentation,
         descriptor_map: &DescriptorMap,
     ) -> Result<()> {
-        let vp = &verifiable_presentation.0;
-
-        let vp_json: serde_json::Value =
-            from_value(vp.clone()).context("failed to parse value into json type")?;
-
         // The descriptor map must match the input descriptor.
         if descriptor_map.id() != self.id() {
             bail!("Input Descriptor ID does not match the Descriptor Map ID.")
         }
 
+        let vp = &verifiable_presentation.0;
+
+        let vp_json: serde_json::Value =
+            from_value(vp.clone()).context("failed to parse value into json type")?;
+
+        if let Some(ConstraintsLimitDisclosure::Required) = self.constraints().limit_disclosure() {
+            if self.constraints().fields().is_none() {
+                bail!("Required limit disclosure must have fields.")
+            }
+        };
+
         if let Some(field_constraints) = self.constraints().fields() {
             for constraint_field in field_constraints.iter() {
+                // Check if the filter exists if the predicate is present
+                // and set to required.
+                if let Some(Predicate::Required) = constraint_field.predicate() {
+                    if constraint_field.filter().is_none() {
+                        bail!("Required predicate must have a filter.")
+                    }
+                }
+
                 let mut selector = jsonpath_lib::selector(&vp_json);
 
                 // The root element is relative to the descriptor map path returned.
@@ -507,28 +547,54 @@ impl InputDescriptor {
                     .first()
                     .ok_or(anyhow::anyhow!("Root element not found."))?;
 
+                println!("Root element: {:?}", root_element);
+
                 let mut map_selector = jsonpath_lib::selector(root_element);
 
                 for field_path in constraint_field.path().iter() {
-                    let Ok(field_elements) = map_selector(field_path) else {
+                    println!("Field path: {:?}", field_path);
+
+                    let field_elements = map_selector(field_path)
+                        .context("Failed to select field elements from verifiable presentation.")?;
+
+                    // Check if the field matches are empty.
+                    if field_elements.is_empty() {
+                        if let Some(ConstraintsLimitDisclosure::Required) =
+                            self.constraints().limit_disclosure()
+                        {
+                            bail!("Field elements are empty while limit disclosure is required.")
+                        }
+
                         // According the specification, found here:
                         // [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation)
                         // > If the result returned no JSONPath match, skip to the next path array element.
                         continue;
+                    }
 
-                        // bail!("Failed to select field element from verifiable presentation.");
-                    };
+                    println!("Field elements: {:?}", field_elements);
 
                     if let Some(filter) = constraint_field.filter() {
                         // TODO: possible trace a warning if a field is not valid.
                         // TODO: Check the predicate feature value.
-                        let validated_fields = field_elements
-                            .iter()
-                            .find(|element| filter.validate(element).is_ok());
+                        let validated_fields =
+                            field_elements
+                                .iter()
+                                .find(|element| match filter.validate(element) {
+                                    Err(e) => {
+                                        println!("Field did not pass filter validation: {}", e);
+                                        false
+                                    }
+                                    Ok(_) => true,
+                                });
 
-                        if validated_fields.is_none() && !constraint_field.optional.unwrap_or(false)
-                        {
-                            bail!("Field did not pass filter validation.");
+                        if validated_fields.is_none() {
+                            if let Some(Predicate::Required) = constraint_field.predicate() {
+                                bail!(
+                                    "Field did not pass filter validation, required by predicate."
+                                );
+                            } else if constraint_field.is_required() {
+                                bail!("Field did not pass filter validation, and is not an optional field.");
+                            }
                         }
                     }
 
@@ -637,6 +703,8 @@ impl From<NonEmptyVec<JsonPath>> for ConstraintsField {
 
 impl ConstraintsField {
     /// Create a new instance of the constraints field with the given path.
+    ///
+    /// Constraint fields must have at least one JSONPath to the field for which the constraint is applied.
     ///
     /// Tip: Use the [ConstraintsField::From](ConstraintsField::From) trait to convert a [NonEmptyVec](NonEmptyVec) of
     /// [JsonPath](JsonPath) to a [ConstraintsField](ConstraintsField) if more than one path is known.
@@ -764,8 +832,13 @@ impl ConstraintsField {
     }
 
     /// Return the optional value of the constraints field.
-    pub fn optional(&self) -> bool {
+    pub fn is_optional(&self) -> bool {
         self.optional.unwrap_or(false)
+    }
+
+    /// Inverse alias for `!is_optional()`.
+    pub fn is_required(&self) -> bool {
+        !self.is_optional()
     }
 }
 

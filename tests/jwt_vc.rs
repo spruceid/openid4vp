@@ -159,15 +159,16 @@ impl AsyncHttpClient for MockHttpClient {
                 id.parse().context("failed to parse id")?,
                 AuthorizationResponse::from_x_www_form_urlencoded(body)
                     .context("failed to parse authorization response request")?,
-                |session, auth_response| {
+                |session, auth_response| async move {
                     session
                         .presentation_definition
-                        .validate_authorization_response(&auth_response)?;
+                        .validate_authorization_response(&auth_response)
+                        .await?;
 
                     println!("Session: {:?}", session);
                     println!("Auth Response: {:?}", auth_response);
 
-                    Ok(Box::pin(async { Outcome::Success }))
+                    Ok(Outcome::Success)
                 },
             )
             .await?;
