@@ -216,8 +216,8 @@ impl SchemaValidator {
     /// If the instance is a number, then this keyword validates only if the instance is greater than or exactly equal to "minimum".
     ///
     /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.4](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.4)
-    pub fn set_minimum(mut self, minimum: f64) -> Self {
-        self.minimum = Some(minimum);
+    pub fn set_minimum(mut self, minimum: impl Into<f64>) -> Self {
+        self.minimum = Some(minimum.into());
         self
     }
 
@@ -226,8 +226,8 @@ impl SchemaValidator {
     /// If the instance is a number, then this keyword validates only if the instance is less than or exactly equal to "maximum".
     ///
     /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.2](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.2)
-    pub fn set_maximum(mut self, maximum: f64) -> Self {
-        self.maximum = Some(maximum);
+    pub fn set_maximum(mut self, maximum: impl Into<f64>) -> Self {
+        self.maximum = Some(maximum.into());
         self
     }
 
@@ -236,8 +236,8 @@ impl SchemaValidator {
     /// If the instance is a number, then the instance is valid only if it has a value strictly greater than (not equal to) "exclusiveMinimum".
     ///
     /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.5](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.5)
-    pub fn set_exclusive_minimum(mut self, exclusive_minimum: f64) -> Self {
-        self.exclusive_minimum = Some(exclusive_minimum);
+    pub fn set_exclusive_minimum(mut self, exclusive_minimum: impl Into<f64>) -> Self {
+        self.exclusive_minimum = Some(exclusive_minimum.into());
         self
     }
 
@@ -246,8 +246,8 @@ impl SchemaValidator {
     /// If the instance is a number, then the instance is valid only if it has a value strictly less than (not equal to) "exclusiveMaximum".
     ///
     /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.3](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.3)
-    pub fn set_exclusive_maximum(mut self, exclusive_maximum: f64) -> Self {
-        self.exclusive_maximum = Some(exclusive_maximum);
+    pub fn set_exclusive_maximum(mut self, exclusive_maximum: impl Into<f64>) -> Self {
+        self.exclusive_maximum = Some(exclusive_maximum.into());
         self
     }
 
@@ -256,8 +256,8 @@ impl SchemaValidator {
     /// If the instance is a number, then the instance is valid only if it has a value strictly greater than (not equal to) "exclusiveMinimum".
     ///
     /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.1](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.1)
-    pub fn set_multiple_of(mut self, multiple_of: f64) -> Self {
-        self.multiple_of = Some(multiple_of);
+    pub fn set_multiple_of(mut self, multiple_of: impl Into<f64>) -> Self {
+        self.multiple_of = Some(multiple_of.into());
         self
     }
 
@@ -795,7 +795,7 @@ mod tests {
 
         assert!(schema_validator.validate(&value).is_ok());
 
-        schema_validator = schema_validator.set_minimum(6.).set_maximum(9.);
+        schema_validator = schema_validator.set_minimum(6).set_maximum(9);
 
         assert!(schema_validator.validate(&value).is_err());
 
@@ -804,8 +804,8 @@ mod tests {
         assert!(schema_validator.validate(&value).is_ok());
 
         schema_validator = schema_validator
-            .set_exclusive_minimum(6.)
-            .set_exclusive_maximum(9.);
+            .set_exclusive_minimum(6)
+            .set_exclusive_maximum(9);
 
         assert!(schema_validator.validate(&value).is_err());
 
