@@ -64,6 +64,8 @@ pub struct SchemaValidator {
     required: Option<Vec<String>>,
     #[serde(rename = "dependentRequired", skip_serializing_if = "Option::is_none")]
     dependent_required: Option<HashMap<String, Vec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    properties: Option<HashMap<String, SchemaValidator>>,
     #[serde(rename = "maxProperties", skip_serializing_if = "Option::is_none")]
     max_properties: Option<usize>,
     #[serde(rename = "minProperties", skip_serializing_if = "Option::is_none")]
@@ -129,6 +131,7 @@ impl SchemaValidator {
             multiple_of: None,
             required: None,
             dependent_required: None,
+            properties: None,
             max_properties: None,
             min_properties: None,
             max_items: None,
@@ -282,17 +285,42 @@ impl SchemaValidator {
     /// Set the dependent requirements for a property.
     pub fn set_dependent_requirements(
         mut self,
-        dependent_requirements: HashMap<String, Vec<String>>,
+        property: String,
+        requirements: Vec<String>,
     ) -> Self {
-        self.dependent_required = Some(dependent_requirements);
+        self.dependent_required
+            .get_or_insert_with(HashMap::new)
+            .insert(property, requirements);
         self
     }
 
-    /// Add a dependent requirement for a property.
-    pub fn add_dependent_requirement(mut self, property: String, requirement: Vec<String>) -> Self {
+    /// Add a single dependent requirement for a property.
+    ///
+    /// Adding subsequent dependent requirements for the same property
+    /// will append to the list of requirements.
+    pub fn add_dependent_requirement(mut self, property: String, requirement: String) -> Self {
         self.dependent_required
             .get_or_insert_with(HashMap::new)
-            .insert(property, requirement);
+            .entry(property)
+            .or_insert_with(Vec::new)
+            .push(requirement);
+
+        self
+    }
+
+    /// Set the property schema validations that are required.
+    ///
+    /// This will be used to validate the properties of the object.
+    pub fn set_properties(mut self, properties: HashMap<String, SchemaValidator>) -> Self {
+        self.properties = Some(properties);
+        self
+    }
+
+    /// Add a single property schema validation that is required.
+    pub fn add_property(mut self, property: String, schema: SchemaValidator) -> Self {
+        self.properties
+            .get_or_insert_with(HashMap::new)
+            .insert(property, schema);
         self
     }
 
@@ -676,9 +704,8 @@ impl SchemaValidator {
         if let Some(min_properties) = self.min_properties {
             if obj.len() < min_properties {
                 bail!(
-                    "Object has fewer properties {} than minimum {}",
+                    "Object has fewer properties {} than minimum {min_properties}",
                     obj.len(),
-                    min_properties
                 );
             }
         }
@@ -686,9 +713,8 @@ impl SchemaValidator {
         if let Some(max_properties) = self.max_properties {
             if obj.len() > max_properties {
                 bail!(
-                    "Object has more properties {} than maximum {}",
+                    "Object has more properties {} than maximum {max_properties}",
                     obj.len(),
-                    max_properties
                 );
             }
         }
@@ -700,9 +726,20 @@ impl SchemaValidator {
 
                     for dependent in dependents {
                         if !child.contains_key(dependent) {
-                            bail!("Dependent property {} is required", dependent);
+                            bail!("Dependent property {dependent} is required");
                         }
                     }
+                }
+            }
+        }
+
+        // Validate the properties, if they exist in the object.
+        // Will error if the property is not found in the object to validate.
+        if let Some(properties) = &self.properties {
+            for (prop, schema) in properties {
+                match obj.get(prop) {
+                    None => bail!("Missing property: {prop}"),
+                    Some(obj) => schema.validate(obj)?,
                 }
             }
         }
@@ -813,7 +850,7 @@ mod tests {
 
         assert!(schema_validator.validate(&value).is_ok());
 
-        schema_validator = schema_validator.set_multiple_of(2.);
+        schema_validator = schema_validator.set_multiple_of(2);
 
         assert!(schema_validator.validate(&value).is_err());
 
@@ -898,6 +935,7 @@ mod tests {
 
         assert!(schema_validator.validate(&value).is_ok());
 
+        // NOTE: `add_requirement` will add to the existing required fields, if any.
         schema_validator = schema_validator.add_requirement("birthdate".into());
 
         assert!(schema_validator.validate(&value).is_err());
@@ -909,14 +947,20 @@ mod tests {
         assert!(schema_validator.validate(&value).is_ok());
 
         schema_validator =
-            schema_validator.add_dependent_requirement("address".into(), vec!["street".into()]);
+            schema_validator.add_dependent_requirement("address".into(), "zip".into());
 
         assert!(schema_validator.validate(&value).is_ok());
 
-        // NOTE: `add_requirement` will add to the existing required fields.
-        schema_validator = schema_validator.add_requirement("birthdate".into());
+        // Validate nested properties
+        schema_validator = schema_validator.add_property(
+            "address".into(),
+            SchemaValidator::new(SchemaType::Object).add_property(
+                "zip".into(),
+                SchemaValidator::new(SchemaType::String).set_pattern(r#"\d{5}"#.into()),
+            ),
+        );
 
-        assert!(schema_validator.validate(&value).is_err());
+        assert!(schema_validator.validate(&value).is_ok());
 
         Ok(())
     }
