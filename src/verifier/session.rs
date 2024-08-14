@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
 use anyhow::{bail, Error, Ok, Result};
 use async_trait::async_trait;
+use serde_json::Value as Json;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -38,7 +39,7 @@ pub enum Outcome {
     /// The authorization response did not pass verification.
     Failure { reason: String },
     /// The authorization response is verified.
-    Success,
+    Success { info: Json },
 }
 
 /// Storage interface for session information.
@@ -111,7 +112,7 @@ impl Outcome {
         match self {
             Outcome::Error { .. } => 0,
             Outcome::Failure { .. } => 1,
-            Outcome::Success => 2,
+            Outcome::Success { .. } => 2,
         }
     }
 }
