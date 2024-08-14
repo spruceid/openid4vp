@@ -5,18 +5,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 
 use oid4vp::verifier::request_signer::{P256Signer, RequestSigner};
-use serde_json::json;
-use ssi_claims::jwt::{AnyRegisteredClaim, Issuer, RegisteredClaim, VerifiablePresentation};
+use ssi_claims::jwt::VerifiablePresentation;
 use ssi_claims::vc::v2::syntax::VERIFIABLE_PRESENTATION_TYPE;
 use ssi_claims::{JWSPayload, JWTClaims};
 // use ssi_claims::vc::v1::VerifiableCredential;
-use ssi_claims::{
-    jwt::{self, Subject},
-    ResourceProvider,
-};
+use ssi_claims::jwt;
 use ssi_dids::ssi_json_ld::syntax::{Object, Value};
 use ssi_dids::ssi_json_ld::CREDENTIALS_V1_CONTEXT;
-use ssi_dids::{DIDKey, DIDJWK};
+use ssi_dids::DIDKey;
 use ssi_jwk::JWK;
 
 #[tokio::test]
