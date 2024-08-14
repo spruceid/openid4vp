@@ -283,6 +283,7 @@ impl PresentationDefinition {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InputDescriptor {
     id: String,
+    #[serde(default)]
     constraints: Constraints,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
