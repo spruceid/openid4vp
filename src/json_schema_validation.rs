@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::utils::NonEmptyVec;
 
@@ -48,6 +48,8 @@ pub struct SchemaValidator {
     max_length: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pattern: Option<String>,
+    // TODO: Consider using a generic type for numbers/integers that
+    // can be used for minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf
     #[serde(skip_serializing_if = "Option::is_none")]
     minimum: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -74,6 +76,8 @@ pub struct SchemaValidator {
     unique_items: Option<bool>,
     #[serde(rename = "maxContains", skip_serializing_if = "Option::is_none")]
     max_contains: Option<usize>,
+    #[serde(rename = "contains", skip_serializing_if = "Option::is_none")]
+    contains: Option<SchemaType>,
     #[serde(rename = "minContains", skip_serializing_if = "Option::is_none")]
     min_contains: Option<usize>,
     #[serde(rename = "const", skip_serializing_if = "Option::is_none")]
@@ -132,6 +136,7 @@ impl SchemaValidator {
             unique_items: None,
             min_contains: None,
             max_contains: None,
+            contains: None,
             r#const: None,
             r#enum: None,
         }
@@ -139,38 +144,70 @@ impl SchemaValidator {
 
     /// The value of this keyword MUST be a non-negative integer.
     ///
-    /// A string instance is valid against this keyword if its length is greater than, or equal to, the value of this keyword.
+    /// An array instance is valid against "maxItems" if its size is less than, or equal to, the value of this keyword.
     ///
-    /// The length of a string instance is defined as the number of its characters as defined by RFC 8259 [RFC8259].
-    ///
-    /// Omitting this keyword has the same behavior as a value of 0.
-    ///
-    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.2](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.2)
-    pub fn set_min_length(mut self, min_length: usize) -> Self {
-        self.min_length = Some(min_length);
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.1](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.1)
+    pub fn set_max_items(mut self, max_items: usize) -> Self {
+        self.max_items = Some(max_items);
         self
     }
 
     /// The value of this keyword MUST be a non-negative integer.
     ///
-    /// A string instance is valid against this keyword if its length is less than, or equal to, the value of this keyword.
+    /// An array instance is valid against "minItems" if its size is greater than, or equal to, the value of this keyword.
     ///
-    /// The length of a string instance is defined as the number of its characters as defined by RFC 8259 [RFC8259].
+    /// Omitting this keyword has the same behavior as a value of 0.
     ///
-    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.1](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.1)
-    pub fn set_max_length(mut self, max_length: usize) -> Self {
-        self.max_length = Some(max_length);
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.2](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.2)
+    pub fn set_min_items(mut self, min_items: usize) -> Self {
+        self.min_items = Some(min_items);
         self
     }
 
-    /// The value of this keyword MUST be a string. This string SHOULD be a valid regular expression, according to the ECMA-262 regular expression dialect.
+    /// The value of this keyword MUST be a boolean.
+    ///
+    /// If this keyword has boolean value false, the instance validates successfully.
+    /// If it has boolean value true, the instance validates successfully if all of its elements are unique.
+    ///
+    /// Omitting this keyword has the same behavior as a value of false.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.3](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.3)
+    pub fn set_unique_items(mut self, unique_items: bool) -> Self {
+        self.unique_items = Some(unique_items);
+        self
+    }
 
-    // A string instance is considered valid if the regular expression matches the instance successfully.
-    // Recall: regular expressions are not implicitly anchored.
-    //
-    // See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.3](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.3)
-    pub fn set_pattern(mut self, pattern: String) -> Self {
-        self.pattern = Some(pattern);
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// If "contains" is not present within the same schema object, then this keyword has no effect.
+    ///
+    /// An instance array is valid against "maxContains" in two ways, depending on the form of the
+    /// annotation result of an adjacent "contains" [json-schema] keyword. The first way is if the
+    /// annotation result is an array and the length of that array is less than or equal to the "maxContains"
+    /// value. The second way is if the annotation result is a boolean "true" and the instance array length
+    /// is less than or equal to the "maxContains" value.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.4](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.4)
+    pub fn set_max_contains(mut self, max: usize, contains: SchemaType) -> Self {
+        self.max_contains = Some(max);
+        self.contains = Some(contains);
+        self
+    }
+
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// If "contains" is not present within the same schema object, then this keyword has no effect.
+    ///
+    /// An instance array is valid against "minContains" in two ways, depending on the form of the annotation result of an adjacent "contains" [json-schema] keyword. The first way is if the annotation result is an array and the length of that array is greater than or equal to the "minContains" value. The second way is if the annotation result is a boolean "true" and the instance array length is greater than or equal to the "minContains" value.
+    ///
+    /// A value of 0 is allowed, but is only useful for setting a range of occurrences from 0 to the value of "maxContains". A value of 0 causes "minContains" and "contains" to always pass validation (but validation can still fail against a "maxContains" keyword).
+    ///
+    /// Omitting this keyword has the same behavior as a value of 1.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.5](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.5)
+    pub fn set_min_contains(mut self, min: usize, contains: SchemaType) -> Self {
+        self.min_contains = Some(min);
+        self.contains = Some(contains);
         self
     }
 
@@ -236,9 +273,26 @@ impl SchemaValidator {
         self
     }
 
-    /// In addition to [SchemaValidator::set_required], push a single requirement to the list of required properties.
+    /// Push a single requirement to the list of required properties.
     pub fn add_requirement(mut self, requirement: String) -> Self {
         self.required.get_or_insert_with(Vec::new).push(requirement);
+        self
+    }
+
+    /// Set the dependent requirements for a property.
+    pub fn set_dependent_requirements(
+        mut self,
+        dependent_requirements: HashMap<String, Vec<String>>,
+    ) -> Self {
+        self.dependent_required = Some(dependent_requirements);
+        self
+    }
+
+    /// Add a dependent requirement for a property.
+    pub fn add_dependent_requirement(mut self, property: String, requirement: Vec<String>) -> Self {
+        self.dependent_required
+            .get_or_insert_with(HashMap::new)
+            .insert(property, requirement);
         self
     }
 
@@ -266,68 +320,38 @@ impl SchemaValidator {
 
     /// The value of this keyword MUST be a non-negative integer.
     ///
-    /// An array instance is valid against "maxItems" if its size is less than, or equal to, the value of this keyword.
+    /// A string instance is valid against this keyword if its length is greater than, or equal to, the value of this keyword.
     ///
-    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.1](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.1)
-    pub fn set_max_items(mut self, max_items: usize) -> Self {
-        self.max_items = Some(max_items);
-        self
-    }
-
-    /// The value of this keyword MUST be a non-negative integer.
-    ///
-    /// An array instance is valid against "minItems" if its size is greater than, or equal to, the value of this keyword.
+    /// The length of a string instance is defined as the number of its characters as defined by RFC 8259 [RFC8259].
     ///
     /// Omitting this keyword has the same behavior as a value of 0.
     ///
-    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.2](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.2)
-    pub fn set_min_items(mut self, min_items: usize) -> Self {
-        self.min_items = Some(min_items);
-        self
-    }
-
-    /// The value of this keyword MUST be a boolean.
-    ///
-    /// If this keyword has boolean value false, the instance validates successfully.
-    /// If it has boolean value true, the instance validates successfully if all of its elements are unique.
-    ///
-    /// Omitting this keyword has the same behavior as a value of false.
-    ///
-    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.3](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.3)
-    pub fn set_unique_items(mut self, unique_items: bool) -> Self {
-        self.unique_items = Some(unique_items);
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.2](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.2)
+    pub fn set_min_length(mut self, min_length: usize) -> Self {
+        self.min_length = Some(min_length);
         self
     }
 
     /// The value of this keyword MUST be a non-negative integer.
     ///
-    /// If "contains" is not present within the same schema object, then this keyword has no effect.
+    /// A string instance is valid against this keyword if its length is less than, or equal to, the value of this keyword.
     ///
-    /// An instance array is valid against "maxContains" in two ways, depending on the form of the
-    /// annotation result of an adjacent "contains" [json-schema] keyword. The first way is if the
-    /// annotation result is an array and the length of that array is less than or equal to the "maxContains"
-    /// value. The second way is if the annotation result is a boolean "true" and the instance array length
-    /// is less than or equal to the "maxContains" value.
+    /// The length of a string instance is defined as the number of its characters as defined by RFC 8259 [RFC8259].
     ///
-    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.4](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.4)
-    pub fn set_max_contains(mut self, max: usize) -> Self {
-        self.max_contains = Some(max);
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.1](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.1)
+    pub fn set_max_length(mut self, max_length: usize) -> Self {
+        self.max_length = Some(max_length);
         self
     }
 
-    /// The value of this keyword MUST be a non-negative integer.
-    ///
-    /// If "contains" is not present within the same schema object, then this keyword has no effect.
-    ///
-    /// An instance array is valid against "minContains" in two ways, depending on the form of the annotation result of an adjacent "contains" [json-schema] keyword. The first way is if the annotation result is an array and the length of that array is greater than or equal to the "minContains" value. The second way is if the annotation result is a boolean "true" and the instance array length is greater than or equal to the "minContains" value.
-    ///
-    /// A value of 0 is allowed, but is only useful for setting a range of occurrences from 0 to the value of "maxContains". A value of 0 causes "minContains" and "contains" to always pass validation (but validation can still fail against a "maxContains" keyword).
-    ///
-    /// Omitting this keyword has the same behavior as a value of 1.
-    ///
-    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.5](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.5)
-    pub fn set_min_contains(mut self, min: usize) -> Self {
-        self.min_contains = Some(min);
+    /// The value of this keyword MUST be a string. This string SHOULD be a valid regular expression, according to the ECMA-262 regular expression dialect.
+
+    // A string instance is considered valid if the regular expression matches the instance successfully.
+    // Recall: regular expressions are not implicitly anchored.
+    //
+    // See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.3](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.3)
+    pub fn set_pattern(mut self, pattern: String) -> Self {
+        self.pattern = Some(pattern);
         self
     }
 
@@ -381,7 +405,7 @@ impl SchemaValidator {
         let s = value.as_str().context("Expected a string")?;
 
         if let Some(min_length) = self.min_length {
-            if s.len() <= min_length {
+            if s.len() < min_length {
                 bail!(
                     "String length {} is less than minimum {}",
                     s.len(),
@@ -391,7 +415,7 @@ impl SchemaValidator {
         }
 
         if let Some(max_length) = self.max_length {
-            if s.len() >= max_length {
+            if s.len() > max_length {
                 bail!(
                     "String length {} is greater than maximum {}",
                     s.len(),
@@ -400,11 +424,11 @@ impl SchemaValidator {
             }
         }
 
-        if let Some(pattern) = &self.pattern {
+        if let Some(pattern) = self.pattern.as_ref() {
             let regex_pattern = Regex::new(pattern).context("Invalid regex pattern")?;
 
-            if !regex_pattern.is_match(pattern) {
-                bail!("String does not match pattern: {}", pattern);
+            if !regex_pattern.is_match(s) {
+                bail!("String {s} does not match pattern: {}", regex_pattern);
             }
         }
 
@@ -415,19 +439,19 @@ impl SchemaValidator {
         let n = value.as_f64().context("Expected a number")?;
 
         if let Some(minimum) = self.minimum {
-            if n <= minimum {
+            if n < minimum {
                 bail!("Number {} is less than minimum {}", n, minimum);
             }
         }
 
         if let Some(maximum) = self.maximum {
-            if n >= maximum {
+            if n > maximum {
                 bail!("Number {} is greater than maximum {}", n, maximum);
             }
         }
 
         if let Some(exclusive_minimum) = self.exclusive_minimum {
-            if n < exclusive_minimum {
+            if n <= exclusive_minimum {
                 bail!(
                     "Number {} is less than or equal to exclusive minimum {}",
                     n,
@@ -437,7 +461,7 @@ impl SchemaValidator {
         }
 
         if let Some(exclusive_maximum) = self.exclusive_maximum {
-            if n > exclusive_maximum {
+            if n >= exclusive_maximum {
                 bail!(
                     "Number {} is greater than or equal to exclusive maximum {}",
                     n,
@@ -459,19 +483,19 @@ impl SchemaValidator {
         let n = value.as_i64().context("Expected an integer")?;
 
         if let Some(minimum) = self.minimum {
-            if n <= minimum as i64 {
+            if n < minimum as i64 {
                 bail!("Integer {} is less than minimum {}", n, minimum);
             }
         }
 
         if let Some(maximum) = self.maximum {
-            if n >= maximum as i64 {
+            if n > maximum as i64 {
                 bail!("Integer {} is greater than maximum {}", n, maximum);
             }
         }
 
         if let Some(exclusive_minimum) = self.exclusive_minimum {
-            if n < exclusive_minimum as i64 {
+            if n <= exclusive_minimum as i64 {
                 bail!(
                     "Integer {} is less than or equal to exclusive minimum {}",
                     n,
@@ -481,7 +505,7 @@ impl SchemaValidator {
         }
 
         if let Some(exclusive_maximum) = self.exclusive_maximum {
-            if n > exclusive_maximum as i64 {
+            if n >= exclusive_maximum as i64 {
                 bail!(
                     "Integer {} is greater than or equal to exclusive maximum {}",
                     n,
@@ -509,23 +533,129 @@ impl SchemaValidator {
     pub fn validate_array(&self, value: &Value) -> Result<()> {
         let arr = value.as_array().context("Expected an array")?;
 
-        if let Some(min_length) = self.min_length {
-            if arr.len() < min_length {
+        if let Some(min_items) = self.min_items {
+            if arr.len() < min_items {
                 bail!(
                     "Array length {} is less than minimum {}",
                     arr.len(),
-                    min_length
+                    min_items
                 );
             }
         }
 
-        if let Some(max_length) = self.max_length {
-            if arr.len() > max_length {
+        if let Some(max_items) = self.max_items {
+            if arr.len() > max_items {
                 bail!(
                     "Array length {} is greater than maximum {}",
                     arr.len(),
-                    max_length
+                    max_items
                 );
+            }
+        }
+
+        if let Some(unique_items) = self.unique_items {
+            if unique_items {
+                let mut unique = HashSet::new();
+                for item in arr {
+                    if !unique.insert(item) {
+                        bail!("Array has duplicate items");
+                    }
+                }
+            }
+        }
+
+        if let Some(contains) = self.contains.as_ref() {
+            match contains {
+                SchemaType::String => {
+                    let count = arr.iter().filter(|item| item.is_string()).count();
+
+                    if let Some(max_contains) = self.max_contains {
+                        if count > max_contains {
+                            bail!("Array contains more than maximum number of strings");
+                        }
+                    }
+
+                    if let Some(min_contains) = self.min_contains {
+                        if count < min_contains {
+                            bail!("Array contains fewer than minimum number of strings");
+                        }
+                    }
+                }
+                SchemaType::Number => {
+                    let count = arr.iter().filter(|item| item.is_number()).count();
+
+                    if let Some(max_contains) = self.max_contains {
+                        if count > max_contains {
+                            bail!("Array contains more than maximum number of numbers");
+                        }
+                    }
+
+                    if let Some(min_contains) = self.min_contains {
+                        if count < min_contains {
+                            bail!("Array contains fewer than minimum number of numbers");
+                        }
+                    }
+                }
+                SchemaType::Integer => {
+                    let count = arr.iter().filter(|item| item.is_i64()).count();
+
+                    if let Some(max_contains) = self.max_contains {
+                        if count > max_contains {
+                            bail!("Array contains more than maximum number of integers");
+                        }
+                    }
+
+                    if let Some(min_contains) = self.min_contains {
+                        if count < min_contains {
+                            bail!("Array contains fewer than minimum number of integers");
+                        }
+                    }
+                }
+                SchemaType::Boolean => {
+                    let count = arr.iter().filter(|item| item.is_boolean()).count();
+
+                    if let Some(max_contains) = self.max_contains {
+                        if count > max_contains {
+                            bail!("Array contains more than maximum number of booleans");
+                        }
+                    }
+
+                    if let Some(min_contains) = self.min_contains {
+                        if count < min_contains {
+                            bail!("Array contains fewer than minimum number of booleans");
+                        }
+                    }
+                }
+                SchemaType::Array => {
+                    let count = arr.iter().filter(|item| item.is_array()).count();
+
+                    if let Some(max_contains) = self.max_contains {
+                        if count > max_contains {
+                            bail!("Array contains more than maximum number of arrays");
+                        }
+                    }
+
+                    if let Some(min_contains) = self.min_contains {
+                        if count < min_contains {
+                            bail!("Array contains fewer than minimum number of arrays");
+                        }
+                    }
+                }
+                SchemaType::Object => {
+                    let count = arr.iter().filter(|item| item.is_object()).count();
+
+                    if let Some(max_contains) = self.max_contains {
+                        if count > max_contains {
+                            bail!("Array contains more than maximum number of objects");
+                        }
+                    }
+
+                    if let Some(min_contains) = self.min_contains {
+                        if count < min_contains {
+                            bail!("Array contains fewer than minimum number of objects");
+                        }
+                    }
+                }
             }
         }
 
@@ -544,7 +674,7 @@ impl SchemaValidator {
         }
 
         if let Some(min_properties) = self.min_properties {
-            if obj.len() >= min_properties {
+            if obj.len() < min_properties {
                 bail!(
                     "Object has fewer properties {} than minimum {}",
                     obj.len(),
@@ -554,7 +684,7 @@ impl SchemaValidator {
         }
 
         if let Some(max_properties) = self.max_properties {
-            if obj.len() <= max_properties {
+            if obj.len() > max_properties {
                 bail!(
                     "Object has more properties {} than maximum {}",
                     obj.len(),
@@ -576,6 +706,254 @@ impl SchemaValidator {
                 }
             }
         }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+
+    #[test]
+    fn test_regex() -> Result<()> {
+        let regex = Regex::new(r#"(\+1|1)?[-.\s]?\(?[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}"#)?;
+
+        assert!(regex.is_match(r#"+1 (253) 111 4321"#));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_string() -> Result<()> {
+        let value = Value::String("hello".to_string());
+
+        let mut schema_validator = SchemaValidator::new(SchemaType::String).set_max_length(4);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        schema_validator = schema_validator.set_max_length(5);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator
+            .set_pattern(r#"(\+1|1)?[-.\s]?\(?[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}"#.to_owned());
+
+        assert!(schema_validator.validate(&value).is_err());
+        schema_validator = schema_validator.set_max_length(17);
+
+        let value = Value::String(r#"+1 (253) 111 4321"#.to_owned());
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_number() -> Result<()> {
+        let mut schema_validator = SchemaValidator::new(SchemaType::Number);
+
+        let mut value = serde_json::json!(5.0);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_minimum(6.0).set_maximum(9.0);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        value = serde_json::json!(6.0);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator
+            .set_exclusive_minimum(6.0)
+            .set_exclusive_maximum(9.0);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        value = serde_json::json!(7.0);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_multiple_of(2.0);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        value = serde_json::json!(8.0);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_integer() -> Result<()> {
+        let mut schema_validator = SchemaValidator::new(SchemaType::Integer);
+
+        let mut value = serde_json::json!(5);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_minimum(6.).set_maximum(9.);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        value = serde_json::json!(6);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator
+            .set_exclusive_minimum(6.)
+            .set_exclusive_maximum(9.);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        value = serde_json::json!(7);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_multiple_of(2.);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        value = serde_json::json!(8);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_array() -> Result<()> {
+        let mut schema_validator = SchemaValidator::new(SchemaType::Array);
+
+        let mut value = serde_json::json!([1, 2, 3]);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_min_items(4);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        schema_validator = schema_validator.set_max_items(5);
+
+        value = serde_json::json!([1, 2, 3, 4, 5]);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_unique_items(true);
+
+        value = serde_json::json!([1, 2, 3, 5, 5]);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        schema_validator = schema_validator.set_unique_items(false);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_min_contains(1, SchemaType::String);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        value = serde_json::json!([1, 2, 3, "Hello", ["a", "b", "c"]]);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        // NOTE: To check whether an array contains multiple different typed elements,
+        // we can overwrite the `min/max_contains` value to check for a new type.
+        schema_validator = schema_validator.set_min_contains(1, SchemaType::Array);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_min_contains(3, SchemaType::Number);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_object() -> Result<()> {
+        let mut schema_validator = SchemaValidator::new(SchemaType::Object);
+
+        let value = serde_json::json!({
+            "name": "John Doe",
+            "age": 25,
+            "address": {
+                "street": "1234 Elm St",
+                "city": "Springfield",
+                "state": "IL",
+                "zip": "62701"
+            }
+        });
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_min_properties(5);
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        schema_validator = schema_validator.set_min_properties(3);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.add_requirement("birthdate".into());
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        // NOTE: `set_required` will overwrite existing required fields.
+        schema_validator =
+            schema_validator.set_required(vec!["name".into(), "age".into(), "address".into()]);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator =
+            schema_validator.add_dependent_requirement("address".into(), vec!["street".into()]);
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        // NOTE: `add_requirement` will add to the existing required fields.
+        schema_validator = schema_validator.add_requirement("birthdate".into());
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_const() -> Result<()> {
+        let mut schema_validator = SchemaValidator::new(SchemaType::String);
+
+        let value = serde_json::json!("Hello, world!");
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        schema_validator = schema_validator.set_const(serde_json::json!("Hello, World!"));
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_enum() -> Result<()> {
+        let mut schema_validator = SchemaValidator::new(SchemaType::String);
+
+        let value = serde_json::json!("Hello, world!");
+
+        assert!(schema_validator.validate(&value).is_ok());
+
+        let mut enums = NonEmptyVec::new(serde_json::json!("Hello, World!"));
+
+        schema_validator = schema_validator.set_enum(enums.clone());
+
+        assert!(schema_validator.validate(&value).is_err());
+
+        enums.push(serde_json::json!("Hello, world!"));
+        schema_validator = schema_validator.set_enum(enums);
+
+        assert!(schema_validator.validate(&value).is_ok());
 
         Ok(())
     }
