@@ -168,7 +168,9 @@ impl AsyncHttpClient for MockHttpClient {
                     println!("Session: {:?}", session);
                     println!("Auth Response: {:?}", auth_response);
 
-                    Ok(Outcome::Success)
+                    Ok(Outcome::Success {
+                        info: serde_json::Value::Null,
+                    })
                 },
             )
             .await?;
