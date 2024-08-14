@@ -4,6 +4,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+use crate::utils::NonEmptyVec;
+
+/// The value of this keyword MUST be either a string or an array. If it is an array,
+/// elements of the array MUST be strings and MUST be unique.
+///
+/// String values MUST be one of the six primitive types
+/// ("null", "boolean", "object", "array", "number", or "string"), or "integer"
+/// which matches any number with a zero fractional part.
+///
+/// If the value of "type" is a string, then an instance validates successfully if its
+/// type matches the type represented by the value of the string. If the value of "type"
+/// is an array, then an instance validates successfully if its type matches any
+/// of the types indicated by the strings in the array.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SchemaType {
@@ -45,12 +58,28 @@ pub struct SchemaValidator {
     exclusive_maximum: Option<f64>,
     #[serde(rename = "multipleOf", skip_serializing_if = "Option::is_none")]
     multiple_of: Option<f64>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    required: Vec<String>,
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    properties: HashMap<String, Box<SchemaValidator>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    items: Option<Box<SchemaValidator>>,
+    required: Option<Vec<String>>,
+    #[serde(rename = "dependentRequired", skip_serializing_if = "Option::is_none")]
+    dependent_required: Option<HashMap<String, Vec<String>>>,
+    #[serde(rename = "maxProperties", skip_serializing_if = "Option::is_none")]
+    max_properties: Option<usize>,
+    #[serde(rename = "minProperties", skip_serializing_if = "Option::is_none")]
+    min_properties: Option<usize>,
+    #[serde(rename = "maxItems", skip_serializing_if = "Option::is_none")]
+    max_items: Option<usize>,
+    #[serde(rename = "minItems", skip_serializing_if = "Option::is_none")]
+    min_items: Option<usize>,
+    #[serde(rename = "uniqueItems", skip_serializing_if = "Option::is_none")]
+    unique_items: Option<bool>,
+    #[serde(rename = "maxContains", skip_serializing_if = "Option::is_none")]
+    max_contains: Option<usize>,
+    #[serde(rename = "minContains", skip_serializing_if = "Option::is_none")]
+    min_contains: Option<usize>,
+    #[serde(rename = "const", skip_serializing_if = "Option::is_none")]
+    r#const: Option<Value>,
+    #[serde(rename = "enum", skip_serializing_if = "Option::is_none")]
+    r#enum: Option<NonEmptyVec<Value>>,
 }
 
 impl PartialEq for SchemaValidator {
@@ -62,8 +91,18 @@ impl PartialEq for SchemaValidator {
             && self.minimum == other.minimum
             && self.maximum == other.maximum
             && self.required == other.required
-            && self.properties == other.properties
-            && self.items == other.items
+            && self.dependent_required == other.dependent_required
+            && self.max_properties == other.max_properties
+            && self.min_properties == other.min_properties
+            && self.max_items == other.max_items
+            && self.min_items == other.min_items
+            && self.unique_items == other.unique_items
+            && self.min_contains == other.min_contains
+            && self.max_contains == other.max_contains
+            && self.exclusive_minimum == other.exclusive_minimum
+            && self.exclusive_maximum == other.exclusive_maximum
+            && self.multiple_of == other.multiple_of
+            && self.r#const == other.r#const
     }
 }
 
@@ -71,6 +110,8 @@ impl Eq for SchemaValidator {}
 
 impl SchemaValidator {
     /// Creates a new schema validator with the given schema type.
+    ///
+    /// A schema validator must have a schema type.
     pub fn new(schema_type: SchemaType) -> Self {
         Self {
             schema_type,
@@ -82,73 +123,250 @@ impl SchemaValidator {
             exclusive_minimum: None,
             exclusive_maximum: None,
             multiple_of: None,
-            required: Vec::new(),
-            properties: HashMap::new(),
-            items: None,
+            required: None,
+            dependent_required: None,
+            max_properties: None,
+            min_properties: None,
+            max_items: None,
+            min_items: None,
+            unique_items: None,
+            min_contains: None,
+            max_contains: None,
+            r#const: None,
+            r#enum: None,
         }
     }
 
-    pub fn set_schema_type(mut self, schema_type: SchemaType) -> Self {
-        self.schema_type = schema_type;
-        self
-    }
-
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// A string instance is valid against this keyword if its length is greater than, or equal to, the value of this keyword.
+    ///
+    /// The length of a string instance is defined as the number of its characters as defined by RFC 8259 [RFC8259].
+    ///
+    /// Omitting this keyword has the same behavior as a value of 0.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.2](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.2)
     pub fn set_min_length(mut self, min_length: usize) -> Self {
         self.min_length = Some(min_length);
         self
     }
 
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// A string instance is valid against this keyword if its length is less than, or equal to, the value of this keyword.
+    ///
+    /// The length of a string instance is defined as the number of its characters as defined by RFC 8259 [RFC8259].
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.1](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.1)
     pub fn set_max_length(mut self, max_length: usize) -> Self {
         self.max_length = Some(max_length);
         self
     }
 
+    /// The value of this keyword MUST be a string. This string SHOULD be a valid regular expression, according to the ECMA-262 regular expression dialect.
+
+    // A string instance is considered valid if the regular expression matches the instance successfully.
+    // Recall: regular expressions are not implicitly anchored.
+    //
+    // See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.3](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.3.3)
     pub fn set_pattern(mut self, pattern: String) -> Self {
         self.pattern = Some(pattern);
         self
     }
 
+    /// The value of "minimum" MUST be a number, representing an inclusive lower limit for a numeric instance.
+    ///
+    /// If the instance is a number, then this keyword validates only if the instance is greater than or exactly equal to "minimum".
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.4](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.4)
     pub fn set_minimum(mut self, minimum: f64) -> Self {
         self.minimum = Some(minimum);
         self
     }
 
+    /// The value of "maximum" MUST be a number, representing an inclusive upper limit for a numeric instance.
+    ///
+    /// If the instance is a number, then this keyword validates only if the instance is less than or exactly equal to "maximum".
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.2](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.2)
     pub fn set_maximum(mut self, maximum: f64) -> Self {
         self.maximum = Some(maximum);
         self
     }
 
+    /// The value of "exclusiveMinimum" MUST be a number, representing an exclusive lower limit for a numeric instance.
+    ///
+    /// If the instance is a number, then the instance is valid only if it has a value strictly greater than (not equal to) "exclusiveMinimum".
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.5](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.5)
     pub fn set_exclusive_minimum(mut self, exclusive_minimum: f64) -> Self {
         self.exclusive_minimum = Some(exclusive_minimum);
         self
     }
 
+    /// The value of "exclusiveMaximum" MUST be a number, representing an exclusive upper limit for a numeric instance.
+    ///
+    /// If the instance is a number, then the instance is valid only if it has a value strictly less than (not equal to) "exclusiveMaximum".
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.3](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.3)
     pub fn set_exclusive_maximum(mut self, exclusive_maximum: f64) -> Self {
         self.exclusive_maximum = Some(exclusive_maximum);
         self
     }
 
+    /// The value of "exclusiveMinimum" MUST be a number, representing an exclusive lower limit for a numeric instance.
+    ///
+    /// If the instance is a number, then the instance is valid only if it has a value strictly greater than (not equal to) "exclusiveMinimum".
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.1](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.1)
     pub fn set_multiple_of(mut self, multiple_of: f64) -> Self {
         self.multiple_of = Some(multiple_of);
         self
     }
 
-    pub fn add_required(mut self, required: String) -> Self {
-        self.required.push(required);
+    /// The value of this keyword MUST be an array. Elements of this array, if any, MUST be strings, and MUST be unique.
+    ///
+    /// An object instance is valid against this keyword if every item in the array is the name of a property in the instance.
+    ///
+    /// Omitting this keyword has the same behavior as an empty array.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.5.3](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.5.3)
+    pub fn set_required(mut self, required: Vec<String>) -> Self {
+        self.required = Some(required);
         self
     }
 
-    pub fn add_property(mut self, key: String, value: SchemaValidator) -> Self {
-        self.properties.insert(key, Box::new(value));
+    /// In addition to [SchemaValidator::set_required], push a single requirement to the list of required properties.
+    pub fn add_requirement(mut self, requirement: String) -> Self {
+        self.required.get_or_insert_with(Vec::new).push(requirement);
         self
     }
 
-    pub fn set_items(mut self, items: Box<SchemaValidator>) -> Self {
-        self.items = Some(items);
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// An object instance is valid against "maxProperties" if its number of properties is less than, or equal to, the value of this keyword.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.5.1](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.5.1)
+    pub fn set_max_properties(mut self, max_properties: usize) -> Self {
+        self.max_properties = Some(max_properties);
         self
     }
 
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// An object instance is valid against "minProperties" if its number of properties is greater than, or equal to, the value of this keyword.
+    ///
+    /// Omitting this keyword has the same behavior as a value of 0.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.5.2](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.5.2)
+    pub fn set_min_properties(mut self, min_properties: usize) -> Self {
+        self.min_properties = Some(min_properties);
+        self
+    }
+
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// An array instance is valid against "maxItems" if its size is less than, or equal to, the value of this keyword.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.1](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.1)
+    pub fn set_max_items(mut self, max_items: usize) -> Self {
+        self.max_items = Some(max_items);
+        self
+    }
+
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// An array instance is valid against "minItems" if its size is greater than, or equal to, the value of this keyword.
+    ///
+    /// Omitting this keyword has the same behavior as a value of 0.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.2](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.2)
+    pub fn set_min_items(mut self, min_items: usize) -> Self {
+        self.min_items = Some(min_items);
+        self
+    }
+
+    /// The value of this keyword MUST be a boolean.
+    ///
+    /// If this keyword has boolean value false, the instance validates successfully.
+    /// If it has boolean value true, the instance validates successfully if all of its elements are unique.
+    ///
+    /// Omitting this keyword has the same behavior as a value of false.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.3](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.3)
+    pub fn set_unique_items(mut self, unique_items: bool) -> Self {
+        self.unique_items = Some(unique_items);
+        self
+    }
+
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// If "contains" is not present within the same schema object, then this keyword has no effect.
+    ///
+    /// An instance array is valid against "maxContains" in two ways, depending on the form of the
+    /// annotation result of an adjacent "contains" [json-schema] keyword. The first way is if the
+    /// annotation result is an array and the length of that array is less than or equal to the "maxContains"
+    /// value. The second way is if the annotation result is a boolean "true" and the instance array length
+    /// is less than or equal to the "maxContains" value.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.4](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.4)
+    pub fn set_max_contains(mut self, max: usize) -> Self {
+        self.max_contains = Some(max);
+        self
+    }
+
+    /// The value of this keyword MUST be a non-negative integer.
+    ///
+    /// If "contains" is not present within the same schema object, then this keyword has no effect.
+    ///
+    /// An instance array is valid against "minContains" in two ways, depending on the form of the annotation result of an adjacent "contains" [json-schema] keyword. The first way is if the annotation result is an array and the length of that array is greater than or equal to the "minContains" value. The second way is if the annotation result is a boolean "true" and the instance array length is greater than or equal to the "minContains" value.
+    ///
+    /// A value of 0 is allowed, but is only useful for setting a range of occurrences from 0 to the value of "maxContains". A value of 0 causes "minContains" and "contains" to always pass validation (but validation can still fail against a "maxContains" keyword).
+    ///
+    /// Omitting this keyword has the same behavior as a value of 1.
+    ///
+    /// See: [https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.5](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.4.5)
+    pub fn set_min_contains(mut self, min: usize) -> Self {
+        self.min_contains = Some(min);
+        self
+    }
+
+    /// The value of this keyword MUST be an array. This array SHOULD have at least one element. Elements in the array SHOULD be unique.
+    ///
+    /// An instance validates successfully against this keyword if its value is equal to one of the elements in this keyword's array value.
+    ///
+    /// Elements in the array might be of any type, including null.
+    ///
+    /// https://json-schema.org/draft/2020-12/json-schema-validation#section-6.1.2
+    pub fn set_enum(mut self, r#enum: NonEmptyVec<Value>) -> Self {
+        self.r#enum = Some(r#enum);
+        self
+    }
+
+    /// The value of this keyword MAY be of any type, including null.
+    /// Use of this keyword is functionally equivalent to an "enum" (Section 6.1.2) with a single value.
+    /// An instance validates successfully against this keyword if its value is equal to the value of the keyword.
+    pub fn set_const(mut self, r#const: Value) -> Self {
+        self.r#const = Some(r#const);
+        self
+    }
+
+    /// Primary method for validating a JSON value against the schema.
     pub fn validate(&self, value: &Value) -> Result<()> {
+        // Check input against const, if it exists.
+        if let Some(const_value) = self.r#const.as_ref() {
+            if value != const_value {
+                bail!("Value does not match const");
+            }
+        }
+
+        // Check input against enum, if it exists.
+        if let Some(enum_values) = self.r#enum.as_ref() {
+            if !enum_values.contains(value) {
+                bail!("Value does not match enum");
+            }
+        }
+
         match self.schema_type {
             SchemaType::String => self.validate_string(value),
             SchemaType::Number => self.validate_number(value),
@@ -311,31 +529,51 @@ impl SchemaValidator {
             }
         }
 
-        if let Some(item_validator) = &self.items {
-            for (index, item) in arr.iter().enumerate() {
-                item_validator
-                    .validate(item)
-                    .context(format!("Error in array item {}", index))?;
-            }
-        }
-
         Ok(())
     }
 
     pub fn validate_object(&self, value: &Value) -> Result<()> {
         let obj = value.as_object().context("Expected an object")?;
 
-        for required_prop in &self.required {
-            if !obj.contains_key(required_prop) {
-                bail!("Missing required property: {}", required_prop);
+        if let Some(required) = &self.required {
+            for required_prop in required {
+                if !obj.contains_key(required_prop) {
+                    bail!("Missing required property: {}", required_prop);
+                }
             }
         }
 
-        for (prop_name, prop_validator) in &self.properties {
-            if let Some(prop_value) = obj.get(prop_name) {
-                prop_validator
-                    .validate(prop_value)
-                    .context(format!("Error in property {}", prop_name))?;
+        if let Some(min_properties) = self.min_properties {
+            if obj.len() >= min_properties {
+                bail!(
+                    "Object has fewer properties {} than minimum {}",
+                    obj.len(),
+                    min_properties
+                );
+            }
+        }
+
+        if let Some(max_properties) = self.max_properties {
+            if obj.len() <= max_properties {
+                bail!(
+                    "Object has more properties {} than maximum {}",
+                    obj.len(),
+                    max_properties
+                );
+            }
+        }
+
+        if let Some(dependents_required) = &self.dependent_required {
+            for (prop, dependents) in dependents_required {
+                if let Some(obj) = obj.get(prop) {
+                    let child = obj.as_object().context("Expected an object")?;
+
+                    for dependent in dependents {
+                        if !child.contains_key(dependent) {
+                            bail!("Dependent property {} is required", dependent);
+                        }
+                    }
+                }
             }
         }
 
