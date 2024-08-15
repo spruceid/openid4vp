@@ -1,4 +1,5 @@
-use crate::json_schema_validation::SchemaValidator;
+use std::collections::HashMap;
+
 pub use crate::utils::NonEmptyVec;
 
 use anyhow::{bail, Result};
@@ -9,6 +10,9 @@ use serde_json::Map;
 ///
 /// For syntax details, see [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
 pub type JsonPath = String;
+
+/// A Json object of claim formats.
+pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
 
 /// The Presentation Definition MAY include a format property. The value MUST be an object with one or
 /// more properties matching the registered [ClaimFormatDesignation] (e.g., jwt, jwt_vc, jwt_vp, etc.).
@@ -22,7 +26,6 @@ pub type JsonPath = String;
 /// See [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
 /// for an example schema.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
 pub enum ClaimFormat {
     #[serde(rename = "jwt")]
     Jwt {
@@ -67,11 +70,7 @@ pub enum ClaimFormat {
     },
     #[serde(rename = "mso_mdoc")]
     MsoMDoc(serde_json::Value),
-    #[serde(untagged)]
-    Other {
-        name: String,
-        value: serde_json::Value,
-    },
+    Other(serde_json::Value),
 }
 
 impl ClaimFormat {
@@ -89,9 +88,18 @@ impl ClaimFormat {
             ClaimFormat::AcVc { .. } => ClaimFormatDesignation::AcVc,
             ClaimFormat::AcVp { .. } => ClaimFormatDesignation::AcVp,
             ClaimFormat::MsoMDoc(_) => ClaimFormatDesignation::MsoMDoc,
-            ClaimFormat::Other { name, .. } => ClaimFormatDesignation::Other(name.to_owned()),
+            ClaimFormat::Other(_) => ClaimFormatDesignation::Other,
         }
     }
+}
+
+/// Claim format payload
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ClaimFormatPayload {
+    #[serde(rename = "alg")]
+    Alg(Vec<String>),
+    #[serde(rename = "proof_type")]
+    ProofType(Vec<String>),
 }
 
 /// The claim format designation type is used in the input description object to specify the format of the claim.
@@ -99,7 +107,7 @@ impl ClaimFormat {
 /// Registry of claim format type: https://identity.foundation/claim-format-registry/#registry
 ///
 /// Documentation based on the [DIF Presentation Exchange Specification v2.0](https://identity.foundation/presentation-exchange/spec/v2.0.0/#claim-format-designations)
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ClaimFormatDesignation {
     /// The format is a JSON Web Token (JWT) as defined by [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519)
     /// that will be submitted in the form of a JWT encoded string. Expression of
@@ -119,6 +127,10 @@ pub enum ClaimFormatDesignation {
     /// See [JwtVc](JwtVc) for more information.
     #[serde(rename = "jwt_vp")]
     JwtVp,
+    #[serde(rename = "jwt_vc_json")]
+    JwtVcJson,
+    #[serde(rename = "jwt_vp_json")]
+    JwtVpJson,
     /// The format is a Linked-Data Proof that will be submitted as an object.
     /// Expression of supported algorithms in relation to these formats MUST be
     /// conveyed using a proof_type property with values that are identifiers from
@@ -156,8 +168,7 @@ pub enum ClaimFormatDesignation {
     /// Other claim format designations not covered by the above.
     ///
     /// The value of this variant is the name of the claim format designation.
-    #[serde(untagged)]
-    Other(String),
+    Other,
 }
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
@@ -179,7 +190,7 @@ pub struct PresentationDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<ClaimFormat>,
+    format: Option<ClaimFormatMap>,
 }
 
 impl PresentationDefinition {
@@ -261,13 +272,21 @@ impl PresentationDefinition {
     /// as noted in the Claim Format Designations section.
     ///
     /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
-    pub fn set_format(mut self, format: ClaimFormat) -> Self {
+    pub fn set_format(mut self, format: ClaimFormatMap) -> Self {
         self.format = Some(format);
         self
     }
 
+    /// Add a new format to the presentation definition.
+    pub fn add_format(mut self, format: ClaimFormatDesignation, value: ClaimFormatPayload) -> Self {
+        self.format
+            .get_or_insert_with(HashMap::new)
+            .insert(format, value);
+        self
+    }
+
     /// Return the format of the presentation definition.
-    pub fn format(&self) -> Option<&ClaimFormat> {
+    pub fn format(&self) -> Option<&ClaimFormatMap> {
         self.format.as_ref()
     }
 }
@@ -290,7 +309,7 @@ pub struct InputDescriptor {
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<ClaimFormat>,
+    format: Option<ClaimFormatMap>,
 }
 
 impl InputDescriptor {
@@ -362,7 +381,7 @@ impl InputDescriptor {
     ///
     /// This format property is identical in value signature to the top-level format object,
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn set_format(mut self, format: ClaimFormat) -> Self {
+    pub fn set_format(mut self, format: ClaimFormatMap) -> Self {
         self.format = Some(format);
         self
     }
@@ -375,7 +394,7 @@ impl InputDescriptor {
     ///
     /// This format property is identical in value signature to the top-level format object,
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn format(&self) -> Option<&ClaimFormat> {
+    pub fn format(&self) -> Option<&ClaimFormatMap> {
         self.format.as_ref()
     }
 }
@@ -447,9 +466,8 @@ pub struct ConstraintsField {
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
-    // TODO: JSONSchema validation at deserialization time
     #[serde(skip_serializing_if = "Option::is_none")]
-    filter: Option<SchemaValidator>,
+    filter: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     optional: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -552,13 +570,13 @@ impl ConstraintsField {
     ///
     /// If present its value MUST be a JSON Schema descriptor used to filter against
     /// the values returned from evaluation of the JSONPath string expressions in the path array.
-    pub fn set_filter(mut self, filter: SchemaValidator) -> Self {
+    pub fn set_filter(mut self, filter: serde_json::Value) -> Self {
         self.filter = Some(filter);
         self
     }
 
     /// Return the filter of the constraints field.
-    pub fn filter(&self) -> Option<&SchemaValidator> {
+    pub fn filter(&self) -> Option<&serde_json::Value> {
         self.filter.as_ref()
     }
 
@@ -648,7 +666,7 @@ impl PresentationSubmission {
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DescriptorMap {
-    id: uuid::Uuid,
+    id: String,
     format: ClaimFormatDesignation,
     path: JsonPath,
     path_nested: Option<Box<DescriptorMap>>,
@@ -662,7 +680,7 @@ impl DescriptorMap {
     /// The descriptor map object MUST include a `path` property. The value of this property MUST be a [JSONPath](https://goessner.net/articles/JsonPath/) string expression. The path property indicates the [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim) submitted in relation to the identified [InputDescriptor], when executed against the top-level of the object the [PresentationSubmission] is embedded within.
     ///
     /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
-    pub fn new(id: uuid::Uuid, format: ClaimFormatDesignation, path: JsonPath) -> Self {
+    pub fn new(id: String, format: ClaimFormatDesignation, path: JsonPath) -> Self {
         Self {
             id,
             format,
@@ -672,7 +690,7 @@ impl DescriptorMap {
     }
 
     /// Return the id of the descriptor map.
-    pub fn id(&self) -> &uuid::Uuid {
+    pub fn id(&self) -> &String {
         &self.id
     }
 
@@ -812,7 +830,7 @@ pub(crate) mod tests {
                     continue;
                 }
             }
-            print!("{} -> ", path.file_name().unwrap().to_str().unwrap());
+            println!("{} -> ", path.file_name().unwrap().to_str().unwrap());
             let file = File::open(path).unwrap();
             let jd = &mut serde_json::Deserializer::from_reader(file.try_clone().unwrap());
             let _: PresentationDefinitionTest = serde_path_to_error::deserialize(jd)
@@ -845,7 +863,7 @@ pub(crate) mod tests {
                     continue;
                 }
             }
-            print!("{} -> ", path.file_name().unwrap().to_str().unwrap());
+            println!("{} -> ", path.file_name().unwrap().to_str().unwrap());
             let file = File::open(path).unwrap();
             let jd = &mut serde_json::Deserializer::from_reader(file.try_clone().unwrap());
             let _: PresentationSubmissionTest = serde_path_to_error::deserialize(jd)
