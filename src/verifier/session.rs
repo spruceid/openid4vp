@@ -1,7 +1,8 @@
 use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
-use anyhow::{bail, Error, Ok, Result};
+use anyhow::{bail, Ok, Result};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -20,7 +21,7 @@ pub struct Session {
     pub presentation_definition: PresentationDefinition,
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Status {
     /// Wallet has been sent the request by reference, waiting for the wallet to request the request.
     SentRequestByReference,
@@ -32,10 +33,10 @@ pub enum Status {
     Complete(Outcome),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Outcome {
     /// An error occurred during response processing.
-    Error { cause: Arc<Error> },
+    Error { cause: String },
     /// The authorization response did not pass verification.
     Failure { reason: String },
     /// The authorization response is verified.
