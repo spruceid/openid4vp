@@ -19,6 +19,7 @@ base64 = "0.21.4"
 did-web = "0.2.2"
 http = "1.1.0"
 jsonpath_lib = "0.3.0"
+jsonschema = "0.18.0"
 p256 = { version = "0.13.2", features = ["jwk"], optional = true }
 regex = "1.10.6"
 reqwest = { version = "0.12.5", features = ["rustls-tls"], optional = true }
