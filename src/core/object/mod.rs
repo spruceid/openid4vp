@@ -52,9 +52,7 @@ impl UntypedObject {
     /// Returns an error if there was already an entry in the Object, but it could not be parsed from JSON.
     pub fn insert<T: TypedParameter>(&mut self, t: T) -> Option<Result<T>> {
         match t.try_into() {
-            Err(_) => {
-                return Some(Err(Error::msg("failed to parse typed parameter")));
-            }
+            Err(_) => Some(Err(Error::msg("failed to parse typed parameter"))),
             Ok(value) => Some(
                 self.0
                     .insert(T::KEY.to_owned(), value)?

@@ -1,4 +1,3 @@
-use oid4vp::json_schema_validation::{SchemaType, SchemaValidator};
 use oid4vp::presentation_exchange::*;
 
 use oid4vp::{
@@ -31,18 +30,24 @@ async fn w3c_vc_did_client_direct_post() {
                     )
                     .set_name("Verify Identity Key".into())
                     .set_purpose("Check whether your identity key has been verified.".into())
-                    .set_filter(
-                        SchemaValidator::new(SchemaType::String).set_pattern("did:key:.*".into()),
-                    )
+                    .set_filter(serde_json::json!({
+                        "type": "string",
+                        "pattern": "did:key:.*"
+                    }))
                     .set_predicate(Predicate::Required),
                 )
                 .set_limit_disclosure(ConstraintsLimitDisclosure::Required),
         )
         .set_name("DID Key Identity Verification".into())
         .set_purpose("Check whether your identity key has been verified.".into())
-        .set_format(ClaimFormat::JwtVcJson {
-            alg_values_supported: vec![Algorithm::ES256.to_string()],
-        }),
+        .set_format((|| {
+            let mut map = ClaimFormatMap::new();
+            map.insert(
+                ClaimFormatDesignation::JwtVp,
+                ClaimFormatPayload::Alg(vec![Algorithm::ES256.to_string()]),
+            );
+            map
+        })()),
     );
 
     let client_metadata = UntypedObject::default();
@@ -81,15 +86,13 @@ async fn w3c_vc_did_client_direct_post() {
         .input_descriptors()
         .iter()
         .map(|descriptor| {
-            let format = descriptor
-                .format()
-                .map(|format| format.designation())
-                .to_owned()
-                .unwrap_or(ClaimFormatDesignation::JwtVp);
-
             // NOTE: the input descriptor constraint field path is relative to the path
             // of the descriptor map matching the input descriptor id.
-            DescriptorMap::new(descriptor.id().clone(), format, "$".into())
+            DescriptorMap::new(
+                descriptor.id().clone(),
+                ClaimFormatDesignation::JwtVc,
+                "$".into(),
+            )
         })
         .collect();
 

@@ -1,16 +1,11 @@
-use std::collections::HashMap;
-
 use anyhow::{Context, Error};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
 
-use crate::{
-    core::object::TypedParameter,
-    presentation_exchange::{ClaimFormat, ClaimFormatDesignation},
-};
+use crate::{core::object::TypedParameter, presentation_exchange::ClaimFormatMap};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VpFormats(pub HashMap<ClaimFormatDesignation, ClaimFormat>);
+pub struct VpFormats(pub ClaimFormatMap);
 
 impl TypedParameter for VpFormats {
     const KEY: &'static str = "vp_formats";
@@ -28,7 +23,7 @@ impl TryFrom<VpFormats> for Json {
     type Error = Error;
 
     fn try_from(value: VpFormats) -> Result<Json, Self::Error> {
-        Ok(serde_json::to_value(value.0).context("Failed to serialize VpFormats")?)
+        serde_json::to_value(value.0).context("Failed to serialize VpFormats")
     }
 }
 
@@ -126,6 +121,7 @@ mod test {
     use serde_json::json;
 
     use crate::core::object::UntypedObject;
+    use crate::presentation_exchange::{ClaimFormatDesignation, ClaimFormatPayload};
 
     use super::*;
 
@@ -161,7 +157,10 @@ mod test {
             .get(&ClaimFormatDesignation::MsoMDoc)
             .expect("failed to find mso doc");
 
-        assert_eq!(mso_doc, &ClaimFormat::MsoMDoc(Json::Object(Map::new())))
+        assert_eq!(
+            mso_doc,
+            &ClaimFormatPayload::Json(serde_json::Value::Object(Default::default()))
+        )
     }
 
     #[test]

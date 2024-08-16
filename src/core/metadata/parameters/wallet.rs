@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-
 use crate::{
     core::{
         authorization_request::parameters::{ClientIdScheme, ResponseType},
         object::TypedParameter,
     },
-    presentation_exchange::{ClaimFormat, ClaimFormatDesignation},
+    presentation_exchange::ClaimFormatMap,
 };
 use anyhow::{bail, Error, Result};
 use serde_json::Value as Json;
@@ -139,7 +137,7 @@ impl From<RequestObjectSigningAlgValuesSupported> for Json {
 
 // TODO: Better types
 #[derive(Debug, Clone)]
-pub struct VpFormatsSupported(pub HashMap<ClaimFormatDesignation, ClaimFormat>);
+pub struct VpFormatsSupported(pub ClaimFormatMap);
 
 impl TypedParameter for VpFormatsSupported {
     const KEY: &'static str = "vp_formats_supported";
@@ -205,9 +203,12 @@ impl From<AuthorizationEncryptionEncValuesSupported> for Json {
 
 #[cfg(test)]
 mod test {
-    use serde_json::{json, Map};
+    use serde_json::json;
 
-    use crate::core::object::UntypedObject;
+    use crate::{
+        core::object::UntypedObject,
+        presentation_exchange::{ClaimFormatDesignation, ClaimFormatPayload},
+    };
 
     use super::*;
 
@@ -285,7 +286,7 @@ mod test {
         assert_eq!(m.len(), 1);
         assert_eq!(
             m.remove(&ClaimFormatDesignation::MsoMDoc).unwrap(),
-            ClaimFormat::MsoMDoc(Json::Object(Map::new()))
+            ClaimFormatPayload::Json(serde_json::Value::Object(Default::default()))
         );
     }
 

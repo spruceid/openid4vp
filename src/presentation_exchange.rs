@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
+use crate::core::response::AuthorizationResponse;
 pub use crate::utils::NonEmptyVec;
-use crate::{core::response::AuthorizationResponse, json_schema_validation::SchemaValidator};
 
 use anyhow::{bail, Context, Result};
+use jsonschema::{JSONSchema, ValidationError};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use ssi_claims::jwt::VerifiablePresentation;
@@ -34,6 +35,8 @@ pub enum Predicate {
     #[serde(rename = "preferred")]
     Preferred,
 }
+/// A Json object of claim formats.
+pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
 
 /// The Presentation Definition MAY include a format property. The value MUST be an object with one or
 /// more properties matching the registered [ClaimFormatDesignation] (e.g., jwt, jwt_vc, jwt_vp, etc.).
@@ -47,16 +50,20 @@ pub enum Predicate {
 /// See [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
 /// for an example schema.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
 pub enum ClaimFormat {
-    #[serde(rename = "jwt_vp")]
-    JwtVp {
-        // The algorithm used to sign the JWT verifiable presentation.
+    #[serde(rename = "jwt")]
+    Jwt {
+        // The algorithm used to sign the JWT.
         alg: Vec<String>,
     },
     #[serde(rename = "jwt_vc")]
     JwtVc {
         // The algorithm used to sign the JWT verifiable credential.
+        alg: Vec<String>,
+    },
+    #[serde(rename = "jwt_vp")]
+    JwtVp {
+        // The algorithm used to sign the JWT verifiable presentation.
         alg: Vec<String>,
     },
     #[serde(rename = "jwt_vc_json")]
@@ -69,14 +76,10 @@ pub enum ClaimFormat {
         // Used in the OID4VP specification for wallet methods supported.
         alg_values_supported: Vec<String>,
     },
-    #[serde(rename = "jwt")]
-    Jwt {
-        // The algorithm used to sign the JWT.
-        alg: Vec<String>,
-    },
-    #[serde(rename = "ldp_vp")]
-    LdpVp {
-        // The proof type used to sign the linked data proof verifiable presentation.
+    #[serde(rename = "ldp")]
+    Ldp {
+        // The proof type used to sign the linked data proof.
+        // e.g., "JsonWebSignature2020", "Ed25519Signature2018", "EcdsaSecp256k1Signature2019", "RsaSignature2018"
         proof_type: Vec<String>,
     },
     #[serde(rename = "ldp_vc")]
@@ -84,15 +87,9 @@ pub enum ClaimFormat {
         // The proof type used to sign the linked data proof verifiable credential.
         proof_type: Vec<String>,
     },
-    #[serde(rename = "ldp")]
-    Ldp {
-        // The proof type used to sign the linked data proof.
-        // e.g., "JsonWebSignature2020", "Ed25519Signature2018", "EcdsaSecp256k1Signature2019", "RsaSignature2018"
-        proof_type: Vec<String>,
-    },
-    #[serde(rename = "ac_vp")]
-    AcVp {
-        // The proof type used to sign the anoncreds verifiable presentation.
+    #[serde(rename = "ldp_vp")]
+    LdpVp {
+        // The proof type used to sign the linked data proof verifiable presentation.
         proof_type: Vec<String>,
     },
     #[serde(rename = "ac_vc")]
@@ -100,13 +97,14 @@ pub enum ClaimFormat {
         // The proof type used to sign the anoncreds verifiable credential.
         proof_type: Vec<String>,
     },
+    #[serde(rename = "ac_vp")]
+    AcVp {
+        // The proof type used to sign the anoncreds verifiable presentation.
+        proof_type: Vec<String>,
+    },
     #[serde(rename = "mso_mdoc")]
     MsoMDoc(serde_json::Value),
-    #[serde(untagged)]
-    Other {
-        name: String,
-        value: serde_json::Value,
-    },
+    Other(serde_json::Value),
 }
 
 impl ClaimFormat {
@@ -126,9 +124,24 @@ impl ClaimFormat {
             ClaimFormat::AcVc { .. } => ClaimFormatDesignation::AcVc,
             ClaimFormat::AcVp { .. } => ClaimFormatDesignation::AcVp,
             ClaimFormat::MsoMDoc(_) => ClaimFormatDesignation::MsoMDoc,
-            ClaimFormat::Other { name, .. } => ClaimFormatDesignation::Other(name.to_owned()),
+            ClaimFormat::Other(_) => ClaimFormatDesignation::Other,
         }
     }
+}
+
+/// Claim format payload
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ClaimFormatPayload {
+    #[serde(rename = "alg")]
+    Alg(Vec<String>),
+    /// This variant is primarily used for `jwt_vc_json` and `jwt_vp_json`
+    /// claim presentation algorithm types supported by a wallet.
+    #[serde(rename = "alg_values_supported")]
+    AlgValuesSupported(Vec<String>),
+    #[serde(rename = "proof_type")]
+    ProofType(Vec<String>),
+    #[serde(untagged)]
+    Json(serde_json::Value),
 }
 
 /// The claim format designation type is used in the input description object to specify the format of the claim.
@@ -153,13 +166,11 @@ pub enum ClaimFormatDesignation {
     /// [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518) Section 3.
     #[serde(rename = "jwt_vc")]
     JwtVc,
-    /// JwtVcJson is used by `vp_formats_supported` in the OID4VP metadata.
-    #[serde(rename = "jwt_vc_json")]
-    JwtVcJson,
     /// See [JwtVc](JwtVc) for more information.
     #[serde(rename = "jwt_vp")]
     JwtVp,
-    /// JwtVpJson is used by `vp_formats_supported` in the OID4VP metadata.
+    #[serde(rename = "jwt_vc_json")]
+    JwtVcJson,
     #[serde(rename = "jwt_vp_json")]
     JwtVpJson,
     /// The format is a Linked-Data Proof that will be submitted as an object.
@@ -199,14 +210,13 @@ pub enum ClaimFormatDesignation {
     /// Other claim format designations not covered by the above.
     ///
     /// The value of this variant is the name of the claim format designation.
-    #[serde(untagged)]
-    Other(String),
+    Other,
 }
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
 /// > Presentation Definitions are objects that articulate what proofs a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires.
-/// These help the [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) to decide how or whether to interact with a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
+/// > These help the [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) to decide how or whether to interact with a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
 /// Presentation Definitions are composed of inputs, which describe the forms and details of the
 /// proofs they require, and optional sets of selection rules, to allow [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder)s flexibility
@@ -222,7 +232,7 @@ pub struct PresentationDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<ClaimFormat>,
+    format: Option<ClaimFormatMap>,
 }
 
 impl PresentationDefinition {
@@ -304,14 +314,9 @@ impl PresentationDefinition {
     /// as noted in the Claim Format Designations section.
     ///
     /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
-    pub fn set_format(mut self, format: ClaimFormat) -> Self {
+    pub fn set_format(mut self, format: ClaimFormatMap) -> Self {
         self.format = Some(format);
         self
-    }
-
-    /// Return the format of the presentation definition.
-    pub fn format(&self) -> Option<&ClaimFormat> {
-        self.format.as_ref()
     }
 
     /// Validate a presentation submission against the presentation definition.
@@ -324,6 +329,8 @@ impl PresentationDefinition {
     ) -> Result<()> {
         match auth_response {
             AuthorizationResponse::Jwt(_jwt) => {
+                // TODO: Handle JWT Encoded authorization response.
+
                 bail!("Authorization Response Presentation Definition Validation Not Implemented.")
             }
             AuthorizationResponse::Unencoded(response) => {
@@ -343,11 +350,6 @@ impl PresentationDefinition {
 
                 let verifiable_presentation: VerifiablePresentation =
                     ssi_claims::jwt::decode_unverified(&jwt)?;
-
-                // let holder: Option<Issuer> =
-                //     Issuer::extract(AnyRegisteredClaim::from(verifiable_presentation.clone()));
-
-                // println!("Holder: {:?}", holder);
 
                 // Ensure the definition id matches the submission's definition id.
                 if presentation_submission.definition_id() != self.id() {
@@ -381,6 +383,19 @@ impl PresentationDefinition {
 
         Ok(())
     }
+
+    /// Add a new format to the presentation definition.
+    pub fn add_format(mut self, format: ClaimFormatDesignation, value: ClaimFormatPayload) -> Self {
+        self.format
+            .get_or_insert_with(HashMap::new)
+            .insert(format, value);
+        self
+    }
+
+    /// Return the format of the presentation definition.
+    pub fn format(&self) -> Option<&ClaimFormatMap> {
+        self.format.as_ref()
+    }
 }
 
 /// Input Descriptors are objects used to describe the information a
@@ -401,7 +416,7 @@ pub struct InputDescriptor {
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<ClaimFormat>,
+    format: Option<ClaimFormatMap>,
 }
 
 impl InputDescriptor {
@@ -473,21 +488,9 @@ impl InputDescriptor {
     ///
     /// This format property is identical in value signature to the top-level format object,
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn set_format(mut self, format: ClaimFormat) -> Self {
+    pub fn set_format(mut self, format: ClaimFormatMap) -> Self {
         self.format = Some(format);
         self
-    }
-
-    /// Return the format of the input descriptor.
-    ///
-    /// The Input Descriptor Object MAY contain a format property. If present,
-    /// its value MUST be an object with one or more properties matching the registered
-    /// Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
-    ///
-    /// This format property is identical in value signature to the top-level format object,
-    /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn format(&self) -> Option<&ClaimFormat> {
-        self.format.as_ref()
     }
 
     /// Validate the input descriptor against the verifiable presentation and the descriptor map.
@@ -506,14 +509,14 @@ impl InputDescriptor {
         let vp_json: serde_json::Value =
             from_value(vp.clone()).context("failed to parse value into json type")?;
 
-        if let Some(ConstraintsLimitDisclosure::Required) = self.constraints().limit_disclosure() {
-            if self.constraints().fields().is_none() {
+        if let Some(ConstraintsLimitDisclosure::Required) = self.constraints.limit_disclosure {
+            if self.constraints.fields().is_none() {
                 bail!("Required limit disclosure must have fields.")
             }
         };
 
-        if let Some(field_constraints) = self.constraints().fields() {
-            for constraint_field in field_constraints.iter() {
+        if let Some(constraint_fields) = self.constraints.fields() {
+            for constraint_field in constraint_fields.iter() {
                 // Check if the filter exists if the predicate is present
                 // and set to required.
                 if let Some(Predicate::Required) = constraint_field.predicate() {
@@ -533,20 +536,18 @@ impl InputDescriptor {
                     .first()
                     .ok_or(anyhow::anyhow!("Root element not found."))?;
 
-                println!("Root element: {:?}", root_element);
-
                 let mut map_selector = jsonpath_lib::selector(root_element);
 
-                for field_path in constraint_field.path().iter() {
-                    println!("Field path: {:?}", field_path);
+                let validator = constraint_field.validator();
 
+                for field_path in constraint_field.path.iter() {
                     let field_elements = map_selector(field_path)
                         .context("Failed to select field elements from verifiable presentation.")?;
 
                     // Check if the field matches are empty.
                     if field_elements.is_empty() {
                         if let Some(ConstraintsLimitDisclosure::Required) =
-                            self.constraints().limit_disclosure()
+                            self.constraints.limit_disclosure
                         {
                             bail!("Field elements are empty while limit disclosure is required.")
                         }
@@ -557,21 +558,23 @@ impl InputDescriptor {
                         continue;
                     }
 
-                    println!("Field elements: {:?}", field_elements);
-
-                    if let Some(filter) = constraint_field.filter() {
+                    // If a filter is available with a valid schema, handle the field validation.
+                    if let Some(Ok(schema_validator)) = validator.as_ref() {
                         // TODO: possible trace a warning if a field is not valid.
                         // TODO: Check the predicate feature value.
-                        let validated_fields =
-                            field_elements
-                                .iter()
-                                .find(|element| match filter.validate(element) {
-                                    Err(e) => {
-                                        println!("Field did not pass filter validation: {}", e);
-                                        false
+                        let validated_fields = field_elements.iter().find(|element| {
+                            match schema_validator.validate(element) {
+                                Err(errors) => {
+                                    for error in errors {
+                                        tracing::debug!(
+                                            "Field did not pass filter validation: {error}",
+                                        );
                                     }
-                                    Ok(_) => true,
-                                });
+                                    false
+                                }
+                                Ok(_) => true,
+                            }
+                        });
 
                         if validated_fields.is_none() {
                             if let Some(Predicate::Required) = constraint_field.predicate() {
@@ -591,6 +594,19 @@ impl InputDescriptor {
         }
 
         Ok(())
+    }
+
+    /// Return the format of the input descriptor.
+    ///
+    /// The Input Descriptor Object MAY contain a format property. If present,
+    /// its value MUST be an object with one or more properties matching the registered
+    /// Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
+    ///
+    /// This format property is identical in value signature to the top-level format object,
+    /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
+
+    pub fn format(&self) -> Option<&ClaimFormatMap> {
+        self.format.as_ref()
     }
 }
 
@@ -658,12 +674,10 @@ pub struct ConstraintsField {
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
-    // TODO: JSONSchema validation at deserialization time
-    #[serde(skip_serializing_if = "Option::is_none")]
-    filter: Option<SchemaValidator>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     // Optional predicate value
     predicate: Option<Predicate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    filter: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     optional: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -770,14 +784,9 @@ impl ConstraintsField {
     ///
     /// If present its value MUST be a JSON Schema descriptor used to filter against
     /// the values returned from evaluation of the JSONPath string expressions in the path array.
-    pub fn set_filter(mut self, filter: SchemaValidator) -> Self {
+    pub fn set_filter(mut self, filter: serde_json::Value) -> Self {
         self.filter = Some(filter);
         self
-    }
-
-    /// Return the filter of the constraints field.
-    pub fn filter(&self) -> Option<&SchemaValidator> {
-        self.filter.as_ref()
     }
 
     /// Set the predicate of the constraints field.
@@ -801,6 +810,24 @@ impl ConstraintsField {
     /// See: [https://identity.foundation/presentation-exchange/#predicate-feature](https://identity.foundation/presentation-exchange/#predicate-feature)
     pub fn predicate(&self) -> Option<&Predicate> {
         self.predicate.as_ref()
+    }
+
+    /// Return the raw filter of the constraints field.
+    pub fn filter(&self) -> Option<&serde_json::Value> {
+        self.filter.as_ref()
+    }
+
+    /// Return a JSON schema validator using the internal filter.
+    ///
+    /// If no filter is provided on the constraint field, this
+    /// will return None.
+    ///
+    /// If the filter schema is invalid, this will also return None.
+    ///
+    /// NOTE: Errors are not handled if the filter schema is invalid,
+    /// instead the method will return None on an invalid filter.
+    pub fn validator(&self) -> Option<Result<JSONSchema, ValidationError>> {
+        self.filter.as_ref().map(JSONSchema::compile)
     }
 
     /// Set the optional value of the constraints field.
@@ -1058,7 +1085,7 @@ pub(crate) mod tests {
                     continue;
                 }
             }
-            print!("{} -> ", path.file_name().unwrap().to_str().unwrap());
+            println!("{} -> ", path.file_name().unwrap().to_str().unwrap());
             let file = File::open(path).unwrap();
             let jd = &mut serde_json::Deserializer::from_reader(file.try_clone().unwrap());
             let _: PresentationDefinitionTest = serde_path_to_error::deserialize(jd)
@@ -1091,7 +1118,7 @@ pub(crate) mod tests {
                     continue;
                 }
             }
-            print!("{} -> ", path.file_name().unwrap().to_str().unwrap());
+            println!("{} -> ", path.file_name().unwrap().to_str().unwrap());
             let file = File::open(path).unwrap();
             let jd = &mut serde_json::Deserializer::from_reader(file.try_clone().unwrap());
             let _: PresentationSubmissionTest = serde_path_to_error::deserialize(jd)

@@ -1,14 +1,11 @@
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
 use anyhow::Error;
 use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
 use serde::{Deserialize, Serialize};
 use ssi_jwk::Algorithm;
 
-use crate::presentation_exchange::{ClaimFormat, ClaimFormatDesignation};
+use crate::presentation_exchange::{ClaimFormatDesignation, ClaimFormatMap, ClaimFormatPayload};
 
 use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
 
@@ -72,18 +69,14 @@ impl WalletMetadata {
 
         let alg_values_supported = vec![Algorithm::ES256.to_string()];
 
-        let mut vp_formats_supported = HashMap::new();
+        let mut vp_formats_supported = ClaimFormatMap::new();
         vp_formats_supported.insert(
             ClaimFormatDesignation::JwtVpJson,
-            ClaimFormat::JwtVpJson {
-                alg_values_supported: alg_values_supported.clone(),
-            },
+            ClaimFormatPayload::AlgValuesSupported(alg_values_supported.clone()),
         );
         vp_formats_supported.insert(
             ClaimFormatDesignation::JwtVcJson,
-            ClaimFormat::JwtVcJson {
-                alg_values_supported: alg_values_supported.clone(),
-            },
+            ClaimFormatPayload::AlgValuesSupported(alg_values_supported.clone()),
         );
         let vp_formats_supported = VpFormatsSupported(vp_formats_supported);
 
