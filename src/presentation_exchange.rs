@@ -7,8 +7,9 @@ use anyhow::{bail, Context, Result};
 use jsonschema::{JSONSchema, ValidationError};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-use ssi_claims::jwt::VerifiablePresentation;
-use ssi_dids::ssi_json_ld::syntax::from_value;
+use ssi_claims::{jwt::VerifiablePresentation, CompactJWSString, VerificationParameters};
+use ssi_dids::{ssi_json_ld::syntax::from_value, DIDKey, VerificationMethodDIDResolver};
+use ssi_verification_methods::AnyJwkMethod;
 
 /// A JSONPath is a string that represents a path to a specific value within a JSON object.
 ///
@@ -338,15 +339,15 @@ impl PresentationDefinition {
 
                 let jwt = response.vp_token().0.clone();
 
-                // TODO: Verify the JWT.
-                // let jws = CompactJWSString::from_string(jwt.clone()).context("Invalid JWT.")?;
-                // let resolver: VerificationMethodDIDResolver<DIDKey, AnyJwkMethod> =
-                //     VerificationMethodDIDResolver::new(DIDKey);
-                // let params = VerificationParameters::from_resolver(resolver);
+                let jws = CompactJWSString::from_string(jwt.clone()).context("Invalid JWT.")?;
+                let resolver: VerificationMethodDIDResolver<DIDKey, AnyJwkMethod> =
+                    VerificationMethodDIDResolver::new(DIDKey);
 
-                // if let Err(e) = jws.verify(params).await {
-                //     bail!("JWT Verification Failed: {:?}", e)
-                // }
+                let params = VerificationParameters::from_resolver(resolver);
+
+                if let Err(e) = jws.verify(params).await {
+                    bail!("JWT Verification Failed: {:?}", e)
+                }
 
                 let verifiable_presentation: VerifiablePresentation =
                     ssi_claims::jwt::decode_unverified(&jwt)?;
