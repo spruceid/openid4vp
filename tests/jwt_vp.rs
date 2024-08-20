@@ -8,7 +8,7 @@ use oid4vp::core::authorization_request::parameters::Nonce;
 use oid4vp::verifier::request_signer::{P256Signer, RequestSigner};
 use ssi_claims::jwt::VerifiablePresentation;
 use ssi_claims::vc::v2::syntax::VERIFIABLE_PRESENTATION_TYPE;
-use ssi_claims::{JWSPayload, JWTClaims};
+use ssi_claims::{CompactJWSString, JWSPayload, JWTClaims};
 // use ssi_claims::vc::v1::VerifiableCredential;
 use ssi_claims::jwt;
 use ssi_dids::ssi_json_ld::syntax::{Object, Value};
@@ -16,8 +16,7 @@ use ssi_dids::ssi_json_ld::CREDENTIALS_V1_CONTEXT;
 use ssi_dids::DIDKey;
 use ssi_jwk::JWK;
 
-#[tokio::test]
-async fn test_verifiable_presentation() -> Result<()> {
+pub async fn create_test_verifiable_presentation() -> Result<CompactJWSString> {
     let verifier = JWK::from_str(include_str!("examples/verifier.jwk"))?;
 
     let signer = Arc::new(
@@ -66,8 +65,10 @@ async fn test_verifiable_presentation() -> Result<()> {
                 obj.insert("exp".into(), Value::Number((dur.as_secs() + 3600).into()));
             });
 
-        let nonce = Nonce::from("random_nonce");
-        obj.insert("nonce".into(), Value::String(nonce.to_string().into()));
+        obj.insert(
+            "nonce".into(),
+            Value::String(Nonce::from("random_nonce").to_string().into()),
+        );
 
         let mut verifiable_credential_field = Value::Object(Object::new());
 
@@ -100,12 +101,9 @@ async fn test_verifiable_presentation() -> Result<()> {
 
     println!("JWT: {:?}", jwt);
 
-    // Save the JWT to the file system to be used in other tests `examples/vp.jwt`
-    std::fs::write("tests/examples/vp.jwt", jwt.as_str())?;
-
     let vp: jwt::VerifiablePresentation = ssi_claims::jwt::decode_unverified(jwt.as_str())?;
 
     println!("VP: {:?}", vp);
 
-    Ok(())
+    Ok(jwt)
 }

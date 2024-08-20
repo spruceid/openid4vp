@@ -1,3 +1,4 @@
+use jwt_vp::create_test_verifiable_presentation;
 use oid4vp::presentation_exchange::*;
 
 use oid4vp::{
@@ -96,14 +97,29 @@ async fn w3c_vc_did_client_direct_post() {
             // of the descriptor map matching the input descriptor id.
             DescriptorMap::new(
                 descriptor.id().to_string(),
-                // NOTE: Since the input descriptor may support several different claim format types. This value should not be
-                // hardcoded in production code, but should be selected from available formats in the presentation definition
+                // NOTE: Since the input descriptor may support several different
+                // claim format types. This value should not be hardcoded in production
+                // code, but should be selected from available formats in the presentation definition
                 // input descriptor.
                 //
                 // In practice, this format will be determined by the VDC collection's credential format.
-                ClaimFormatDesignation::JwtVc,
-                "$".into(),
+                ClaimFormatDesignation::JwtVpJson,
+                // Starts at the top level path of the verifiable submission, which contains a `vp` key
+                // for verifiable presentations, which include the verifiable credentials under the `verifiableCredentials`
+                // field.
+                "$.vp".into(),
             )
+            .set_path_nested(DescriptorMap::new(
+                // Descriptor map id must be the same as the parent descriptor map id.
+                descriptor.id().to_string(),
+                ClaimFormatDesignation::JwtVcJson,
+                // This nested path is relative to the resolved path of the parent descriptor map.
+                // In this case, the parent descriptor map resolved to the `vp` key.
+                // The nested path is relative to the `vp` key.
+                //
+                // See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries
+                "$.verifiableCredential[0]".into(),
+            ))
         })
         .collect();
 
@@ -115,7 +131,12 @@ async fn w3c_vc_did_client_direct_post() {
 
     let response = AuthorizationResponse::Unencoded(UnencodedAuthorizationResponse(
         Default::default(),
-        VpToken(include_str!("examples/vp.jwt").to_owned()),
+        VpToken(
+            create_test_verifiable_presentation()
+                .await
+                .expect("failed to create verifiable presentation")
+                .to_string(),
+        ),
         presentation_submission.try_into().unwrap(),
     ));
 
