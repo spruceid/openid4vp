@@ -46,7 +46,6 @@ impl DIDClient {
         signer: Arc<dyn RequestSigner + Send + Sync>,
         resolver: impl JWKResolver,
     ) -> Result<Self> {
-
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
         ))?;

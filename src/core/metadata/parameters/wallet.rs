@@ -135,7 +135,6 @@ impl From<RequestObjectSigningAlgValuesSupported> for Json {
     }
 }
 
-// TODO: Better types
 #[derive(Debug, Clone)]
 pub struct VpFormatsSupported(pub ClaimFormatMap);
 
