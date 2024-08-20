@@ -43,7 +43,7 @@ async fn w3c_vc_did_client_direct_post() {
         .set_format((|| {
             let mut map = ClaimFormatMap::new();
             map.insert(
-                ClaimFormatDesignation::JwtVp,
+                ClaimFormatDesignation::JwtVcJson,
                 ClaimFormatPayload::Alg(vec![Algorithm::ES256.to_string()]),
             );
             map
