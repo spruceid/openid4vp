@@ -1,4 +1,4 @@
-use std::{fmt::Debug, future::Future, sync::Arc};
+use std::{fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
 use anyhow::{bail, Context, Result};
 use client::Client;
@@ -119,12 +119,12 @@ impl Verifier {
         validator_function: F,
     ) -> Result<()>
     where
-        F: FnOnce(Session, AuthorizationResponse) -> Fut,
-        Fut: Future<Output = Result<Outcome>>,
+        F: FnOnce(Session, AuthorizationResponse) -> Pin<Box<Fut>>,
+        Fut: Future<Output = Outcome>,
     {
         let session = self.session_store.get_session(reference).await?;
 
-        let outcome = validator_function(session, authorization_response).await?;
+        let outcome = validator_function(session, authorization_response).await;
 
         self.session_store
             .update_status(reference, Status::Complete(outcome))

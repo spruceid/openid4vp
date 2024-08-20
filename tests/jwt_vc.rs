@@ -159,17 +159,18 @@ impl AsyncHttpClient for MockHttpClient {
                 id.parse().context("failed to parse id")?,
                 AuthorizationResponse::from_x_www_form_urlencoded(body)
                     .context("failed to parse authorization response request")?,
-                |session, auth_response| async move {
-                    session
-                        .presentation_definition
-                        .validate_authorization_response(&auth_response)
-                        .await?;
-
-                    println!("Session: {:?}", session);
-                    println!("Auth Response: {:?}", auth_response);
-
-                    Ok(Outcome::Success {
-                        info: serde_json::Value::Null,
+                |session, auth_response| {
+                    Box::pin(async move {
+                        match session
+                            .presentation_definition
+                            .validate_authorization_response(&auth_response)
+                            .await
+                        {
+                            Ok(_) => Outcome::Success {
+                                info: serde_json::Value::Null,
+                            },
+                            Err(e) => Outcome::Error { cause: Arc::new(e) },
+                        }
                     })
                 },
             )
