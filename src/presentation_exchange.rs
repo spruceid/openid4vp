@@ -439,8 +439,8 @@ impl InputDescriptor {
     }
 
     /// Return the id of the input descriptor.
-    pub fn id(&self) -> &String {
-        &self.id
+    pub fn id(&self) -> &str {
+        self.id.as_str()
     }
 
     /// Return the constraints of the input descriptor.
@@ -560,8 +560,6 @@ impl InputDescriptor {
 
                     // If a filter is available with a valid schema, handle the field validation.
                     if let Some(Ok(schema_validator)) = validator.as_ref() {
-                        // TODO: possible trace a warning if a field is not valid.
-                        // TODO: Check the predicate feature value.
                         let validated_fields = field_elements.iter().find(|element| {
                             match schema_validator.validate(element) {
                                 Err(errors) => {
@@ -586,9 +584,6 @@ impl InputDescriptor {
                             }
                         }
                     }
-
-                    // TODO: Check limit disclosure of data requested. Do not provide more data
-                    // than is necessary to satisfy the constraints.
                 }
             }
         }
@@ -604,7 +599,6 @@ impl InputDescriptor {
     ///
     /// This format property is identical in value signature to the top-level format object,
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-
     pub fn format(&self) -> Option<&ClaimFormatMap> {
         self.format.as_ref()
     }
@@ -659,6 +653,16 @@ impl Constraints {
     /// Returns the limit disclosure value.
     pub fn limit_disclosure(&self) -> Option<&ConstraintsLimitDisclosure> {
         self.limit_disclosure.as_ref()
+    }
+
+    /// Returns if the constraints fields contain non-optional
+    /// fields that must be satisfied.
+    pub fn is_required(&self) -> bool {
+        if let Some(fields) = self.fields() {
+            fields.iter().any(|field| field.is_required())
+        } else {
+            false
+        }
     }
 }
 
@@ -822,10 +826,9 @@ impl ConstraintsField {
     /// If no filter is provided on the constraint field, this
     /// will return None.
     ///
-    /// If the filter schema is invalid, this will also return None.
+    /// # Errors
     ///
-    /// NOTE: Errors are not handled if the filter schema is invalid,
-    /// instead the method will return None on an invalid filter.
+    /// If the filter is invalid, this will return an error.
     pub fn validator(&self) -> Option<Result<JSONSchema, ValidationError>> {
         self.filter.as_ref().map(JSONSchema::compile)
     }
@@ -935,9 +938,9 @@ impl DescriptorMap {
     /// The descriptor map object MUST include a `path` property. The value of this property MUST be a [JSONPath](https://goessner.net/articles/JsonPath/) string expression. The path property indicates the [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim) submitted in relation to the identified [InputDescriptor], when executed against the top-level of the object the [PresentationSubmission] is embedded within.
     ///
     /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
-    pub fn new(id: String, format: ClaimFormatDesignation, path: JsonPath) -> Self {
+    pub fn new(id: impl Into<String>, format: ClaimFormatDesignation, path: JsonPath) -> Self {
         Self {
-            id,
+            id: id.into(),
             format,
             path,
             path_nested: None,

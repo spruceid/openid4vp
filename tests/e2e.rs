@@ -96,6 +96,11 @@ async fn w3c_vc_did_client_direct_post() {
             // of the descriptor map matching the input descriptor id.
             DescriptorMap::new(
                 descriptor.id().to_string(),
+                // NOTE: Since the input descriptor may support several different claim format types. This value should not be
+                // hardcoded in production code, but should be selected from available formats in the presentation definition
+                // input descriptor.
+                //
+                // In practice, this format will be determined by the VDC collection's credential format.
                 ClaimFormatDesignation::JwtVc,
                 "$".into(),
             )

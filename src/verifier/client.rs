@@ -4,12 +4,8 @@ use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::{json, Value as Json};
-use ssi_dids::{DIDResolver, VerificationMethodDIDResolver};
 use ssi_jwk::JWKResolver;
-use ssi_verification_methods::{
-    GenericVerificationMethod, InvalidVerificationMethod, MaybeJwkVerificationMethod,
-    VerificationMethodSet,
-};
+
 use tracing::debug;
 use x509_cert::{
     der::Encode,
@@ -48,13 +44,10 @@ impl DIDClient {
     pub async fn new(
         vm: String,
         signer: Arc<dyn RequestSigner + Send + Sync>,
-        resolver: &VerificationMethodDIDResolver<
-            impl DIDResolver,
-            impl MaybeJwkVerificationMethod
-                + VerificationMethodSet
-                + TryFrom<GenericVerificationMethod, Error = InvalidVerificationMethod>,
-        >,
+        resolver: impl JWKResolver,
     ) -> Result<Self> {
+        // use ssi_jwk::JWKResolver;
+
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
         ))?;

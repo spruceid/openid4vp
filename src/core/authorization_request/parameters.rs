@@ -215,6 +215,12 @@ impl Deref for Nonce {
     }
 }
 
+impl ToString for Nonce {
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
+}
+
 impl Nonce {
     #[cfg(feature = "rand")]
     pub fn random(rng: &mut impl rand::Rng) -> Self {

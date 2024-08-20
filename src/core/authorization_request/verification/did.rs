@@ -7,12 +7,7 @@ use anyhow::{bail, Context, Result};
 use base64::prelude::*;
 use serde_json::{Map, Value as Json};
 
-use ssi_dids::{DIDResolver, VerificationMethodDIDResolver};
 use ssi_jwk::JWKResolver;
-use ssi_verification_methods::{
-    GenericVerificationMethod, InvalidVerificationMethod, MaybeJwkVerificationMethod,
-    VerificationMethodSet,
-};
 
 /// Default implementation of request validation for `client_id_scheme` `did`.
 pub async fn verify_with_resolver(
@@ -20,12 +15,7 @@ pub async fn verify_with_resolver(
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
     trusted_dids: Option<&[String]>,
-    resolver: &VerificationMethodDIDResolver<
-        impl DIDResolver,
-        impl MaybeJwkVerificationMethod
-            + VerificationMethodSet
-            + TryFrom<GenericVerificationMethod, Error = InvalidVerificationMethod>,
-    >,
+    resolver: impl JWKResolver,
 ) -> Result<()> {
     let (headers_b64, _, _) = ssi_claims::jws::split_jws(&request_jwt)?;
 
@@ -80,7 +70,7 @@ pub async fn verify_with_resolver(
         .await
         .context("unable to resolve key from verification method")?;
 
-    let _: Json = ssi_claims::jwt::decode_verify(&request_jwt, &jwk)
+    let _: Json = ssi_claims::jwt::decode_verify(&request_jwt, &*jwk)
         .context("request signature could not be verified")?;
 
     Ok(())

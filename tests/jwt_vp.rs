@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 
+use oid4vp::core::authorization_request::parameters::Nonce;
 use oid4vp::verifier::request_signer::{P256Signer, RequestSigner};
 use ssi_claims::jwt::VerifiablePresentation;
 use ssi_claims::vc::v2::syntax::VERIFIABLE_PRESENTATION_TYPE;
@@ -42,13 +43,9 @@ async fn test_verifiable_presentation() -> Result<()> {
 
     println!("VC: {:?}", verifiable_credential);
 
-    // let issuer = Issuer::extract(AnyRegisteredClaim::from(verifiable_credential.clone()));
-
-    // println!("Issuer: {:?}", issuer);
-
-    // assert_eq!(holder_did.as_did_url(), subject);
-
     // TODO: There should be a more idiomatically correct way to do this, if not already implemented.
+    // NOTE: There is an unused `VerifiablePresentationBuilder` in the holder module, however, these methods
+    // may best be implemented as methods on the `VerifiablePresentation` struct itself.
     let mut verifiable_presentation = VerifiablePresentation(Value::Object(Object::new()));
 
     verifiable_presentation.0.as_object_mut().map(|obj| {
@@ -69,11 +66,8 @@ async fn test_verifiable_presentation() -> Result<()> {
                 obj.insert("exp".into(), Value::Number((dur.as_secs() + 3600).into()));
             });
 
-        // The nonce is a random string.
-        obj.insert(
-            "nonce".into(),
-            Value::String(uuid::Uuid::new_v4().to_string().into()),
-        );
+        let nonce = Nonce::from("random_nonce");
+        obj.insert("nonce".into(), Value::String(nonce.to_string().into()));
 
         let mut verifiable_credential_field = Value::Object(Object::new());
 
