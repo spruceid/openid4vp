@@ -667,7 +667,9 @@ impl Constraints {
     }
 }
 
-/// ConstraintsField objects are used to describe the constraints that a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder) must satisfy to fulfill an Input Descriptor.
+/// ConstraintsField objects are used to describe the constraints that a
+/// [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder)
+/// must satisfy to fulfill an Input Descriptor.
 ///
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -968,9 +970,9 @@ impl DescriptorMap {
     /// The format of a path_nested object mirrors that of a [DescriptorMap] property. The nesting may be any number of levels deep.
     /// The `id` property MUST be the same for each level of nesting.
     ///
-    /// The path property inside each `path_nested` property provides a relative path within a given nested value.
+    /// > The path property inside each `path_nested` property provides a relative path within a given nested value.
     ///
-    /// For more information on nested paths, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries](https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries)
+    /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries](https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries)
     ///
     /// Errors:
     /// - The id of the nested path must be the same as the parent id.

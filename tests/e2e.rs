@@ -26,16 +26,19 @@ async fn w3c_vc_did_client_direct_post() {
             "did-key-id".into(),
             Constraints::new()
                 .add_constraint(
-                    ConstraintsField::new(
-                        "$.vp.verifiableCredential[0].vc.credentialSubject.id".into(),
-                    )
-                    .set_name("Verify Identity Key".into())
-                    .set_purpose("Check whether your identity key has been verified.".into())
-                    .set_filter(serde_json::json!({
-                        "type": "string",
-                        "pattern": "did:key:.*"
-                    }))
-                    .set_predicate(Predicate::Required),
+                    // Add a constraint fields to check if the credential
+                    // conforms to a specific path.
+                    ConstraintsField::new("$.credentialSubject.id".into())
+                        // Add alternative path(s) to check multiple potential formats.
+                        .add_path("$.vp.verifiableCredential.vc.credentialSubject.id".into())
+                        .add_path("$.vp.verifiableCredential[0].vc.credentialSubject.id".into())
+                        .set_name("Verify Identity Key".into())
+                        .set_purpose("Check whether your identity key has been verified.".into())
+                        .set_filter(serde_json::json!({
+                            "type": "string",
+                            "pattern": "did:key:.*"
+                        }))
+                        .set_predicate(Predicate::Required),
                 )
                 .set_limit_disclosure(ConstraintsLimitDisclosure::Required),
         )
