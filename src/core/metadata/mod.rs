@@ -41,6 +41,11 @@ impl WalletMetadata {
         &self.2
     }
 
+    /// Returns whether the claim format is supported.
+    pub fn is_claim_format_supported(&self, designation: &ClaimFormatDesignation) -> bool {
+        self.vp_formats_supported().0.contains_key(designation)
+    }
+
     /// The static wallet metadata bound to `openid4vp:`:
     /// ```json
     /// {

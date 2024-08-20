@@ -215,9 +215,9 @@ impl Deref for Nonce {
     }
 }
 
-impl ToString for Nonce {
-    fn to_string(&self) -> String {
-        self.0.clone()
+impl std::fmt::Display for Nonce {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

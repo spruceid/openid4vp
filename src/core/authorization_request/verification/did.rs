@@ -70,7 +70,7 @@ pub async fn verify_with_resolver(
         .await
         .context("unable to resolve key from verification method")?;
 
-    let _: Json = ssi_claims::jwt::decode_verify(&request_jwt, &*jwk)
+    let _: Json = ssi_claims::jwt::decode_verify(&request_jwt, &jwk)
         .context("request signature could not be verified")?;
 
     Ok(())
