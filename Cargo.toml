@@ -47,9 +47,3 @@ uuid = { version = "1.2", features = ["v4", "serde", "js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 uuid = { version = "1.2", features = ["v4", "serde"] }
-
-# For Development Purpose, patch the ssi* crates to use the local versions
-# [patch.crates-io]
-# ssi-claims = { path = "../ssi/crates/claims" }
-# ssi-dids = { path = "../ssi/crates/dids" }
-# ssi-jwk = { path = "../ssi/crates/jwk" }
