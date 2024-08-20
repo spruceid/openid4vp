@@ -110,7 +110,7 @@ async fn w3c_vc_did_client_direct_post() {
                 // Starts at the top level path of the verifiable submission, which contains a `vp` key
                 // for verifiable presentations, which include the verifiable credentials under the `verifiableCredentials`
                 // field.
-                "$.vp".into(),
+                "$".into(),
             )
             .set_path_nested(DescriptorMap::new(
                 // Descriptor map id must be the same as the parent descriptor map id.
@@ -121,7 +121,7 @@ async fn w3c_vc_did_client_direct_post() {
                 // The nested path is relative to the `vp` key.
                 //
                 // See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries
-                "$.verifiableCredential[0]".into(),
+                "$.vp.verifiableCredential[0]".into(),
             ))
         })
         .collect();
