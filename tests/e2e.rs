@@ -52,12 +52,18 @@ async fn w3c_vc_did_client_direct_post() {
 
     let client_metadata = UntypedObject::default();
 
+    #[cfg(feature = "rand")]
+    let nonce = Nonce::random(&mut rand::thread_rng());
+
+    #[cfg(not(feature = "rand"))]
+    let nonce = Nonce::from("random_nonce");
+
     let (id, request) = verifier
         .build_authorization_request()
         .with_presentation_definition(presentation_definition.clone())
         .with_request_parameter(ResponseMode::DirectPost)
         .with_request_parameter(ResponseType::VpToken)
-        .with_request_parameter(Nonce::random())
+        .with_request_parameter(nonce)
         .with_request_parameter(ClientMetadata(client_metadata))
         .build(wallet.metadata().clone())
         .await
@@ -89,7 +95,7 @@ async fn w3c_vc_did_client_direct_post() {
             // NOTE: the input descriptor constraint field path is relative to the path
             // of the descriptor map matching the input descriptor id.
             DescriptorMap::new(
-                descriptor.id().clone(),
+                descriptor.id().to_string(),
                 ClaimFormatDesignation::JwtVc,
                 "$".into(),
             )

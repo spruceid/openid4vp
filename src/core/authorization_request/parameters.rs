@@ -201,6 +201,12 @@ impl From<String> for Nonce {
     }
 }
 
+impl From<&str> for Nonce {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
 impl Deref for Nonce {
     type Target = String;
 
@@ -210,9 +216,11 @@ impl Deref for Nonce {
 }
 
 impl Nonce {
-    pub fn random() -> Self {
-        // NOTE: consider replacing with rng rand crate.
-        Self(uuid::Uuid::new_v4().to_string())
+    #[cfg(feature = "rand")]
+    pub fn random(rng: &mut impl rand::Rng) -> Self {
+        use rand::distributions::Alphanumeric;
+
+        Self((0..16).map(|_| rng.sample(Alphanumeric) as char).collect())
     }
 }
 
