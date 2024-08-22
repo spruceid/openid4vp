@@ -3,7 +3,7 @@ use crate::{
         authorization_request::parameters::{ClientIdScheme, ResponseType},
         object::TypedParameter,
     },
-    presentation_exchange::ClaimFormatMap,
+    presentation_exchange::{ClaimFormatDesignation, ClaimFormatMap},
 };
 use anyhow::{bail, Error, Result};
 use serde_json::Value as Json;
@@ -135,7 +135,7 @@ impl From<RequestObjectSigningAlgValuesSupported> for Json {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct VpFormatsSupported(pub ClaimFormatMap);
 
 impl TypedParameter for VpFormatsSupported {
@@ -155,6 +155,12 @@ impl TryFrom<VpFormatsSupported> for Json {
 
     fn try_from(value: VpFormatsSupported) -> Result<Json, Self::Error> {
         serde_json::to_value(value.0).map_err(Into::into)
+    }
+}
+
+impl VpFormatsSupported {
+    pub fn is_claim_format_supported(&self, designation: &ClaimFormatDesignation) -> bool {
+        self.0.contains_key(designation)
     }
 }
 

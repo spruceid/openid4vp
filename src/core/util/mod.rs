@@ -17,6 +17,7 @@ pub(crate) fn base_request() -> http::request::Builder {
 }
 
 #[cfg(feature = "reqwest")]
+#[derive(Debug)]
 pub struct ReqwestClient(reqwest::Client);
 
 #[cfg(feature = "reqwest")]

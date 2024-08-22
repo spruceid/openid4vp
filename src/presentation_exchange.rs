@@ -145,6 +145,32 @@ pub enum ClaimFormatPayload {
     Json(serde_json::Value),
 }
 
+impl ClaimFormatPayload {
+    /// Adds an algorithm value to the list of supported algorithms.
+    ///
+    /// This method is a no-op if self is not of type `AlgValuesSupported` or `Alg`.
+    pub fn add_alg(&mut self, alg: String) {
+        match self {
+            Self::Alg(algs) | Self::AlgValuesSupported(algs) => {
+                algs.push(alg);
+            }
+            _ => {} // Noop
+        }
+    }
+
+    /// Adds a proof type to the list of supported proof types.
+    ///
+    /// This method is a no-op if self is not of type `ProofType`.
+    pub fn add_proof_type(&mut self, proof_type: String) {
+        match self {
+            Self::ProofType(proof_types) => {
+                proof_types.push(proof_type);
+            }
+            _ => {} // Noop
+        }
+    }
+}
+
 /// The claim format designation type is used in the input description object to specify the format of the claim.
 ///
 /// Registry of claim format type: https://identity.foundation/claim-format-registry/#registry
