@@ -37,13 +37,13 @@ pub trait Client: Debug {
 pub struct DIDClient {
     id: ClientId,
     vm: String,
-    signer: Arc<dyn RequestSigner + Send + Sync>,
+    signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
 }
 
 impl DIDClient {
     pub async fn new(
         vm: String,
-        signer: Arc<dyn RequestSigner + Send + Sync>,
+        signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
         resolver: impl JWKResolver,
     ) -> Result<Self> {
         let (id, _f) = vm.rsplit_once('#').context(format!(
@@ -55,7 +55,7 @@ impl DIDClient {
             .await
             .context("unable to resolve key from verification method")?;
 
-        if &*jwk != signer.jwk() {
+        if *jwk != signer.jwk().context("signer did not have a JWK")? {
             bail!(
                 "verification method resolved from DID document did not match public key of signer"
             )
@@ -74,14 +74,14 @@ impl DIDClient {
 pub struct X509SanClient {
     id: ClientId,
     x5c: Vec<Certificate>,
-    signer: Arc<dyn RequestSigner + Send + Sync>,
+    signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
     variant: X509SanVariant,
 }
 
 impl X509SanClient {
     pub fn new(
         x5c: Vec<Certificate>,
-        signer: Arc<dyn RequestSigner + Send + Sync>,
+        signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
         variant: X509SanVariant,
     ) -> Result<Self> {
         let leaf = &x5c[0];
@@ -145,7 +145,10 @@ impl Client for DIDClient {
         &self,
         body: &AuthorizationRequestObject,
     ) -> Result<String> {
-        let algorithm = self.signer.alg();
+        let algorithm = self
+            .signer
+            .alg()
+            .context("failed to retrieve signing algorithm")?;
         let header = json!({
             "alg": algorithm,
             "kid": self.vm,
@@ -172,7 +175,10 @@ impl Client for X509SanClient {
         &self,
         body: &AuthorizationRequestObject,
     ) -> Result<String> {
-        let algorithm = self.signer.alg();
+        let algorithm = self
+            .signer
+            .alg()
+            .context("failed to retrieve signing algorithm")?;
         let x5c: Vec<String> = self
             .x5c
             .iter()
