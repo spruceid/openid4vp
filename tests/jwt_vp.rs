@@ -6,6 +6,7 @@ use anyhow::Result;
 
 use oid4vp::core::authorization_request::parameters::Nonce;
 use oid4vp::verifier::request_signer::{P256Signer, RequestSigner};
+use ssi_claims::jws::JWSSigner;
 use ssi_claims::jwt::VerifiablePresentation;
 use ssi_claims::vc::v2::syntax::VERIFIABLE_PRESENTATION_TYPE;
 use ssi_claims::{CompactJWSString, JWSPayload, JWTClaims};
@@ -19,20 +20,16 @@ use ssi_jwk::JWK;
 pub async fn create_test_verifiable_presentation() -> Result<CompactJWSString> {
     let verifier = JWK::from_str(include_str!("examples/verifier.jwk"))?;
 
-    let signer = Arc::new(
-        P256Signer::new(
-            p256::SecretKey::from_jwk_str(include_str!("examples/subject.jwk"))
-                .unwrap()
-                .into(),
-        )
-        .unwrap(),
-    );
+    let signer = P256Signer::new(
+        p256::SecretKey::from_jwk_str(include_str!("examples/subject.jwk"))
+            .unwrap()
+            .into(),
+    )
+    .unwrap();
 
-    println!("Signer: {:?}", signer.jwk());
+    println!("Signer: {:?}", signer);
 
-    let holder_jwk = JWK::from_str(std::include_str!("examples/subject.jwk"))?;
-    let holder_did = DIDKey::generate_url(&signer.jwk())?;
-
+    let holder_did = DIDKey::generate_url(signer.jwk())?;
     let verifier_did = DIDKey::generate_url(&verifier)?;
 
     // Create a verifiable presentation using the `examples/vc.jwt` file
@@ -95,7 +92,7 @@ pub async fn create_test_verifiable_presentation() -> Result<CompactJWSString> {
     let claim = JWTClaims::from_private_claims(verifiable_presentation);
 
     let jwt = claim
-        .sign(&holder_jwk)
+        .sign(&signer)
         .await
         .expect("Failed to sign Verifiable Presentation JWT");
 
