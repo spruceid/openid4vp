@@ -2,6 +2,7 @@ use std::{fmt, ops::Deref};
 
 use crate::core::{
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
+    presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
     util::{base_request, AsyncHttpClient},
 };
 use anyhow::{bail, Context, Error, Ok};
@@ -467,25 +468,23 @@ impl From<State> for Json {
 #[derive(Debug, Clone)]
 pub struct PresentationDefinition {
     raw: Json,
-    parsed: crate::presentation_exchange::PresentationDefinition,
+    parsed: PresentationDefinitionParsed,
 }
 
 impl PresentationDefinition {
-    pub fn into_parsed(self) -> crate::presentation_exchange::PresentationDefinition {
+    pub fn into_parsed(self) -> PresentationDefinitionParsed {
         self.parsed
     }
 
-    pub fn parsed(&self) -> &crate::presentation_exchange::PresentationDefinition {
+    pub fn parsed(&self) -> &PresentationDefinitionParsed {
         &self.parsed
     }
 }
 
-impl TryFrom<crate::presentation_exchange::PresentationDefinition> for PresentationDefinition {
+impl TryFrom<PresentationDefinitionParsed> for PresentationDefinition {
     type Error = Error;
 
-    fn try_from(
-        parsed: crate::presentation_exchange::PresentationDefinition,
-    ) -> Result<Self, Self::Error> {
+    fn try_from(parsed: PresentationDefinitionParsed) -> Result<Self, Self::Error> {
         let raw = serde_json::to_value(parsed.clone())?;
         Ok(Self { raw, parsed })
     }

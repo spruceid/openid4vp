@@ -1,10 +1,9 @@
-use crate::{
-    core::{
-        authorization_request::parameters::{ClientIdScheme, ResponseType},
-        object::TypedParameter,
-    },
-    presentation_exchange::{ClaimFormatDesignation, ClaimFormatMap},
+use crate::core::{
+    authorization_request::parameters::{ClientIdScheme, ResponseType},
+    credential_format::{ClaimFormatDesignation, ClaimFormatMap},
+    object::TypedParameter,
 };
+
 use anyhow::{bail, Error, Result};
 use serde_json::Value as Json;
 use url::Url;

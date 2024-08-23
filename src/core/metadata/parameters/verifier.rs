@@ -1,8 +1,9 @@
+use crate::core::credential_format::ClaimFormatMap;
+use crate::core::object::TypedParameter;
+
 use anyhow::{Context, Error};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
-
-use crate::{core::object::TypedParameter, presentation_exchange::ClaimFormatMap};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VpFormats(pub ClaimFormatMap);

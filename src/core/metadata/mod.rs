@@ -1,11 +1,11 @@
+use super::credential_format::*;
+
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{bail, Error, Result};
 use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
 use serde::{Deserialize, Serialize};
 use ssi_jwk::Algorithm;
-
-use crate::presentation_exchange::{ClaimFormatDesignation, ClaimFormatMap, ClaimFormatPayload};
 
 use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
 

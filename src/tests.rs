@@ -7,9 +7,8 @@ use anyhow::{bail, Context, Result};
 use jsonschema::{JSONSchema, ValidationError};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-use ssi_claims::{jwt::VerifiablePresentation, CompactJWSString, VerificationParameters};
-use ssi_dids::{ssi_json_ld::syntax::from_value, DIDKey, VerificationMethodDIDResolver};
-use ssi_verification_methods::AnyJwkMethod;
+use ssi_claims::jwt::VerifiablePresentation;
+use ssi_dids::ssi_json_ld::syntax::from_value;
 
 /// A JSONPath is a string that represents a path to a specific value within a JSON object.
 ///
@@ -125,7 +124,16 @@ impl ClaimFormat {
             ClaimFormat::AcVc { .. } => ClaimFormatDesignation::AcVc,
             ClaimFormat::AcVp { .. } => ClaimFormatDesignation::AcVp,
             ClaimFormat::MsoMDoc(_) => ClaimFormatDesignation::MsoMDoc,
-            ClaimFormat::Other(_) => ClaimFormatDesignation::Other,
+            ClaimFormat::Other(value) => {
+                // parse the format from the value
+                let format = value
+                    .get("format")
+                    .and_then(|format| format.as_str())
+                    // If a `format` property is not present, default to "unknown"
+                    .unwrap_or("unknown");
+
+                ClaimFormatDesignation::Other(format.to_string())
+            }
         }
     }
 }
@@ -237,7 +245,51 @@ pub enum ClaimFormatDesignation {
     /// Other claim format designations not covered by the above.
     ///
     /// The value of this variant is the name of the claim format designation.
-    Other,
+    Other(String),
+}
+
+impl From<&str> for ClaimFormatDesignation {
+    fn from(s: &str) -> Self {
+        match s {
+            "jwt" => Self::Jwt,
+            "jwt_vc" => Self::JwtVc,
+            "jwt_vp" => Self::JwtVp,
+            "jwt_vc_json" => Self::JwtVcJson,
+            "jwt_vp_json" => Self::JwtVpJson,
+            "ldp" => Self::Ldp,
+            "ldp_vc" => Self::LdpVc,
+            "ldp_vp" => Self::LdpVp,
+            "ac_vc" => Self::AcVc,
+            "ac_vp" => Self::AcVp,
+            "mso_mdoc" => Self::MsoMDoc,
+            s => Self::Other(s.to_string()),
+        }
+    }
+}
+
+impl Into<String> for ClaimFormatDesignation {
+    fn into(self) -> String {
+        match self {
+            Self::AcVc => "ac_vc".to_string(),
+            Self::AcVp => "ac_vp".to_string(),
+            Self::Jwt => "jwt".to_string(),
+            Self::JwtVc => "jwt_vc".to_string(),
+            Self::JwtVp => "jwt_vp".to_string(),
+            Self::JwtVcJson => "jwt_vc_json".to_string(),
+            Self::JwtVpJson => "jwt_vp_json".to_string(),
+            Self::Ldp => "ldp".to_string(),
+            Self::LdpVc => "ldp_vc".to_string(),
+            Self::LdpVp => "ldp_vp".to_string(),
+            Self::MsoMDoc => "mso_mdoc".to_string(),
+            Self::Other(s) => s,
+        }
+    }
+}
+
+impl std::fmt::Display for ClaimFormatDesignation {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
 }
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
@@ -364,16 +416,6 @@ impl PresentationDefinition {
                 let presentation_submission = response.presentation_submission().parsed();
 
                 let jwt = response.vp_token().0.clone();
-
-                let jws = CompactJWSString::from_string(jwt.clone()).context("Invalid JWT.")?;
-                let resolver: VerificationMethodDIDResolver<DIDKey, AnyJwkMethod> =
-                    VerificationMethodDIDResolver::new(DIDKey);
-
-                let params = VerificationParameters::from_resolver(resolver);
-
-                if let Err(e) = jws.verify(params).await {
-                    bail!("JWT Verification Failed: {:?}", e)
-                }
 
                 let verifiable_presentation: VerifiablePresentation =
                     ssi_claims::jwt::decode_unverified(&jwt)?;
@@ -687,6 +729,8 @@ impl Constraints {
     pub fn is_required(&self) -> bool {
         if let Some(fields) = self.fields() {
             fields.iter().any(|field| field.is_required())
+        } else if let Some(ConstraintsLimitDisclosure::Required) = self.limit_disclosure() {
+            true
         } else {
             false
         }
