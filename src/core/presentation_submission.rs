@@ -113,7 +113,7 @@ impl DescriptorMap {
     /// - The id of the nested path must be the same as the parent id.
     pub fn set_path_nested(mut self, mut path_nested: DescriptorMap) -> Self {
         // Ensure the nested path has the same id as the parent.
-        path_nested.id = self.id.clone();
+        path_nested.id.clone_from(self.id());
 
         self.path_nested = Some(Box::new(path_nested));
 

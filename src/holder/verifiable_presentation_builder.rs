@@ -1,152 +1,164 @@
-use anyhow::{Context, Result};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use serde::{Deserialize, Serialize};
-use ssi_claims::vc::{v1::VerifiableCredential, v2::syntax::VERIFIABLE_CREDENTIAL_TYPE};
-use ssi_dids::{DIDURLBuf, DIDURL};
+use ssi_claims::jwt::{VerifiableCredential, VerifiablePresentation};
+use ssi_claims::vc::v2::syntax::VERIFIABLE_PRESENTATION_TYPE;
+use ssi_dids::ssi_json_ld::CREDENTIALS_V1_CONTEXT;
+use ssi_dids::{
+    ssi_json_ld::syntax::{Object, Value},
+    DIDURLBuf,
+};
 
-pub const VERIFIABLE_PRESENTATION_CONTEXT_V1: &str = "https://www.w3.org/2018/credentials/v1";
-
-// NOTE: This may make more sense to be moved to ssi_claims lib.
-pub const VERIFIABLE_PRESENTATION_TYPE: &str = "VerifiablePresentation";
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct VerifiablePresentationBuilder {
-    /// The issuer of the presentation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    iss: Option<String>, // TODO: Should this be a DIDURLBuf or IRI/URI type?
-    /// The Json Web Token ID of the presentation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    jti: Option<String>,
-    /// The audience of the presentation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    aud: Option<String>, // TODO: Should this be a DIDURLBuf?
-    /// The issuance date of the presentation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    iat: Option<i64>,
-    /// The expiration date of the presentation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    exp: Option<i64>,
-    /// The nonce of the presentation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    nonce: Option<String>,
-    /// The verifiable presentation format.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    vp: Option<VerifiablePresentationCredentialBuilder>,
+#[derive(Debug, Clone)]
+pub struct VerifiablePresentationBuilderOptions {
+    pub issuer: DIDURLBuf,
+    pub subject: DIDURLBuf,
+    pub audience: DIDURLBuf,
+    pub nonce: String,
+    // TODO: we may wish to support an explicit
+    // issuance and expiration date rather than seconds from now.
+    /// Expiration is in seconds from `now`.
+    /// e.g. 3600 for 1 hour.
+    pub expiration_secs: u64,
+    pub credentials: Vec<VerifiableCredential>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct VerifiablePresentationCredentialBuilder {
-    /// The context of the presentation.
-    #[serde(rename = "@context")]
-    context: Vec<String>,
-    /// The type of the presentation.
-    #[serde(rename = "type")]
-    type_: Vec<String>,
-    /// The verifiable credentials list of the presentation.
-    verifiable_credential: Vec<VerifiableCredentialBuilder>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifiablePresentationBuilder(VerifiablePresentation);
+
+impl From<VerifiablePresentationBuilder> for VerifiablePresentation {
+    fn from(builder: VerifiablePresentationBuilder) -> Self {
+        builder.0
+    }
 }
 
-impl Default for VerifiablePresentationCredentialBuilder {
+impl Default for VerifiablePresentationBuilder {
     fn default() -> Self {
-        Self {
-            context: vec![VERIFIABLE_PRESENTATION_CONTEXT_V1.into()],
-            type_: vec![VERIFIABLE_PRESENTATION_TYPE.into()],
-            verifiable_credential: vec![],
-        }
+        Self::new()
     }
 }
 
-impl VerifiablePresentationCredentialBuilder {
+impl VerifiablePresentationBuilder {
+    /// Returns an empty verifiable presentation builder.
     pub fn new() -> Self {
-        Self::default()
+        Self(VerifiablePresentation(Value::Object(Object::new())))
     }
 
-    /// Add a verifiable credential to the presentation.
-    pub fn add_verifiable_credential(
-        mut self,
-        verifiable_credential: VerifiableCredentialBuilder,
-    ) -> Self {
-        self.verifiable_credential.push(verifiable_credential);
-        self
-    }
-}
+    /// Returns a verifiable presentation builder from options.
+    ///
+    /// This will set the issuance date to the current time and the expiration
+    /// date to the expiration secs from the issuance date.
+    pub fn from_options(options: VerifiablePresentationBuilderOptions) -> VerifiablePresentation {
+        let mut verifiable_presentation = VerifiablePresentation(Value::Object(Object::new()));
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct VerifiableCredentialBuilder {
-    /// The context of the credential.
-    #[serde(rename = "@context")]
-    context: Vec<String>,
-    /// The type of the credential.
-    #[serde(rename = "type")]
-    type_: Vec<String>,
-    /// The issuer of the credential.
-    issuer: Option<String>,
-    // TODO: Determine if we should use a DateTime<Utc> type here, use chrono lib?
-    #[serde(rename = "issuanceDate")]
-    issuance_date: Option<String>,
-    #[serde(rename = "credentialSubject")]
-    credential_subject: Option<serde_json::Value>,
-}
+        if let Some(obj) = verifiable_presentation.0.as_object_mut() {
+            // The issuer is the holder of the verifiable credential (subject of the verifiable credential).
+            obj.insert("iss".into(), Value::String(options.issuer.as_str().into()));
 
-impl Default for VerifiableCredentialBuilder {
-    fn default() -> Self {
-        Self {
-            context: vec![VERIFIABLE_PRESENTATION_CONTEXT_V1.into()],
-            type_: vec![VERIFIABLE_CREDENTIAL_TYPE.into()],
-            issuer: None,
-            issuance_date: None,
-            credential_subject: None,
+            // The audience is the verifier of the verifiable credential.
+            obj.insert(
+                "aud".into(),
+                Value::String(options.audience.as_str().into()),
+            );
+
+            if let Ok(dur) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                // The issuance date is the current time.
+                obj.insert("iat".into(), Value::Number(dur.as_secs().into()));
+
+                // The expiration date is 1 hour from the current time.
+                obj.insert(
+                    "exp".into(),
+                    Value::Number((dur.as_secs() + options.expiration_secs).into()),
+                );
+            }
+
+            obj.insert("nonce".into(), Value::String(options.nonce.into()));
+
+            let mut verifiable_credential_field = Value::Object(Object::new());
+
+            if let Some(cred) = verifiable_credential_field.as_object_mut() {
+                cred.insert(
+                    "@context".into(),
+                    Value::String(CREDENTIALS_V1_CONTEXT.to_string().into()),
+                );
+
+                cred.insert(
+                    "type".into(),
+                    Value::String(VERIFIABLE_PRESENTATION_TYPE.to_string().into()),
+                );
+
+                cred.insert(
+                    "verifiableCredential".into(),
+                    Value::Array(options.credentials.into_iter().map(|vc| vc.0).collect()),
+                );
+            }
+
+            obj.insert("vp".into(), verifiable_credential_field);
         }
-    }
-}
 
-impl VerifiableCredentialBuilder {
-    pub fn new() -> Self {
-        Self::default()
+        verifiable_presentation
     }
 
-    /// Add a credential to the credential builder, e.g. `IdentityCredential` or `mDL`.
+    /// Add an issuer to the verifiable presentation.
     ///
-    /// By default, the `VerifiableCredential` type is added to the credential.
-    pub fn add_type(mut self, credential_type: String) -> Self {
-        self.type_.push(credential_type);
+    /// The issuer is the entity that issues the verifiable presentation.
+    /// This is typically the holder of the verifiable credential.
+    pub fn add_issuer(mut self, issuer: DIDURLBuf) -> Self {
+        if let Some(obj) = self.0 .0.as_object_mut() {
+            // The issuer is the holder of the verifiable credential (subject of the verifiable credential).
+            obj.insert("iss".into(), Value::String(issuer.as_str().into()));
+        };
         self
     }
 
-    /// Set the issuer of the credential.
+    /// Add a subject to the verifiable presentation.
     ///
-    /// The value of the issuer property MUST be either a URI or an object containing an id property.
-    /// It is RECOMMENDED that the URI in the issuer or its id be one which, if dereferenced, results
-    /// in a document containing machine-readable information about the issuer that can be used to verify
-    /// the information expressed in the credential.
-    ///
-    /// See: [https://www.w3.org/TR/vc-data-model-1.0/#issuer](https://www.w3.org/TR/vc-data-model-1.0/#issuer)
-    pub fn set_issuer(mut self, issuer: String) -> Self {
-        self.issuer = Some(issuer);
+    /// The subject is the entity that is the subject of the verifiable presentation.
+    /// This is typically the holder of the verifiable credential.
+    pub fn add_subject(mut self, subject: DIDURLBuf) -> Self {
+        if let Some(obj) = self.0 .0.as_object_mut() {
+            // The subject is the entity that is the subject of the verifiable presentation.
+            obj.insert("sub".into(), Value::String(subject.as_str().into()));
+        };
         self
     }
 
-    /// Set the issuance date of the credential.
-    ///
-    /// A credential MUST have an issuanceDate property.
-    /// The value of the issuanceDate property MUST be a string value of an [RFC3339](https://www.w3.org/TR/vc-data-model-1.0/#bib-rfc3339)
-    /// combined date and time string representing the date and time the credential becomes valid,
-    /// which could be a date and time in the future. Note that this value represents the earliest
-    /// point in time at which the information associated with the credentialSubject property becomes valid.
-    ///
-    /// See: [https://www.w3.org/TR/vc-data-model-1.0/#issuance-date](https://www.w3.org/TR/vc-data-model-1.0/#issuance-date)
-    pub fn set_issuance_date(mut self, issuance_date: String) -> Self {
-        self.issuance_date = Some(issuance_date);
+    /// Add an audience to the verifiable presentation.
+    /// The audience is the entity to which the verifiable presentation is addressed.
+    /// This is typically the verifier of the verifiable presentation.
+    pub fn add_audience(mut self, audience: DIDURLBuf) -> Self {
+        if let Some(obj) = self.0 .0.as_object_mut() {
+            // The audience is the entity to which the verifiable presentation is addressed.
+            obj.insert("aud".into(), Value::String(audience.as_str().into()));
+        };
         self
     }
 
-    /// Set the credential subject of the credential.
-    ///
-    /// The value of the credentialSubject property is defined as a set of objects that contain
-    /// one or more properties that are each related to a subject of the verifiable credential.
-    /// Each object MAY contain an id, as described in [Section § 4.2 Identifiers](https://www.w3.org/TR/vc-data-model-1.0/#identifiers)
-    /// section of the specification.
-    pub fn set_credential_subject(mut self, credential_subject: serde_json::Value) -> Self {
-        self.credential_subject = Some(credential_subject);
+    /// Set the issuance date of the verifiable presentation.
+    pub fn set_issuance_date(mut self, issuance_date: i64) -> Self {
+        if let Some(obj) = self.0 .0.as_object_mut() {
+            obj.insert("iat".into(), Value::Number(issuance_date.into()));
+        };
         self
+    }
+
+    /// Set the expiration date of the verifiable presentation.
+    pub fn set_expiration_date(mut self, expiration_date: i64) -> Self {
+        if let Some(obj) = self.0 .0.as_object_mut() {
+            obj.insert("exp".into(), Value::Number(expiration_date.into()));
+        };
+        self
+    }
+
+    /// Set the nonce of the verifiable presentation.
+    pub fn set_nonce(mut self, nonce: String) -> Self {
+        if let Some(obj) = self.0 .0.as_object_mut() {
+            obj.insert("nonce".into(), Value::String(nonce.into()));
+        }
+        self
+    }
+
+    pub fn build(self) -> VerifiablePresentation {
+        self.0
     }
 }

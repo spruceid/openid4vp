@@ -1,13 +1,14 @@
 use jwt_vp::create_test_verifiable_presentation;
-use oid4vp::presentation_exchange::*;
-
 use oid4vp::{
     core::{
         authorization_request::parameters::{ClientMetadata, Nonce, ResponseMode, ResponseType},
+        credential_format::*,
+        input_descriptor::*,
         object::UntypedObject,
+        presentation_definition::*,
+        presentation_submission::*,
         response::{parameters::VpToken, AuthorizationResponse, UnencodedAuthorizationResponse},
     },
-    presentation_exchange::{PresentationDefinition, PresentationSubmission},
     verifier::session::{Outcome, Status},
     wallet::Wallet,
 };

@@ -121,8 +121,10 @@ impl From<AuthorizationEncryptedResponseEnc> for Json {
 mod test {
     use serde_json::json;
 
-    use crate::core::object::UntypedObject;
-    use crate::presentation_exchange::{ClaimFormatDesignation, ClaimFormatPayload};
+    use crate::core::{
+        credential_format::{ClaimFormatDesignation, ClaimFormatPayload},
+        object::UntypedObject,
+    };
 
     use super::*;
 

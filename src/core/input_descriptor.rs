@@ -175,23 +175,21 @@ impl InputDescriptor {
 
                 let validator = constraint_field.validator();
 
+                let mut found_elements = false;
+
                 for field_path in constraint_field.path.iter() {
                     let field_elements = map_selector(field_path)
                         .context("Failed to select field elements from verifiable presentation.")?;
 
                     // Check if the field matches are empty.
                     if field_elements.is_empty() {
-                        if let Some(ConstraintsLimitDisclosure::Required) =
-                            self.constraints.limit_disclosure
-                        {
-                            bail!("Field elements are empty while limit disclosure is required.")
-                        }
-
                         // According the specification, found here:
                         // [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation)
                         // > If the result returned no JSONPath match, skip to the next path array element.
                         continue;
                     }
+
+                    found_elements = true;
 
                     // If a filter is available with a valid schema, handle the field validation.
                     if let Some(Ok(schema_validator)) = validator.as_ref() {
@@ -218,6 +216,15 @@ impl InputDescriptor {
                                 bail!("Field did not pass filter validation, and is not an optional field.");
                             }
                         }
+                    }
+                }
+
+                // If no elements are found, and limit disclosure is required, return an error.
+                if !found_elements {
+                    if let Some(ConstraintsLimitDisclosure::Required) =
+                        self.constraints.limit_disclosure
+                    {
+                        bail!("Field elements are empty while limit disclosure is required.")
                     }
                 }
             }
@@ -295,10 +302,11 @@ impl Constraints {
     pub fn is_required(&self) -> bool {
         if let Some(fields) = self.fields() {
             fields.iter().any(|field| field.is_required())
-        } else if let Some(ConstraintsLimitDisclosure::Required) = self.limit_disclosure() {
-            true
         } else {
-            false
+            matches!(
+                self.limit_disclosure(),
+                Some(ConstraintsLimitDisclosure::Required)
+            )
         }
     }
 }

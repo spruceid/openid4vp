@@ -143,11 +143,8 @@ impl ClaimFormatPayload {
     ///
     /// This method is a no-op if self is not of type `AlgValuesSupported` or `Alg`.
     pub fn add_alg(&mut self, alg: String) {
-        match self {
-            Self::Alg(algs) | Self::AlgValuesSupported(algs) => {
-                algs.push(alg);
-            }
-            _ => {} // Noop
+        if let Self::Alg(algs) | Self::AlgValuesSupported(algs) = self {
+            algs.push(alg);
         }
     }
 
@@ -155,11 +152,8 @@ impl ClaimFormatPayload {
     ///
     /// This method is a no-op if self is not of type `ProofType`.
     pub fn add_proof_type(&mut self, proof_type: String) {
-        match self {
-            Self::ProofType(proof_types) => {
-                proof_types.push(proof_type);
-            }
-            _ => {} // Noop
+        if let Self::ProofType(proof_types) = self {
+            proof_types.push(proof_type);
         }
     }
 }
@@ -252,27 +246,21 @@ impl From<&str> for ClaimFormatDesignation {
     }
 }
 
-impl Into<String> for ClaimFormatDesignation {
-    fn into(self) -> String {
-        match self {
-            Self::AcVc => "ac_vc".to_string(),
-            Self::AcVp => "ac_vp".to_string(),
-            Self::Jwt => "jwt".to_string(),
-            Self::JwtVc => "jwt_vc".to_string(),
-            Self::JwtVp => "jwt_vp".to_string(),
-            Self::JwtVcJson => "jwt_vc_json".to_string(),
-            Self::JwtVpJson => "jwt_vp_json".to_string(),
-            Self::Ldp => "ldp".to_string(),
-            Self::LdpVc => "ldp_vc".to_string(),
-            Self::LdpVp => "ldp_vp".to_string(),
-            Self::MsoMDoc => "mso_mdoc".to_string(),
-            Self::Other(s) => s,
+impl From<ClaimFormatDesignation> for String {
+    fn from(format: ClaimFormatDesignation) -> Self {
+        match format {
+            ClaimFormatDesignation::AcVc => "ac_vc".to_string(),
+            ClaimFormatDesignation::AcVp => "ac_vp".to_string(),
+            ClaimFormatDesignation::Jwt => "jwt".to_string(),
+            ClaimFormatDesignation::JwtVc => "jwt_vc".to_string(),
+            ClaimFormatDesignation::JwtVp => "jwt_vp".to_string(),
+            ClaimFormatDesignation::JwtVcJson => "jwt_vc_json".to_string(),
+            ClaimFormatDesignation::JwtVpJson => "jwt_vp_json".to_string(),
+            ClaimFormatDesignation::Ldp => "ldp".to_string(),
+            ClaimFormatDesignation::LdpVc => "ldp_vc".to_string(),
+            ClaimFormatDesignation::LdpVp => "ldp_vp".to_string(),
+            ClaimFormatDesignation::MsoMDoc => "mso_mdoc".to_string(),
+            ClaimFormatDesignation::Other(s) => s,
         }
-    }
-}
-
-impl std::fmt::Display for ClaimFormatDesignation {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self)
     }
 }
