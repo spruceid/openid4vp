@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
-use anyhow::{bail, Error, Ok, Result};
+use anyhow::{bail, Ok, Result};
 use async_trait::async_trait;
-use serde_json::Value as Json;
+pub use oid4vp_frontend::*;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -18,28 +18,6 @@ pub struct Session {
     pub authorization_request_jwt: String,
     pub authorization_request_object: AuthorizationRequestObject,
     pub presentation_definition: PresentationDefinition,
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum Status {
-    /// Wallet has been sent the request by reference, waiting for the wallet to request the request.
-    SentRequestByReference,
-    /// Wallet has received the request, waiting on the wallet to process the request.
-    SentRequest,
-    /// Verifier has received the response and is now processing it.
-    ReceivedResponse,
-    /// Verifier has finished processing the response.
-    Complete(Outcome),
-}
-
-#[derive(Debug, Clone)]
-pub enum Outcome {
-    /// An error occurred during response processing.
-    Error { cause: Arc<Error> },
-    /// The authorization response did not pass verification.
-    Failure { reason: String },
-    /// The authorization response is verified.
-    Success { info: Json },
 }
 
 /// Storage interface for session information.
@@ -98,27 +76,5 @@ impl SessionStore for MemoryStore {
         }
 
         bail!("session not found")
-    }
-}
-
-impl PartialEq for Outcome {
-    fn eq(&self, other: &Self) -> bool {
-        core::mem::discriminant(self) == core::mem::discriminant(other)
-    }
-}
-
-impl Outcome {
-    fn ordering(&self) -> u8 {
-        match self {
-            Outcome::Error { .. } => 0,
-            Outcome::Failure { .. } => 1,
-            Outcome::Success { .. } => 2,
-        }
-    }
-}
-
-impl PartialOrd for Outcome {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.ordering().partial_cmp(&other.ordering())
     }
 }
