@@ -169,7 +169,9 @@ impl AsyncHttpClient for MockHttpClient {
                             Ok(_) => Outcome::Success {
                                 info: serde_json::Value::Null,
                             },
-                            Err(e) => Outcome::Error { cause: Arc::new(e) },
+                            Err(e) => Outcome::Error {
+                                cause: e.to_string(),
+                            },
                         }
                     })
                 },
