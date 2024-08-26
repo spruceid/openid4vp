@@ -503,6 +503,78 @@ impl ConstraintsField {
     pub fn is_required(&self) -> bool {
         !self.is_optional()
     }
+
+    /// Set the intent to retain the constraints field.
+    pub fn set_retained(mut self, intent_to_retain: bool) -> Self {
+        self.intent_to_retain = Some(intent_to_retain);
+        self
+    }
+
+    /// Return the intent to retain the constraints field.
+    pub fn is_intended_to_retain(&self) -> bool {
+        self.intent_to_retain.unwrap_or(false)
+    }
+
+    /// Return the humanly-readable requested fields of the constraints field.
+    ///
+    /// This will convert camelCase to space-separated words with capitalized first letter.
+    ///
+    /// For example, if the path is `["dateOfBirth"]`, this will return `["Date of Birth"]`.
+    ///
+    /// This will also stripe the periods from the JSON path and return the last word in the path.
+    ///
+    /// e.g., `["$.verifiableCredential.credentialSubject.dateOfBirth"]` will return `["Date of Birth"]`.
+    /// e.g., `["$.verifiableCredential.credentialSubject.familyName"]` will return `["Family Name"]`.
+    ///
+    pub fn requested_fields(&self) -> Vec<String> {
+        self.path()
+            .into_iter()
+            .map(|path| path.split(&['-', '.', ':', '@'][..]).last())
+            .flatten()
+            .map(|path| {
+                path.chars()
+                    .fold(String::new(), |mut acc, c| {
+                        // Convert camelCase to space-separated words with capitalized first letter.
+                        if c.is_uppercase() {
+                            acc.push(' ');
+                        }
+
+                        // Check if the field is snake_case and convert to
+                        // space-separated words with capitalized first letter.
+                        if c == '_' {
+                            acc.push(' ');
+                            return acc;
+                        }
+
+                        acc.push(c);
+                        acc
+                    })
+                    // Split the path based on empty spaces and uppercase the first letter of each word.
+                    .split(' ')
+                    .map(|word| {
+                        let word =
+                            word.chars()
+                                .enumerate()
+                                .fold(String::new(), |mut acc, (i, c)| {
+                                    // Capitalize the first letter of the word.
+                                    if i == 0 {
+                                        if let Some(c) = c.to_uppercase().next() {
+                                            acc.push(c);
+                                            return acc;
+                                        }
+                                    }
+                                    acc.push(c);
+                                    acc
+                                });
+
+                        format!("{} ", word.trim_end())
+                    })
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

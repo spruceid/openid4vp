@@ -264,3 +264,43 @@ impl From<ClaimFormatDesignation> for String {
         }
     }
 }
+
+/// Credential types that may be requested in a credential request.
+///
+/// Credential types can be presented in a number of formats.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CredentialType {
+    /// an ISO 18013-5:2021 mobile driving license (mDL) Credential
+    #[serde(rename = "org.iso.18013.5.1.mDL")]
+    Iso18013_5_1mDl,
+    /// A vehicle title credential
+    ///
+    /// Given there is no universal standard for how to present a vehicle title credential,
+    /// the inner String provides a dynamic way to represent a vehicle title credential.
+    #[serde(rename = "vehicle_title")]
+    VehicleTitle(String),
+    // Add additional credential types here.
+    //
+    // Fallback to a string for any other credential type.
+    Other(String),
+}
+
+impl From<&str> for CredentialType {
+    fn from(s: &str) -> Self {
+        match s {
+            s if s.contains("org.iso.18013.5.1.mDL") => Self::Iso18013_5_1mDl,
+            s if s.contains("vehicle_title.") => Self::VehicleTitle(s.to_string()),
+            s => Self::Other(s.to_string()),
+        }
+    }
+}
+
+impl From<CredentialType> for String {
+    fn from(cred_type: CredentialType) -> Self {
+        match cred_type {
+            CredentialType::Iso18013_5_1mDl => "org.iso.18013.5.1.mDL".to_string(),
+            CredentialType::VehicleTitle(title) => format!("vehicle_title.{title}"),
+            CredentialType::Other(s) => s,
+        }
+    }
+}

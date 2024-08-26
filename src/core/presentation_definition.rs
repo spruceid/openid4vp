@@ -115,10 +115,50 @@ impl PresentationDefinition {
         self
     }
 
+    /// Add a new format to the presentation definition.
+    pub fn add_format(mut self, format: ClaimFormatDesignation, value: ClaimFormatPayload) -> Self {
+        self.format
+            .get_or_insert_with(HashMap::new)
+            .insert(format, value);
+        self
+    }
+
+    /// Return the format of the presentation definition.
+    pub fn format(&self) -> Option<&ClaimFormatMap> {
+        self.format.as_ref()
+    }
+
+    /// Return the human-readable string representation of the fields requested
+    /// in the presentation definition's input descriptors.
+    ///
+    /// For example, the following paths would be coverted as follows:
+    ///
+    /// `$.verifiableCredential[0].credentialSubject.id` -> Id
+    /// `$.credentialSubject.givenName` -> Given Name
+    /// `$.credentialSubject.familyName` -> Family Name
+    pub fn requested_fields(&self) -> Vec<String> {
+        self.input_descriptors
+            .iter()
+            .filter_map(|input_descriptor| {
+                input_descriptor.constraints().fields().map(|fields| {
+                    fields
+                        .iter()
+                        .map(|constraint| constraint.requested_fields())
+                })
+            })
+            .flat_map(|field| field.into_iter())
+            .flatten()
+            .map(|field| field.to_string())
+            .collect()
+    }
+
     /// Validate a presentation submission against the presentation definition.
     ///
     /// Checks the underlying presentation submission parsed from the authorization response,
     /// against the input descriptors of the presentation definition.
+    #[deprecated(
+        note = "This method is to be replaced by a top-level function that takes a presentation definition and a presentation submission."
+    )]
     pub async fn validate_authorization_response(
         &self,
         auth_response: &AuthorizationResponse,
@@ -133,6 +173,8 @@ impl PresentationDefinition {
                 let presentation_submission = response.presentation_submission().parsed();
 
                 let jwt = response.vp_token().0.clone();
+
+                // TODO: Validate the VP JWT Signature against the holder's key?
 
                 let verifiable_presentation: VerifiablePresentation =
                     ssi_claims::jwt::decode_unverified(&jwt)?;
@@ -168,18 +210,5 @@ impl PresentationDefinition {
         }
 
         Ok(())
-    }
-
-    /// Add a new format to the presentation definition.
-    pub fn add_format(mut self, format: ClaimFormatDesignation, value: ClaimFormatPayload) -> Self {
-        self.format
-            .get_or_insert_with(HashMap::new)
-            .insert(format, value);
-        self
-    }
-
-    /// Return the format of the presentation definition.
-    pub fn format(&self) -> Option<&ClaimFormatMap> {
-        self.format.as_ref()
     }
 }
