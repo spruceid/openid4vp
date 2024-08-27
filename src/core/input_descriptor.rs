@@ -529,6 +529,10 @@ impl ConstraintsField {
     pub fn requested_fields(&self) -> Vec<String> {
         self.path()
             .into_iter()
+            // NOTE: It may not be a given that the last path is the field name.
+            // TODO: Cannot use the field path as a unique property, it may be associated to different
+            // credential types.
+            // NOTE: Include the namespace for uniqueness of the requested field type.
             .map(|path| path.split(&['-', '.', ':', '@'][..]).last())
             .flatten()
             .map(|path| {
