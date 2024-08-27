@@ -202,7 +202,7 @@ impl PresentationDefinition {
                                     &verifiable_presentation,
                                     descriptor,
                                 )
-                                .context("Input Descriptor Validation Failed.")?;
+                                .context("Input Descriptor validation failed.")?;
                         }
                     }
                 }
