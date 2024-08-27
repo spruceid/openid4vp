@@ -167,7 +167,7 @@ impl PresentationDefinition {
             AuthorizationResponse::Jwt(_jwt) => {
                 // TODO: Handle JWT Encoded authorization response.
 
-                bail!("Authorization Response Presentation Definition Validation Not Implemented.")
+                bail!("Authorization Response Presentation Definition validation not implemented.")
             }
             AuthorizationResponse::Unencoded(response) => {
                 let presentation_submission = response.presentation_submission().parsed();
