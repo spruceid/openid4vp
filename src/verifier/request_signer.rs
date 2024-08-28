@@ -1,11 +1,7 @@
-#[cfg(feature = "p256")]
 use anyhow::Result;
 use async_trait::async_trait;
-#[cfg(feature = "p256")]
 use p256::ecdsa::{signature::Signer, Signature, SigningKey};
-#[cfg(feature = "p256")]
 use ssi_claims::jws::{JWSSigner, JWSSignerInfo};
-#[cfg(feature = "p256")]
 use ssi_jwk::Algorithm;
 
 use ssi_jwk::JWK;
@@ -33,14 +29,12 @@ pub trait RequestSigner: Debug {
     }
 }
 
-#[cfg(feature = "p256")]
 #[derive(Debug)]
 pub struct P256Signer {
     key: SigningKey,
     jwk: JWK,
 }
 
-#[cfg(feature = "p256")]
 impl P256Signer {
     pub fn new(key: SigningKey) -> Result<Self> {
         let pk: p256::PublicKey = key.verifying_key().into();
@@ -53,7 +47,6 @@ impl P256Signer {
     }
 }
 
-#[cfg(feature = "p256")]
 #[async_trait]
 impl RequestSigner for P256Signer {
     type Error = anyhow::Error;
@@ -77,7 +70,6 @@ impl RequestSigner for P256Signer {
     }
 }
 
-#[cfg(feature = "p256")]
 impl JWSSigner for P256Signer {
     async fn fetch_info(&self) -> std::result::Result<JWSSignerInfo, ssi_claims::SignatureError> {
         let algorithm = self.jwk.algorithm.unwrap_or(Algorithm::ES256);

@@ -1,7 +1,5 @@
 use anyhow::Result;
-#[cfg(feature = "p256")]
 use anyhow::{bail, Error};
-#[cfg(feature = "p256")]
 use p256::ecdsa::signature::Verifier as _;
 use x509_cert::spki::SubjectPublicKeyInfoRef;
 
@@ -15,11 +13,9 @@ pub trait Verifier: Sized {
     fn verify(&self, payload: &[u8], signature: &[u8]) -> Result<()>;
 }
 
-#[cfg(feature = "p256")]
 #[derive(Debug, Clone)]
 pub struct P256Verifier(p256::ecdsa::VerifyingKey);
 
-#[cfg(feature = "p256")]
 impl Verifier for P256Verifier {
     fn from_spki(spki: SubjectPublicKeyInfoRef<'_>, algorithm: String) -> Result<Self> {
         if algorithm != "ES256" {

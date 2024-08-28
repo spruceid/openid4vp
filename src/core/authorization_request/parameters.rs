@@ -223,11 +223,11 @@ impl std::fmt::Display for Nonce {
 }
 
 impl Nonce {
-    #[cfg(feature = "rand")]
-    pub fn random(rng: &mut impl rand::Rng) -> Self {
-        use rand::distributions::Alphanumeric;
+    /// Crate a new `Nonce` with a random value of the given length.
+    pub fn random(rng: &mut impl rand::Rng, length: usize) -> Self {
+        use rand::distributions::{Alphanumeric, DistString};
 
-        Self((0..16).map(|_| rng.sample(Alphanumeric) as char).collect())
+        Self(Alphanumeric.sample_string(rng, length))
     }
 }
 
