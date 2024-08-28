@@ -161,11 +161,7 @@ impl AsyncHttpClient for MockHttpClient {
                     .context("failed to parse authorization response request")?,
                 |session, auth_response| {
                     Box::pin(async move {
-                        match session
-                            .presentation_definition
-                            .validate_authorization_response(&auth_response)
-                            .await
-                        {
+                        match auth_response.validate(&session.presentation_definition) {
                             Ok(_) => Outcome::Success {
                                 info: serde_json::Value::Null,
                             },

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::Result;
-use base64::{encode_engine_string, prelude::*};
+use base64::prelude::*;
 use oid4vp::holder::verifiable_presentation_builder::{
     VerifiablePresentationBuilder, VerifiablePresentationBuilderOptions,
 };

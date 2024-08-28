@@ -1,13 +1,18 @@
-use std::collections::BTreeMap;
+use super::{
+    object::{ParsingErrorContext, UntypedObject},
+    presentation_definition::PresentationDefinition,
+    presentation_submission::DescriptorMap,
+};
 
-use anyhow::{Context, Error, Result};
+use std::collections::{BTreeMap, HashMap};
+
+use anyhow::{bail, Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ssi_claims::jwt::VerifiablePresentation;
 use url::Url;
 
 use self::parameters::{PresentationSubmission, VpToken};
-
-use super::object::{ParsingErrorContext, UntypedObject};
 
 pub mod parameters;
 
@@ -34,6 +39,77 @@ impl AuthorizationResponse {
             .collect();
 
         Ok(Self::Unencoded(UntypedObject(map).try_into()?))
+    }
+
+    /// Validate an authorization response against a presentation definition.
+    ///
+    /// This method will parse the presentation submission from the auth response and
+    /// validate it against the provided presentation definition.
+    ///
+    /// # Parameters
+    ///
+    /// - `self` - The authorization response to validate.
+    /// - `presentation_definition` - The presentation definition to validate against.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if the presentation submission does not match the
+    /// presentation definition.
+    ///
+    /// # Returns
+    ///
+    /// This method will return `Ok(())` if the presentation submission matches the presentation
+    /// definition.
+    pub fn validate(&self, presentation_definition: &PresentationDefinition) -> Result<()> {
+        match self {
+            AuthorizationResponse::Jwt(_jwt) => {
+                // TODO: Handle JWT Encoded authorization response.
+
+                bail!("Authorization Response Presentation Definition validation not implemented.")
+            }
+            AuthorizationResponse::Unencoded(response) => {
+                let presentation_submission = response.presentation_submission().parsed();
+
+                // Ensure the definition id matches the submission's definition id.
+                if presentation_submission.definition_id() != presentation_definition.id() {
+                    bail!("Presentation Definition ID does not match the Presentation Submission.")
+                }
+
+                // Parse the descriptor map into a HashMap for easier access
+                let descriptor_map: HashMap<String, DescriptorMap> = presentation_submission
+                    .descriptor_map()
+                    .iter()
+                    .map(|descriptor_map| (descriptor_map.id().to_owned(), descriptor_map.clone()))
+                    .collect();
+
+                // Parse the VP Token according to the Spec, here:
+                // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2
+                let vp_payload = response.vp_token().parse()?;
+
+                // Check if the vp_payload is an array of VPs
+                match vp_payload.as_array() {
+                    None => {
+                        // handle a single verifiable presentation
+                        presentation_definition.validate_definition_map(
+                            VerifiablePresentation(json_syntax::Value::from(vp_payload)),
+                            &descriptor_map,
+                        )
+                    }
+                    Some(vps) => {
+                        // Each item in the array is a VP
+                        for vp in vps {
+                            // handle the verifiable presentation
+                            presentation_definition.validate_definition_map(
+                                VerifiablePresentation(json_syntax::Value::from(vp.clone())),
+                                &descriptor_map,
+                            )?;
+                        }
+
+                        Ok(())
+                    }
+                }
+            }
+        }
     }
 }
 

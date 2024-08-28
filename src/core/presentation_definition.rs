@@ -1,7 +1,6 @@
 use super::credential_format::*;
 use super::input_descriptor::*;
 use super::presentation_submission::*;
-use super::response::AuthorizationResponse;
 
 use std::collections::HashMap;
 
@@ -153,69 +152,7 @@ impl PresentationDefinition {
     }
 
     /// Validate a presentation submission against the presentation definition.
-    ///
-    /// Checks the underlying presentation submission parsed from the authorization response,
-    /// against the input descriptors of the presentation definition.
-    #[deprecated(
-        note = "This method is to be replaced by a top-level function that takes a presentation definition and a presentation submission."
-    )]
-    pub async fn validate_authorization_response(
-        &self,
-        auth_response: &AuthorizationResponse,
-    ) -> Result<()> {
-        match auth_response {
-            AuthorizationResponse::Jwt(_jwt) => {
-                // TODO: Handle JWT Encoded authorization response.
-
-                bail!("Authorization Response Presentation Definition validation not implemented.")
-            }
-            AuthorizationResponse::Unencoded(response) => {
-                let presentation_submission = response.presentation_submission().parsed();
-
-                // Ensure the definition id matches the submission's definition id.
-                if presentation_submission.definition_id() != self.id() {
-                    bail!("Presentation Definition ID does not match the Presentation Submission.")
-                }
-
-                // Parse the descriptor map into a HashMap for easier access
-                let descriptor_map: HashMap<String, DescriptorMap> = presentation_submission
-                    .descriptor_map()
-                    .iter()
-                    .map(|descriptor_map| (descriptor_map.id().to_owned(), descriptor_map.clone()))
-                    .collect();
-
-                // Parse the VP Token according to the Spec, here:
-                // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2
-                let vp_payload = response.vp_token().parse()?;
-
-                // Check if the vp_payload is an array of VPs
-                match vp_payload.as_array() {
-                    None => {
-                        // handle a single verifiable presentation
-                        self.validate_definition_map(
-                            VerifiablePresentation(json_syntax::Value::from(vp_payload)),
-                            &descriptor_map,
-                        )
-                    }
-                    Some(vps) => {
-                        // Each item in the array is a VP
-                        for vp in vps {
-                            // handle the verifiable presentation
-                            self.validate_definition_map(
-                                VerifiablePresentation(json_syntax::Value::from(vp.clone())),
-                                &descriptor_map,
-                            )?;
-                        }
-
-                        Ok(())
-                    }
-                }
-            }
-        }
-    }
-
-    /// Validate a presentation submission against the presentation definition.
-    fn validate_definition_map(
+    pub fn validate_definition_map(
         &self,
         verifiable_presentation: VerifiablePresentation,
         descriptor_map: &HashMap<String, DescriptorMap>,

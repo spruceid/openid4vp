@@ -2,6 +2,9 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+// TODO: Does the `isomdl` crate provide this constant value, or another crate?
+const ORG_ISO_18013_5_1_MDL: &str = "org.iso.18013.5.1.mDL";
+
 /// A Json object of claim formats.
 pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
 
@@ -20,53 +23,53 @@ pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
 pub enum ClaimFormat {
     #[serde(rename = "jwt")]
     Jwt {
-        // The algorithm used to sign the JWT.
+        /// The algorithm used to sign the JWT.
         alg: Vec<String>,
     },
     #[serde(rename = "jwt_vc")]
     JwtVc {
-        // The algorithm used to sign the JWT verifiable credential.
+        /// The algorithm used to sign the JWT verifiable credential.
         alg: Vec<String>,
     },
     #[serde(rename = "jwt_vp")]
     JwtVp {
-        // The algorithm used to sign the JWT verifiable presentation.
+        /// The algorithm used to sign the JWT verifiable presentation.
         alg: Vec<String>,
     },
     #[serde(rename = "jwt_vc_json")]
     JwtVcJson {
-        // Used in the OID4VP specification for wallet methods supported.
+        /// Used in the OID4VP specification for wallet methods supported.
         alg_values_supported: Vec<String>,
     },
     #[serde(rename = "jwt_vp_json")]
     JwtVpJson {
-        // Used in the OID4VP specification for wallet methods supported.
+        /// Used in the OID4VP specification for wallet methods supported.
         alg_values_supported: Vec<String>,
     },
     #[serde(rename = "ldp")]
     Ldp {
-        // The proof type used to sign the linked data proof.
-        // e.g., "JsonWebSignature2020", "Ed25519Signature2018", "EcdsaSecp256k1Signature2019", "RsaSignature2018"
+        /// The proof type used to sign the linked data proof.
+        /// e.g., "JsonWebSignature2020", "Ed25519Signature2018", "EcdsaSecp256k1Signature2019", "RsaSignature2018"
         proof_type: Vec<String>,
     },
     #[serde(rename = "ldp_vc")]
     LdpVc {
-        // The proof type used to sign the linked data proof verifiable credential.
+        /// The proof type used to sign the linked data proof verifiable credential.
         proof_type: Vec<String>,
     },
     #[serde(rename = "ldp_vp")]
     LdpVp {
-        // The proof type used to sign the linked data proof verifiable presentation.
+        /// The proof type used to sign the linked data proof verifiable presentation.
         proof_type: Vec<String>,
     },
     #[serde(rename = "ac_vc")]
     AcVc {
-        // The proof type used to sign the anoncreds verifiable credential.
+        /// The proof type used to sign the anoncreds verifiable credential.
         proof_type: Vec<String>,
     },
     #[serde(rename = "ac_vp")]
     AcVp {
-        // The proof type used to sign the anoncreds verifiable presentation.
+        /// The proof type used to sign the anoncreds verifiable presentation.
         proof_type: Vec<String>,
     },
     #[serde(rename = "mso_mdoc")]
@@ -259,18 +262,18 @@ pub enum CredentialType {
     ///
     /// Given there is no universal standard for how to present a vehicle title credential,
     /// the inner String provides a dynamic way to represent a vehicle title credential.
+    // TODO: is there a standard identifier for a vehicle title credential instead of `vehicle_title`?
     #[serde(rename = "vehicle_title")]
     VehicleTitle(String),
-    // Add additional credential types here.
-    //
-    // Fallback to a string for any other credential type.
+    // TODO: Add additional credential types here. Fallback to a string for any other credential type.
+    /// Other credential types not covered by the above.
     Other(String),
 }
 
 impl From<&str> for CredentialType {
     fn from(s: &str) -> Self {
         match s {
-            s if s.contains("org.iso.18013.5.1.mDL") => Self::Iso18013_5_1mDl,
+            s if s.contains(ORG_ISO_18013_5_1_MDL) => Self::Iso18013_5_1mDl,
             s if s.contains("vehicle_title.") => Self::VehicleTitle(s.to_string()),
             s => Self::Other(s.to_string()),
         }
@@ -280,7 +283,7 @@ impl From<&str> for CredentialType {
 impl From<CredentialType> for String {
     fn from(cred_type: CredentialType) -> Self {
         match cred_type {
-            CredentialType::Iso18013_5_1mDl => "org.iso.18013.5.1.mDL".to_string(),
+            CredentialType::Iso18013_5_1mDl => ORG_ISO_18013_5_1_MDL.to_string(),
             CredentialType::VehicleTitle(title) => format!("vehicle_title.{title}"),
             CredentialType::Other(s) => s,
         }
