@@ -152,5 +152,8 @@ async fn w3c_vc_did_client_direct_post() {
     assert_eq!(None, redirect);
 
     let status = verifier.poll_status(id).await.unwrap();
+
+    println!("Status: {:?}", status);
+
     assert!(matches!(status, Status::Complete(Outcome::Success { .. })))
 }

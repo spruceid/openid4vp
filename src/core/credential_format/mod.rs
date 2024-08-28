@@ -2,24 +2,6 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-/// A credential format that can be transmitted using OID4VP.
-pub trait CredentialFormat {
-    /// The ID of the credential format.
-    const ID: &'static str;
-}
-
-pub struct MsoMdoc;
-
-impl CredentialFormat for MsoMdoc {
-    const ID: &'static str = "mso_mdoc";
-}
-
-pub struct JwtVc;
-
-impl CredentialFormat for JwtVc {
-    const ID: &'static str = "jwt_vc";
-}
-
 /// A Json object of claim formats.
 pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
 

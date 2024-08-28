@@ -528,13 +528,12 @@ impl ConstraintsField {
     ///
     pub fn requested_fields(&self) -> Vec<String> {
         self.path()
-            .into_iter()
+            .iter()
             // NOTE: It may not be a given that the last path is the field name.
             // TODO: Cannot use the field path as a unique property, it may be associated to different
             // credential types.
             // NOTE: Include the namespace for uniqueness of the requested field type.
-            .map(|path| path.split(&['-', '.', ':', '@'][..]).last())
-            .flatten()
+            .filter_map(|path| path.split(&['-', '.', ':', '@'][..]).last())
             .map(|path| {
                 path.chars()
                     .fold(String::new(), |mut acc, c| {
@@ -555,7 +554,7 @@ impl ConstraintsField {
                     })
                     // Split the path based on empty spaces and uppercase the first letter of each word.
                     .split(' ')
-                    .map(|word| {
+                    .fold(String::new(), |desc, word| {
                         let word =
                             word.chars()
                                 .enumerate()
@@ -571,9 +570,8 @@ impl ConstraintsField {
                                     acc
                                 });
 
-                        format!("{} ", word.trim_end())
+                        format!("{desc} {}", word.trim_end())
                     })
-                    .collect::<String>()
                     .trim_end()
                     .to_string()
             })

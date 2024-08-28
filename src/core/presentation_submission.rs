@@ -91,6 +91,11 @@ impl DescriptorMap {
     }
 
     /// Return the format of the descriptor map.
+    ///
+    /// The value of this property MUST be a string that matches one of the
+    /// [ClaimFormatDesignation]. This denotes the data format of the Claim.
+    ///
+    /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
     pub fn format(&self) -> &ClaimFormatDesignation {
         &self.format
     }

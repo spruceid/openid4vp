@@ -1,16 +1,16 @@
 use std::str::FromStr;
 
 use anyhow::Result;
+use base64::{encode_engine_string, prelude::*};
 use oid4vp::holder::verifiable_presentation_builder::{
     VerifiablePresentationBuilder, VerifiablePresentationBuilderOptions,
 };
 use oid4vp::verifier::request_signer::P256Signer;
 use ssi_claims::jwt;
-use ssi_claims::{CompactJWSString, JWSPayload, JWTClaims};
 use ssi_dids::DIDKey;
 use ssi_jwk::JWK;
 
-pub async fn create_test_verifiable_presentation() -> Result<CompactJWSString> {
+pub async fn create_test_verifiable_presentation() -> Result<String> {
     let verifier = JWK::from_str(include_str!("examples/verifier.jwk"))?;
 
     let signer = P256Signer::new(
@@ -38,14 +38,11 @@ pub async fn create_test_verifiable_presentation() -> Result<CompactJWSString> {
             nonce: "random_nonce".into(),
         });
 
-    let claim = JWTClaims::from_private_claims(verifiable_presentation);
+    // Encode the verifiable presentation as base64 encoded payload.
+    let vp_token = verifiable_presentation.0.to_string();
 
-    let jwt = claim
-        .sign(&signer)
-        .await
-        .expect("Failed to sign Verifiable Presentation JWT");
+    // encode as base64.
+    let base64_encoded_vp = BASE64_STANDARD.encode(vp_token);
 
-    let _: jwt::VerifiablePresentation = ssi_claims::jwt::decode_unverified(jwt.as_str())?;
-
-    Ok(jwt)
+    Ok(base64_encoded_vp)
 }

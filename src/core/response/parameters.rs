@@ -3,6 +3,7 @@ use crate::core::object::TypedParameter;
 use crate::core::presentation_submission::PresentationSubmission as PresentationSubmissionParsed;
 
 use anyhow::Error;
+use base64::prelude::*;
 use serde_json::Value as Json;
 
 #[derive(Debug, Clone)]
@@ -44,6 +45,28 @@ impl TryFrom<Json> for VpToken {
 impl From<VpToken> for Json {
     fn from(value: VpToken) -> Self {
         value.0.into()
+    }
+}
+
+impl VpToken {
+    /// Parse the VP Token as a JSON object.
+    ///
+    /// This will attempt to decode the token as base64, and if that fails, it
+    /// will attempt to parse the token as a JSON object.
+    ///
+    /// If you want to check for decode errors, use [VpToken::decode_base64].
+    pub fn parse(&self) -> Result<Json, Error> {
+        match self.decode_base64() {
+            Ok(decoded) => Ok(decoded),
+            Err(_) => Ok(serde_json::from_str(&self.0)?),
+        }
+    }
+
+    /// Return the Verifiable Presentation Token as a JSON object from a base64
+    /// encoded string.
+    pub fn decode_base64(&self) -> Result<Json, Error> {
+        let decoded = BASE64_STANDARD.decode(&self.0)?;
+        Ok(serde_json::from_slice(&decoded)?)
     }
 }
 

@@ -172,39 +172,65 @@ impl PresentationDefinition {
             AuthorizationResponse::Unencoded(response) => {
                 let presentation_submission = response.presentation_submission().parsed();
 
-                let jwt = response.vp_token().0.clone();
-
-                // TODO: Validate the VP JWT Signature against the holder's key?
-
-                let verifiable_presentation: VerifiablePresentation =
-                    ssi_claims::jwt::decode_unverified(&jwt)?;
-
                 // Ensure the definition id matches the submission's definition id.
                 if presentation_submission.definition_id() != self.id() {
                     bail!("Presentation Definition ID does not match the Presentation Submission.")
                 }
 
+                // Parse the descriptor map into a HashMap for easier access
                 let descriptor_map: HashMap<String, DescriptorMap> = presentation_submission
                     .descriptor_map()
                     .iter()
                     .map(|descriptor_map| (descriptor_map.id().to_owned(), descriptor_map.clone()))
                     .collect();
 
-                for input_descriptor in self.input_descriptors().iter() {
-                    match descriptor_map.get(input_descriptor.id()) {
-                        None => {
-                            // TODO: Determine whether input descriptor must have a corresponding descriptor map.
-                            bail!("Input Descriptor ID not found in Descriptor Map.")
-                        }
-                        Some(descriptor) => {
-                            input_descriptor
-                                .validate_verifiable_presentation(
-                                    &verifiable_presentation,
-                                    descriptor,
-                                )
-                                .context("Input Descriptor validation failed.")?;
-                        }
+                // Parse the VP Token according to the Spec, here:
+                // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2
+                let vp_payload = response.vp_token().parse()?;
+
+                // Check if the vp_payload is an array of VPs
+                match vp_payload.as_array() {
+                    None => {
+                        // handle a single verifiable presentation
+                        self.validate_definition_map(
+                            VerifiablePresentation(json_syntax::Value::from(vp_payload)),
+                            &descriptor_map,
+                        )
                     }
+                    Some(vps) => {
+                        // Each item in the array is a VP
+                        for vp in vps {
+                            // handle the verifiable presentation
+                            self.validate_definition_map(
+                                VerifiablePresentation(json_syntax::Value::from(vp.clone())),
+                                &descriptor_map,
+                            )?;
+                        }
+
+                        Ok(())
+                    }
+                }
+            }
+        }
+    }
+
+    /// Validate a presentation submission against the presentation definition.
+    fn validate_definition_map(
+        &self,
+        verifiable_presentation: VerifiablePresentation,
+        descriptor_map: &HashMap<String, DescriptorMap>,
+    ) -> Result<()> {
+        for input_descriptor in self.input_descriptors().iter() {
+            match descriptor_map.get(input_descriptor.id()) {
+                None => {
+                    if input_descriptor.constraints().is_required() {
+                        bail!("Required Input Descriptor ID not found in Descriptor Map.")
+                    }
+                }
+                Some(descriptor) => {
+                    input_descriptor
+                        .validate_verifiable_presentation(&verifiable_presentation, descriptor)
+                        .context("Input Descriptor validation failed.")?;
                 }
             }
         }
