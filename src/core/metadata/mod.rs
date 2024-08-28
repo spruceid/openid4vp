@@ -47,24 +47,6 @@ impl WalletMetadata {
         &mut self.2
     }
 
-    // /// Returns whether the claim format is supported.
-    // pub fn is_claim_format_supported(&self, designation: &ClaimFormatDesignation) -> bool {
-    //     self.vp_formats_supported()
-    //         .is_claim_format_supported(designation)
-    // }
-
-    /// Adds a new algorithm to the list of supported request object signing algorithms.
-    pub fn add_request_object_signing_alg(&mut self, alg: String) -> Result<()> {
-        self.0
-            .get::<RequestObjectSigningAlgValuesSupported>()
-            .transpose()?
-            .map(|x| x.0)
-            .get_or_insert_with(Vec::new)
-            .push(alg);
-
-        Ok(())
-    }
-
     /// The static wallet metadata bound to `openid4vp:`:
     /// ```json
     /// {
@@ -116,18 +98,6 @@ impl WalletMetadata {
 
         // Unwrap safety: unit tested.
         object.try_into().unwrap()
-    }
-
-    /// Return the `request_object_signing_alg_values_supported`
-    /// field from the wallet metadata.
-    pub fn request_object_signing_alg_values_supported(&self) -> Result<Vec<String>, Error> {
-        let Some(Ok(algs)) = self.get::<RequestObjectSigningAlgValuesSupported>() else {
-            bail!(
-                "Failed to parse request object signing algorithms supported from wallet metadata."
-            )
-        };
-
-        Ok(algs.0)
     }
 }
 
