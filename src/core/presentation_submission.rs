@@ -1,7 +1,6 @@
 use super::{credential_format::*, input_descriptor::*};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Map;
 
 /// Presentation Submissions are objects embedded within target
 /// [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim) negotiation
@@ -54,6 +53,14 @@ impl PresentationSubmission {
     /// Return a mutable reference to the descriptor map of the presentation submission.
     pub fn descriptor_map_mut(&mut self) -> &mut Vec<DescriptorMap> {
         &mut self.descriptor_map
+    }
+
+    /// Returns the descriptor map as a mapping of descriptor map id to descriptor map.
+    pub fn descriptor_map_by_id(&self) -> std::collections::HashMap<String, &DescriptorMap> {
+        self.descriptor_map
+            .iter()
+            .map(|descriptor_map| (descriptor_map.id.clone(), descriptor_map))
+            .collect()
     }
 }
 
@@ -124,43 +131,4 @@ impl DescriptorMap {
 
         self
     }
-}
-
-#[derive(Deserialize)]
-pub struct SubmissionRequirementBaseBase {
-    pub name: Option<String>,
-    pub purpose: Option<String>,
-    #[serde(flatten)]
-    pub property_set: Option<Map<String, serde_json::Value>>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum SubmissionRequirementBase {
-    From {
-        from: String, // TODO `group` string??
-        #[serde(flatten)]
-        submission_requirement_base: SubmissionRequirementBaseBase,
-    },
-    FromNested {
-        from_nested: Vec<SubmissionRequirement>,
-        #[serde(flatten)]
-        submission_requirement_base: SubmissionRequirementBaseBase,
-    },
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "rule", rename_all = "snake_case")]
-pub enum SubmissionRequirement {
-    All(SubmissionRequirementBase),
-    Pick(SubmissionRequirementPick),
-}
-
-#[derive(Deserialize)]
-pub struct SubmissionRequirementPick {
-    #[serde(flatten)]
-    pub submission_requirement: SubmissionRequirementBase,
-    pub count: Option<u64>,
-    pub min: Option<u64>,
-    pub max: Option<u64>,
 }

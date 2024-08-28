@@ -1,22 +1,18 @@
-use serde::Deserialize;
+use crate::core::{
+    presentation_definition::{PresentationDefinition, SubmissionRequirement},
+    presentation_submission::*,
+};
 
-// use crate::core::response::AuthorizationResponse;
-// pub use crate::utils::NonEmptyVec;
-
-// use anyhow::{bail, Context, Result};
-// use jsonschema::{JSONSchema, ValidationError};
-
-// use serde_json::Map;
-// use ssi_claims::jwt::VerifiablePresentation;
-// use ssi_dids::ssi_json_ld::syntax::from_value;
-
-use crate::core::{presentation_definition::PresentationDefinition, presentation_submission::*};
-
-use serde_json::json;
 use std::{
     ffi::OsStr,
     fs::{self, File},
 };
+
+use anyhow::Result;
+use serde::Deserialize;
+use serde_json::json;
+use serde_json::Value;
+use ssi_claims::jwt::VerifiablePresentation;
 
 #[test]
 fn request_example() {
@@ -140,4 +136,57 @@ fn submission_requirements_suite() {
             .unwrap();
         println!("✅")
     }
+}
+
+#[test]
+fn test_input_descriptor_validation() -> Result<()> {
+    // Include the `input_descriptors_example.json` file in the `examples` directory.
+    let input_descriptors = include_str!(
+        "../tests/presentation-exchange/test/presentation-definition/input_descriptors_example.json"
+    );
+
+    println!("Input Descriptors: {:?}", input_descriptors);
+    let mut value: Value = serde_json::from_str(input_descriptors)?;
+
+    let presentation_definition: PresentationDefinition = value
+        .as_object_mut()
+        .map(|obj| {
+            obj.remove("presentation_definition")
+                .map(|v| serde_json::from_value(v))
+        })
+        .flatten()
+        .expect("failed to parse presentation definition")?;
+
+    println!("Presentation Definition: {:?}", presentation_definition);
+
+    let presentation_submission = include_str!(
+        "../tests/presentation-exchange/test/presentation-submission/appendix_VP_example.json"
+    );
+
+    println!("Presentation Submission: {:?}", presentation_submission);
+
+    let value: Value = serde_json::from_str(presentation_submission)?;
+
+    let presentation_submission: PresentationSubmission = value
+        .as_object()
+        .map(|obj| {
+            obj.get("presentation_submission")
+                .map(|v| serde_json::from_value(v.clone()))
+        })
+        .flatten()
+        .expect("failed to parse presentation submission")?;
+
+    println!("Presentation Submission: {:?}", presentation_submission);
+
+    let descriptor_map = presentation_submission.descriptor_map_by_id();
+
+    let verifiable_presentation: VerifiablePresentation = serde_json::from_value(value)?;
+
+    println!("Verifiable Presentation: {verifiable_presentation:?}");
+
+    presentation_definition
+        .validate_definition_map(verifiable_presentation, &descriptor_map)
+        .expect("Failed to validate definition map");
+
+    Ok(())
 }

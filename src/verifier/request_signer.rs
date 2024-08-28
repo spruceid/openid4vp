@@ -52,12 +52,7 @@ impl RequestSigner for P256Signer {
     type Error = anyhow::Error;
 
     fn alg(&self) -> Result<String, Self::Error> {
-        Ok(self
-            .jwk
-            .algorithm
-            .map(|alg| alg)
-            .unwrap_or(Algorithm::ES256)
-            .to_string())
+        Ok(self.jwk.algorithm.unwrap_or(Algorithm::ES256).to_string())
     }
 
     fn jwk(&self) -> Result<JWK, Self::Error> {
@@ -83,8 +78,8 @@ impl JWSSigner for P256Signer {
         &self,
         signing_bytes: &[u8],
     ) -> std::result::Result<Vec<u8>, ssi_claims::SignatureError> {
-        self.try_sign(signing_bytes).await.map_err(|e| {
-            ssi_claims::SignatureError::Other(format!("Failed to sign bytes: {}", e).into())
-        })
+        self.try_sign(signing_bytes)
+            .await
+            .map_err(|e| ssi_claims::SignatureError::Other(format!("Failed to sign bytes: {}", e)))
     }
 }

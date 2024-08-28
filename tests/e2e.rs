@@ -84,8 +84,8 @@ async fn w3c_vc_did_client_direct_post() {
         .unwrap();
 
     assert_eq!(
-        &presentation_definition,
-        parsed_presentation_definition.parsed()
+        presentation_definition.id(),
+        parsed_presentation_definition.parsed().id()
     );
 
     assert_eq!(&ResponseType::VpToken, request.response_type());

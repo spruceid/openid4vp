@@ -1,10 +1,9 @@
 use super::{
     object::{ParsingErrorContext, UntypedObject},
     presentation_definition::PresentationDefinition,
-    presentation_submission::DescriptorMap,
 };
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Error, Result};
 use serde::{Deserialize, Serialize};
@@ -75,12 +74,7 @@ impl AuthorizationResponse {
                     bail!("Presentation Definition ID does not match the Presentation Submission.")
                 }
 
-                // Parse the descriptor map into a HashMap for easier access
-                let descriptor_map: HashMap<String, DescriptorMap> = presentation_submission
-                    .descriptor_map()
-                    .iter()
-                    .map(|descriptor_map| (descriptor_map.id().to_owned(), descriptor_map.clone()))
-                    .collect();
+                let descriptor_map = presentation_submission.descriptor_map_by_id();
 
                 // Parse the VP Token according to the Spec, here:
                 // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2

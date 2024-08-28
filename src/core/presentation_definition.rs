@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 use ssi_claims::jwt::VerifiablePresentation;
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
@@ -18,10 +19,12 @@ use ssi_claims::jwt::VerifiablePresentation;
 /// in cases where different types of proofs may satisfy an input requirement.
 ///
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
-#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct PresentationDefinition {
     id: String,
     input_descriptors: Vec<InputDescriptor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    submission_requirements: Option<Vec<SubmissionRequirement>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -155,11 +158,15 @@ impl PresentationDefinition {
     pub fn validate_definition_map(
         &self,
         verifiable_presentation: VerifiablePresentation,
-        descriptor_map: &HashMap<String, DescriptorMap>,
+        descriptor_map: &HashMap<String, &DescriptorMap>,
     ) -> Result<()> {
         for input_descriptor in self.input_descriptors().iter() {
             match descriptor_map.get(input_descriptor.id()) {
                 None => {
+                    println!("Input Descriptor: {}", input_descriptor.id());
+
+                    // TODO: check for groups in submission requirements
+
                     if input_descriptor.constraints().is_required() {
                         bail!("Required Input Descriptor ID not found in Descriptor Map.")
                     }
@@ -174,4 +181,43 @@ impl PresentationDefinition {
 
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SubmissionRequirementObject {
+    pub name: Option<String>,
+    pub purpose: Option<String>,
+    #[serde(flatten)]
+    pub property_set: Option<Map<String, serde_json::Value>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum SubmissionRequirementBase {
+    From {
+        from: String,
+        #[serde(flatten)]
+        submission_requirement_base: SubmissionRequirementObject,
+    },
+    FromNested {
+        from_nested: Vec<SubmissionRequirement>,
+        #[serde(flatten)]
+        submission_requirement_base: SubmissionRequirementObject,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "rule", rename_all = "snake_case")]
+pub enum SubmissionRequirement {
+    All(SubmissionRequirementBase),
+    Pick(SubmissionRequirementPick),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SubmissionRequirementPick {
+    #[serde(flatten)]
+    pub submission_requirement: SubmissionRequirementBase,
+    pub count: Option<u64>,
+    pub min: Option<u64>,
+    pub max: Option<u64>,
 }

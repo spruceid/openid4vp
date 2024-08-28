@@ -52,6 +52,8 @@ pub struct InputDescriptor {
     purpose: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     format: Option<ClaimFormatMap>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group: Option<Vec<String>>,
 }
 
 impl InputDescriptor {
@@ -125,6 +127,24 @@ impl InputDescriptor {
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
     pub fn set_format(mut self, format: ClaimFormatMap) -> Self {
         self.format = Some(format);
+        self
+    }
+
+    /// Set the group of the constraints field.
+    pub fn set_group(mut self, group: Vec<String>) -> Self {
+        self.group = Some(group);
+        self
+    }
+
+    /// Return the group of the constraints field.
+    pub fn group(&self) -> Option<&Vec<String>> {
+        self.group.as_ref()
+    }
+
+    /// Return a mutable reference to the group of the constraints field.
+    pub fn add_to_group(mut self, member: String) -> Self {
+        self.group.get_or_insert_with(Vec::new).push(member);
+
         self
     }
 
@@ -300,14 +320,9 @@ impl Constraints {
     /// Returns if the constraints fields contain non-optional
     /// fields that must be satisfied.
     pub fn is_required(&self) -> bool {
-        if let Some(fields) = self.fields() {
-            fields.iter().any(|field| field.is_required())
-        } else {
-            matches!(
-                self.limit_disclosure(),
-                Some(ConstraintsLimitDisclosure::Required)
-            )
-        }
+        self.fields()
+            .map(|fields| fields.iter().any(|field| field.is_required()))
+            .unwrap_or(false)
     }
 }
 
@@ -505,13 +520,16 @@ impl ConstraintsField {
     }
 
     /// Set the intent to retain the constraints field.
+    ///
+    /// This value indicates the verifier's intent to retain the
+    /// field in the presentation, storing the value in the verifier's system.
     pub fn set_retained(mut self, intent_to_retain: bool) -> Self {
         self.intent_to_retain = Some(intent_to_retain);
         self
     }
 
     /// Return the intent to retain the constraints field.
-    pub fn is_intended_to_retain(&self) -> bool {
+    pub fn intent_to_retain(&self) -> bool {
         self.intent_to_retain.unwrap_or(false)
     }
 
