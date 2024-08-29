@@ -1,0 +1,21 @@
+{
+  "id": "59a8cf09-f9ab-4b9f-9632-d5889c417271",
+  "definition_id": "complex_example",
+  "descriptor_map": [
+    {
+      "id": "given_name",
+      "format": "jwt_vc",
+      "path": "$.verifiableCredential[0]"
+    },
+    {
+      "id": "birth_date",
+      "format": "jwt_vc",
+      "path": "$.verifiableCredential[1]"
+    },
+    {
+      "id": "passport_number",
+      "format": "jwt_vc",
+      "path": "$.verifiableCredential[2]"
+    }
+  ]
+}

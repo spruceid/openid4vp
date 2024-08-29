@@ -1,0 +1,28 @@
+{
+  "id": "simple_example",
+  "input_descriptors": [
+    {
+      "id": "name",
+      "group": ["personal_info"],
+      "schema": [{ "uri": "https://schema.org/name" }]
+    },
+    {
+      "id": "email",
+      "group": ["personal_info"],
+      "schema": [{ "uri": "https://schema.org/email" }]
+    },
+    {
+      "id": "age",
+      "group": ["personal_info"],
+      "schema": [{ "uri": "https://schema.org/age" }]
+    }
+  ],
+  "submission_requirements": [
+    {
+      "name": "Personal Information",
+      "rule": "pick",
+      "count": 2,
+      "from": "personal_info"
+    }
+  ]
+}

@@ -74,7 +74,7 @@ impl AuthorizationResponse {
                     bail!("Presentation Definition ID does not match the Presentation Submission.")
                 }
 
-                let descriptor_map = presentation_submission.descriptor_map_by_id();
+                let descriptor_map = presentation_submission.descriptor_map();
 
                 // Parse the VP Token according to the Spec, here:
                 // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2
@@ -84,18 +84,18 @@ impl AuthorizationResponse {
                 match vp_payload.as_array() {
                     None => {
                         // handle a single verifiable presentation
-                        presentation_definition.validate_definition_map(
+                        presentation_definition.validate_presentation(
                             VerifiablePresentation(json_syntax::Value::from(vp_payload)),
-                            &descriptor_map,
+                            descriptor_map,
                         )
                     }
                     Some(vps) => {
                         // Each item in the array is a VP
                         for vp in vps {
                             // handle the verifiable presentation
-                            presentation_definition.validate_definition_map(
+                            presentation_definition.validate_presentation(
                                 VerifiablePresentation(json_syntax::Value::from(vp.clone())),
-                                &descriptor_map,
+                                descriptor_map,
                             )?;
                         }
 

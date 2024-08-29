@@ -1,0 +1,42 @@
+{
+  "@context": ["https://www.w3.org/2018/credentials/v1"],
+  "type": ["VerifiablePresentation"],
+  "verifiableCredential": [
+    {
+      "@context": [
+        "https://www.w3.org/2018/credentials/v1",
+        "https://schema.org"
+      ],
+      "type": ["VerifiableCredential", "EducationalOccupationalCredential"],
+      "credentialSubject": {
+        "degree": {
+          "type": "BachelorDegree",
+          "name": "Bachelor of Science in Computer Science"
+        }
+      }
+    },
+    {
+      "@context": [
+        "https://www.w3.org/2018/credentials/v1",
+        "https://schema.org"
+      ],
+      "type": ["VerifiableCredential", "WorkExperience"],
+      "credentialSubject": {
+        "jobTitle": "Software Engineer",
+        "startDate": "2018-01-01",
+        "endDate": "2023-01-01"
+      }
+    },
+    {
+      "@context": [
+        "https://www.w3.org/2018/credentials/v1",
+        "https://schema.org"
+      ],
+      "type": ["VerifiableCredential", "Certification"],
+      "credentialSubject": {
+        "certificationName": "Certified Information Systems Security Professional (CISSP)",
+        "issuanceDate": "2022-06-01"
+      }
+    }
+  ]
+}

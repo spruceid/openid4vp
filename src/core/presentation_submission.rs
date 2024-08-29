@@ -2,6 +2,9 @@ use super::{credential_format::*, input_descriptor::*};
 
 use serde::{Deserialize, Serialize};
 
+/// A DescriptorMapId is a unique identifier for a DescriptorMap.
+pub type DescriptorMapId = String;
+
 /// Presentation Submissions are objects embedded within target
 /// [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim) negotiation
 /// formats that express how the inputs presented as proofs to a
@@ -15,7 +18,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresentationSubmission {
     id: uuid::Uuid,
-    definition_id: String,
+    definition_id: DescriptorMapId,
     descriptor_map: Vec<DescriptorMap>,
 }
 
@@ -27,7 +30,11 @@ impl PresentationSubmission {
     ///
     /// The object MUST include a `descriptor_map` property. The value of this property MUST be an array of
     /// Input [DescriptorMap] Objects.
-    pub fn new(id: uuid::Uuid, definition_id: String, descriptor_map: Vec<DescriptorMap>) -> Self {
+    pub fn new(
+        id: uuid::Uuid,
+        definition_id: DescriptorMapId,
+        descriptor_map: Vec<DescriptorMap>,
+    ) -> Self {
         Self {
             id,
             definition_id,
@@ -56,7 +63,13 @@ impl PresentationSubmission {
     }
 
     /// Returns the descriptor map as a mapping of descriptor map id to descriptor map.
-    pub fn descriptor_map_by_id(&self) -> std::collections::HashMap<String, &DescriptorMap> {
+    ///
+    /// The descriptor map id is expected to match the id of the input descriptor.
+    /// This mapping is helpful for checking if an input descriptor has an associated descriptor map,
+    /// using this mapping from the presentation submission.
+    pub fn descriptor_map_by_id(
+        &self,
+    ) -> std::collections::HashMap<DescriptorMapId, &DescriptorMap> {
         self.descriptor_map
             .iter()
             .map(|descriptor_map| (descriptor_map.id.clone(), descriptor_map))
@@ -69,7 +82,7 @@ impl PresentationSubmission {
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DescriptorMap {
-    id: String,
+    id: DescriptorMapId,
     format: ClaimFormatDesignation,
     path: JsonPath,
     path_nested: Option<Box<DescriptorMap>>,
@@ -83,7 +96,11 @@ impl DescriptorMap {
     /// The descriptor map object MUST include a `path` property. The value of this property MUST be a [JSONPath](https://goessner.net/articles/JsonPath/) string expression. The path property indicates the [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim) submitted in relation to the identified [InputDescriptor], when executed against the top-level of the object the [PresentationSubmission] is embedded within.
     ///
     /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
-    pub fn new(id: impl Into<String>, format: ClaimFormatDesignation, path: JsonPath) -> Self {
+    pub fn new(
+        id: impl Into<DescriptorMapId>,
+        format: ClaimFormatDesignation,
+        path: JsonPath,
+    ) -> Self {
         Self {
             id: id.into(),
             format,
@@ -93,7 +110,7 @@ impl DescriptorMap {
     }
 
     /// Return the id of the descriptor map.
-    pub fn id(&self) -> &String {
+    pub fn id(&self) -> &DescriptorMapId {
         &self.id
     }
 

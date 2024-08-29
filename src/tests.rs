@@ -139,31 +139,62 @@ fn submission_requirements_suite() {
 }
 
 #[test]
+fn test_presentation_submission_validation() -> Result<()> {
+    // Setup the test cases
+    for test_case in 1..4 {
+        let definition: PresentationDefinition = serde_json::from_str(&fs::read_to_string(
+            format!("tests/presentation-submission/definition_{test_case}.json",),
+        )?)?;
+
+        let submission: PresentationSubmission = serde_json::from_str(&fs::read_to_string(
+            format!("tests/presentation-submission/submission_{test_case}.json",),
+        )?)?;
+
+        let presentation: VerifiablePresentation = serde_json::from_str(&fs::read_to_string(
+            format!("tests/presentation-submission/vp_{test_case}.json",),
+        )?)?;
+
+        match test_case {
+            1 | 2 => {
+                assert!(definition
+                    .validate_presentation(presentation, submission.descriptor_map())
+                    .is_ok());
+            }
+            3 => {
+                // Expect this case to error because the presentation includes more descriptors
+                // than the submission requires.
+                assert!(definition
+                    .validate_presentation(presentation, submission.descriptor_map())
+                    .is_err());
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
 fn test_input_descriptor_validation() -> Result<()> {
     // Include the `input_descriptors_example.json` file in the `examples` directory.
     let input_descriptors = include_str!(
-        "../tests/presentation-exchange/test/presentation-definition/input_descriptors_example.json"
+        "../tests/presentation-exchange/test/presentation-definition/multi_group_example.json"
     );
 
-    println!("Input Descriptors: {:?}", input_descriptors);
     let mut value: Value = serde_json::from_str(input_descriptors)?;
 
     let presentation_definition: PresentationDefinition = value
         .as_object_mut()
         .map(|obj| {
             obj.remove("presentation_definition")
-                .map(|v| serde_json::from_value(v))
+                .map(serde_json::from_value)
         })
         .flatten()
         .expect("failed to parse presentation definition")?;
 
-    println!("Presentation Definition: {:?}", presentation_definition);
-
     let presentation_submission = include_str!(
         "../tests/presentation-exchange/test/presentation-submission/appendix_VP_example.json"
     );
-
-    println!("Presentation Submission: {:?}", presentation_submission);
 
     let value: Value = serde_json::from_str(presentation_submission)?;
 
@@ -176,17 +207,14 @@ fn test_input_descriptor_validation() -> Result<()> {
         .flatten()
         .expect("failed to parse presentation submission")?;
 
-    println!("Presentation Submission: {:?}", presentation_submission);
-
-    let descriptor_map = presentation_submission.descriptor_map_by_id();
+    let descriptor_map = presentation_submission.descriptor_map();
 
     let verifiable_presentation: VerifiablePresentation = serde_json::from_value(value)?;
 
-    println!("Verifiable Presentation: {verifiable_presentation:?}");
-
-    presentation_definition
-        .validate_definition_map(verifiable_presentation, &descriptor_map)
-        .expect("Failed to validate definition map");
+    // Expect the example to fail here because the submission does match the definition.
+    assert!(presentation_definition
+        .validate_presentation(verifiable_presentation, &descriptor_map)
+        .is_err());
 
     Ok(())
 }

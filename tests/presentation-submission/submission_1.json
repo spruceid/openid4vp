@@ -1,0 +1,16 @@
+{
+  "id": "3469f095-d6a4-44f0-8e0f-851602724b1d",
+  "definition_id": "simple_example",
+  "descriptor_map": [
+    {
+      "id": "name",
+      "format": "jwt_vc",
+      "path": "$.verifiableCredential[0]"
+    },
+    {
+      "id": "email",
+      "format": "jwt_vc",
+      "path": "$.verifiableCredential[1]"
+    }
+  ]
+}

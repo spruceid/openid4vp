@@ -7,6 +7,11 @@ use serde::{Deserialize, Serialize};
 use ssi_claims::jwt::VerifiablePresentation;
 use ssi_dids::ssi_json_ld::syntax::from_value;
 
+/// A GroupId represents a unique identifier for a group of Input Descriptors.
+///
+/// This type is also used by the submission requirements to group input descriptors.
+pub type GroupId = String;
+
 /// A JSONPath is a string that represents a path to a specific value within a JSON object.
 ///
 /// For syntax details, see [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
@@ -53,7 +58,7 @@ pub struct InputDescriptor {
     #[serde(skip_serializing_if = "Option::is_none")]
     format: Option<ClaimFormatMap>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    group: Option<Vec<String>>,
+    group: Option<Vec<GroupId>>,
 }
 
 impl InputDescriptor {
@@ -131,18 +136,18 @@ impl InputDescriptor {
     }
 
     /// Set the group of the constraints field.
-    pub fn set_group(mut self, group: Vec<String>) -> Self {
+    pub fn set_group(mut self, group: Vec<GroupId>) -> Self {
         self.group = Some(group);
         self
     }
 
     /// Return the group of the constraints field.
-    pub fn group(&self) -> Option<&Vec<String>> {
+    pub fn groups(&self) -> Option<&Vec<GroupId>> {
         self.group.as_ref()
     }
 
     /// Return a mutable reference to the group of the constraints field.
-    pub fn add_to_group(mut self, member: String) -> Self {
+    pub fn add_to_group(mut self, member: GroupId) -> Self {
         self.group.get_or_insert_with(Vec::new).push(member);
 
         self
