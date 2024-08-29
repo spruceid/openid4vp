@@ -8,7 +8,6 @@ use std::collections::BTreeMap;
 use anyhow::{bail, Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ssi_claims::jwt::VerifiablePresentation;
 use url::Url;
 
 use self::parameters::{PresentationSubmission, VpToken};
@@ -78,30 +77,11 @@ impl AuthorizationResponse {
 
                 // Parse the VP Token according to the Spec, here:
                 // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2
-                let vp_payload = response.vp_token().parse()?;
+                response
+                    .vp_token()
+                    .validate(presentation_definition, descriptor_map)?;
 
-                // Check if the vp_payload is an array of VPs
-                match vp_payload.as_array() {
-                    None => {
-                        // handle a single verifiable presentation
-                        presentation_definition.validate_presentation(
-                            VerifiablePresentation(json_syntax::Value::from(vp_payload)),
-                            descriptor_map,
-                        )
-                    }
-                    Some(vps) => {
-                        // Each item in the array is a VP
-                        for vp in vps {
-                            // handle the verifiable presentation
-                            presentation_definition.validate_presentation(
-                                VerifiablePresentation(json_syntax::Value::from(vp.clone())),
-                                descriptor_map,
-                            )?;
-                        }
-
-                        Ok(())
-                    }
-                }
+                Ok(())
             }
         }
     }

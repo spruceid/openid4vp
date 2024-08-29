@@ -108,10 +108,7 @@ impl PresentationDefinition {
     }
 
     /// Validate submission requirements provided an input descriptor and descriptor map.
-    pub fn validate_submission_requirements(
-        &self,
-        descriptor_map: &Vec<DescriptorMap>,
-    ) -> Result<()> {
+    pub fn validate_submission_requirements(&self, descriptor_map: &[DescriptorMap]) -> Result<()> {
         match self.submission_requirements.as_ref() {
             None => Ok(()),
             Some(requirements) => {
@@ -218,9 +215,10 @@ impl PresentationDefinition {
     pub fn validate_presentation(
         &self,
         verifiable_presentation: VerifiablePresentation,
-        descriptor_map: &Vec<DescriptorMap>,
+        descriptor_map: &[DescriptorMap],
     ) -> Result<()> {
-        // Validate the submission requirements
+        // Validate the submission requirements. This will
+        // no-op if there are no submission requirements.
         self.validate_submission_requirements(descriptor_map)?;
 
         let input_descript_map = self.input_descriptors_map();
@@ -324,16 +322,22 @@ impl SubmissionRequirement {
                     bail!("Submission Requirement group, {group}, validation failed. Descriptor Map count {group_count} is not equal to the count: {count}.");
                 }
             }
+        } else {
+            // If the descriptor maps are less than the grouped input descriptors,
+            // then the submission requirement is not satisfied.
+            if group_count < grouped_input_descriptors.len() {
+                bail!("Submission Requirement group, {group}, validation failed. Descriptor Map count {group_count} is not equal to the count of grouped input descriptors: {}.", grouped_input_descriptors.len());
+            }
         }
 
         Ok(())
     }
 
-    /// Validate a submission requirement against an input descriptor and a descriptor map.
+    /// Validate a submission requirement against a input descriptors and descriptor maps.
     pub fn validate(
         &self,
-        input_descriptors: &Vec<InputDescriptor>,
-        decriptor_map: &Vec<DescriptorMap>,
+        input_descriptors: &[InputDescriptor],
+        decriptor_map: &[DescriptorMap],
     ) -> Result<()> {
         // Validate the submission requirement against the grouped descriptor maps.
         match self {
