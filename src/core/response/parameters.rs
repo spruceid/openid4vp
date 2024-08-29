@@ -75,8 +75,22 @@ impl VpToken {
         Ok(serde_json::from_slice(&decoded)?)
     }
 
-    /// Validate the Verifiable Presentation Token.
-    pub fn validate(
+    /// Validate an unencoded Verifiable Presentation Token.
+    ///
+    /// This method assumtes the VP token is not encoded as a JWT.
+    ///
+    /// # Returns
+    ///
+    /// This method will return `Ok(())` if the VP token is valid.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if the VP token is invalid,
+    /// or if the verifiable presentation is invalid or does not meet
+    /// the requirements of the presentation definition.
+    ///
+    ///
+    pub fn validate_unencoded(
         &self,
         presentation_definition: &PresentationDefinition,
         descriptor_map: &[DescriptorMap],

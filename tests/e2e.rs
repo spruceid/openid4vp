@@ -57,10 +57,6 @@ async fn w3c_vc_did_client_direct_post() {
 
     let client_metadata = UntypedObject::default();
 
-    #[cfg(feature = "rand")]
-    let nonce = Nonce::random(&mut rand::thread_rng());
-
-    #[cfg(not(feature = "rand"))]
     let nonce = Nonce::from("random_nonce");
 
     let (id, request) = verifier

@@ -73,13 +73,11 @@ impl AuthorizationResponse {
                     bail!("Presentation Definition ID does not match the Presentation Submission.")
                 }
 
-                let descriptor_map = presentation_submission.descriptor_map();
-
-                // Parse the VP Token according to the Spec, here:
-                // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2
-                response
-                    .vp_token()
-                    .validate(presentation_definition, descriptor_map)?;
+                // Validate the VP Token as an unencoded payload.
+                response.vp_token().validate_unencoded(
+                    presentation_definition,
+                    presentation_submission.descriptor_map(),
+                )?;
 
                 Ok(())
             }

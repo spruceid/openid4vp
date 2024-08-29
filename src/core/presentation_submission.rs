@@ -137,9 +137,6 @@ impl DescriptorMap {
     /// > The path property inside each `path_nested` property provides a relative path within a given nested value.
     ///
     /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries](https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries)
-    ///
-    /// Errors:
-    /// - The id of the nested path must be the same as the parent id.
     pub fn set_path_nested(mut self, mut path_nested: DescriptorMap) -> Self {
         // Ensure the nested path has the same id as the parent.
         path_nested.id.clone_from(self.id());
