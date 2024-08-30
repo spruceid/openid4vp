@@ -280,12 +280,19 @@ impl From<&str> for CredentialType {
     }
 }
 
-impl From<CredentialType> for String {
-    fn from(cred_type: CredentialType) -> Self {
+impl From<&CredentialType> for String {
+    fn from(cred_type: &CredentialType) -> Self {
         match cred_type {
             CredentialType::Iso18013_5_1mDl => ORG_ISO_18013_5_1_MDL.to_string(),
             CredentialType::VehicleTitle(title) => format!("vehicle_title.{title}"),
-            CredentialType::Other(s) => s,
+            CredentialType::Other(s) => s.to_owned(),
         }
+    }
+}
+
+impl std::fmt::Display for CredentialType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s: String = self.into();
+        write!(f, "{}", s)
     }
 }
