@@ -290,9 +290,8 @@ impl From<&CredentialType> for String {
     }
 }
 
-impl std::fmt::Display for CredentialType {
+impl std::fmt::Display for &CredentialType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s: String = self.into();
-        write!(f, "{}", s)
+        write!(f, "{}", self)
     }
 }
