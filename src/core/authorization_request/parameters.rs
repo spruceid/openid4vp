@@ -6,6 +6,7 @@ use crate::core::{
     util::{base_request, AsyncHttpClient},
 };
 use anyhow::{bail, Context, Error, Ok};
+use json_syntax::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use url::Url;
@@ -205,6 +206,12 @@ impl From<String> for Nonce {
 impl From<&str> for Nonce {
     fn from(value: &str) -> Self {
         Self(value.to_string())
+    }
+}
+
+impl From<Nonce> for Value {
+    fn from(value: Nonce) -> Self {
+        value.0.into()
     }
 }
 

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::Result;
-use base64::prelude::*;
+use oid4vp::core::response::parameters::VpToken;
 use oid4vp::holder::verifiable_presentation_builder::{
     VerifiablePresentationBuilder, VerifiablePresentationBuilderOptions,
 };
@@ -10,7 +10,7 @@ use ssi_claims::jwt;
 use ssi_dids::DIDKey;
 use ssi_jwk::JWK;
 
-pub async fn create_test_verifiable_presentation() -> Result<String> {
+pub async fn create_test_verifiable_presentation_token() -> Result<VpToken> {
     let verifier = JWK::from_str(include_str!("examples/verifier.jwk"))?;
 
     let signer = P256Signer::new(
@@ -34,15 +34,11 @@ pub async fn create_test_verifiable_presentation() -> Result<String> {
             subject: holder_did.clone(),
             audience: verifier_did.clone(),
             expiration_secs: 3600,
-            credentials: vec![verifiable_credential],
+            credentials: vec![verifiable_credential.0].into(),
             nonce: "random_nonce".into(),
         });
 
-    // Encode the verifiable presentation as base64 encoded payload.
-    let vp_token = verifiable_presentation.0.to_string();
+    let token = verifiable_presentation.as_base64_encoded_vp_token()?;
 
-    // encode as base64.
-    let base64_encoded_vp = BASE64_STANDARD.encode(vp_token);
-
-    Ok(base64_encoded_vp)
+    Ok(token)
 }

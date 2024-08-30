@@ -1,7 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use anyhow::{Context, Result};
+use base64::prelude::*;
 use serde::{Deserialize, Serialize};
-use ssi_claims::jwt::{VerifiableCredential, VerifiablePresentation};
+use ssi_claims::jwt::VerifiablePresentation;
 use ssi_claims::vc::v2::syntax::VERIFIABLE_PRESENTATION_TYPE;
 use ssi_dids::ssi_json_ld::CREDENTIALS_V1_CONTEXT;
 use ssi_dids::{
@@ -9,18 +11,21 @@ use ssi_dids::{
     DIDURLBuf,
 };
 
+use crate::core::authorization_request::parameters::Nonce;
+use crate::core::response::parameters::VpToken;
+
 #[derive(Debug, Clone)]
 pub struct VerifiablePresentationBuilderOptions {
     pub issuer: DIDURLBuf,
     pub subject: DIDURLBuf,
     pub audience: DIDURLBuf,
-    pub nonce: String,
+    pub nonce: Nonce,
     // TODO: we may wish to support an explicit
     // issuance and expiration date rather than seconds from now.
     /// Expiration is in seconds from `now`.
     /// e.g. 3600 for 1 hour.
     pub expiration_secs: u64,
-    pub credentials: Vec<VerifiableCredential>,
+    pub credentials: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,7 +53,7 @@ impl VerifiablePresentationBuilder {
     ///
     /// This will set the issuance date to the current time and the expiration
     /// date to the expiration secs from the issuance date.
-    pub fn from_options(options: VerifiablePresentationBuilderOptions) -> VerifiablePresentation {
+    pub fn from_options(options: VerifiablePresentationBuilderOptions) -> Self {
         let mut verifiable_presentation = VerifiablePresentation(Value::Object(Object::new()));
 
         if let Some(obj) = verifiable_presentation.0.as_object_mut() {
@@ -72,7 +77,7 @@ impl VerifiablePresentationBuilder {
                 );
             }
 
-            obj.insert("nonce".into(), Value::String(options.nonce.into()));
+            obj.insert("nonce".into(), options.nonce.into());
 
             let mut verifiable_credential_field = Value::Object(Object::new());
 
@@ -87,16 +92,28 @@ impl VerifiablePresentationBuilder {
                     Value::String(VERIFIABLE_PRESENTATION_TYPE.to_string().into()),
                 );
 
-                cred.insert(
-                    "verifiableCredential".into(),
-                    Value::Array(options.credentials.into_iter().map(|vc| vc.0).collect()),
-                );
+                cred.insert("verifiableCredential".into(), options.credentials);
             }
 
             obj.insert("vp".into(), verifiable_credential_field);
         }
 
-        verifiable_presentation
+        Self(verifiable_presentation)
+    }
+
+    /// Build the verifiable presentation.
+    pub fn build(self) -> VerifiablePresentation {
+        self.0
+    }
+
+    /// Return the verifiable presentation as a base64 encoded verifiable
+    /// presentation token.
+    pub fn as_base64_encoded_vp_token(self) -> Result<VpToken> {
+        let json_string = serde_json::to_string(&self.0).context("Failed to encode JSON string")?;
+
+        let token = BASE64_STANDARD.encode(&json_string);
+
+        Ok(VpToken(token))
     }
 
     /// Add an issuer to the verifiable presentation.
@@ -156,9 +173,5 @@ impl VerifiablePresentationBuilder {
             obj.insert("nonce".into(), Value::String(nonce.into()));
         }
         self
-    }
-
-    pub fn build(self) -> VerifiablePresentation {
-        self.0
     }
 }
