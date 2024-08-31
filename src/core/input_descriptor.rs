@@ -1,9 +1,12 @@
+use std::collections::HashSet;
+
 use super::{credential_format::*, presentation_submission::*};
 use crate::utils::NonEmptyVec;
 
 use anyhow::{bail, Context, Result};
 use jsonschema::{JSONSchema, ValidationError};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ssi_claims::jwt::VerifiablePresentation;
 use ssi_dids::ssi_json_ld::syntax::from_value;
 
@@ -135,6 +138,72 @@ impl InputDescriptor {
         self
     }
 
+    /// Return the format of the input descriptor.
+    pub fn format(&self) -> Option<&ClaimFormatMap> {
+        self.format.as_ref()
+    }
+
+    /// Return the format designations of the input descriptor as a hash set.
+    pub fn format_designations(&self) -> Option<HashSet<&ClaimFormatDesignation>> {
+        self.format.as_ref().map(|f| f.keys().collect())
+    }
+
+    /// Return the credential format(s) of the input descriptor, if it can be determined
+    /// from the format field of the input descriptor constraints fields.
+    pub fn credential_type(&self) -> Option<Vec<CredentialType>> {
+        self.constraints.fields.as_ref().map(|fields| {
+            fields
+                .iter()
+                .filter(|field| {
+                    // Check if field path contains "type"
+                    field
+                        .path
+                        .as_ref()
+                        .iter()
+                        // Check if any of the paths contain a reference to type.
+                        // NOTE: I am not sure if this is normative to add a `type` field to the path
+                        // for a verifiable credential.
+                        .any(|path| path.contains(&"type".to_string()))
+                })
+                .filter_map(|field| {
+                    // Check the filter field to determine what the `const`.
+                    // Use this to determine what the credential type is.
+                    if let Some(credential) = field
+                        .filter
+                        .as_ref()
+                        .map(|filter| {
+                            filter
+                                .get("const")
+                                .and_then(Value::as_str)
+                                .map(CredentialType::from)
+                        })
+                        .flatten()
+                    {
+                        return Some(credential);
+                    }
+
+                    // The `type` field may be an array with a nested const value.
+                    if let Some(credential) = field
+                        .filter
+                        .as_ref()
+                        .map(|filter| {
+                            filter
+                                .get("contains")
+                                .and_then(|value| value.get("const"))
+                                .and_then(Value::as_str)
+                                .map(CredentialType::from)
+                        })
+                        .flatten()
+                    {
+                        return Some(credential);
+                    }
+
+                    None
+                })
+                .collect()
+        })
+    }
+
     /// Set the group of the constraints field.
     pub fn set_group(mut self, group: Vec<GroupId>) -> Self {
         self.group = Some(group);
@@ -256,18 +325,6 @@ impl InputDescriptor {
         }
 
         Ok(())
-    }
-
-    /// Return the format of the input descriptor.
-    ///
-    /// The Input Descriptor Object MAY contain a format property. If present,
-    /// its value MUST be an object with one or more properties matching the registered
-    /// Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
-    ///
-    /// This format property is identical in value signature to the top-level format object,
-    /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn format(&self) -> Option<&ClaimFormatMap> {
-        self.format.as_ref()
     }
 }
 
