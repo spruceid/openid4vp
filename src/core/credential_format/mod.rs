@@ -250,6 +250,12 @@ impl From<ClaimFormatDesignation> for String {
     }
 }
 
+impl std::fmt::Display for ClaimFormatDesignation {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", String::from(self.clone()))
+    }
+}
+
 /// Credential types that may be requested in a credential request.
 ///
 /// Credential types can be presented in a number of formats.

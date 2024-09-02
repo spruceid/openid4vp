@@ -148,62 +148,6 @@ impl InputDescriptor {
         self.format.as_ref().map(|f| f.keys().collect())
     }
 
-    /// Return the credential format(s) of the input descriptor, if it can be determined
-    /// from the format field of the input descriptor constraints fields.
-    pub fn credential_type(&self) -> Option<Vec<CredentialType>> {
-        self.constraints.fields.as_ref().map(|fields| {
-            fields
-                .iter()
-                .filter(|field| {
-                    // Check if field path contains "type"
-                    field
-                        .path
-                        .as_ref()
-                        .iter()
-                        // Check if any of the paths contain a reference to type.
-                        // NOTE: I am not sure if this is normative to add a `type` field to the path
-                        // for a verifiable credential.
-                        .any(|path| path.contains(&"type".to_string()))
-                })
-                .filter_map(|field| {
-                    // Check the filter field to determine what the `const`.
-                    // Use this to determine what the credential type is.
-                    if let Some(credential) = field
-                        .filter
-                        .as_ref()
-                        .map(|filter| {
-                            filter
-                                .get("const")
-                                .and_then(Value::as_str)
-                                .map(CredentialType::from)
-                        })
-                        .flatten()
-                    {
-                        return Some(credential);
-                    }
-
-                    // The `type` field may be an array with a nested const value.
-                    if let Some(credential) = field
-                        .filter
-                        .as_ref()
-                        .map(|filter| {
-                            filter
-                                .get("contains")
-                                .and_then(|value| value.get("const"))
-                                .and_then(Value::as_str)
-                                .map(CredentialType::from)
-                        })
-                        .flatten()
-                    {
-                        return Some(credential);
-                    }
-
-                    None
-                })
-                .collect()
-        })
-    }
-
     /// Set the group of the constraints field.
     pub fn set_group(mut self, group: Vec<GroupId>) -> Self {
         self.group = Some(group);
@@ -384,6 +328,16 @@ impl Constraints {
     pub fn is_required(&self) -> bool {
         self.fields()
             .map(|fields| fields.iter().any(|field| field.is_required()))
+            .unwrap_or(false)
+    }
+
+    /// Intent to retain.
+    ///
+    /// Returns whether any of the contraint fields have an intent
+    /// to retain the data by the verifier.
+    pub fn intend_to_retain(&self) -> bool {
+        self.fields()
+            .map(|fields| fields.iter().any(|field| field.intent_to_retain()))
             .unwrap_or(false)
     }
 }
@@ -656,6 +610,63 @@ impl ConstraintsField {
                     .to_string()
             })
             .collect()
+    }
+
+    /// Return the Credential Type of the constraints field
+    pub fn credential_type(&self) -> Option<CredentialType> {
+        // NOTE: There may be other ways to search for a valid the credential type
+        // that meets the input descriptor constraints.
+        //
+        // A more exhaustive search may require parsing each credential to
+        // check if it contains a certain field, e.g. `firstName`, `familyName`, etc.,
+        // and see if it will satisfy the constraints.
+        //
+        // For now, we explicity check the type of the credential if it is present
+        // in the credential `type` field.
+
+        if self
+            .path
+            .as_ref()
+            .iter()
+            // Check if any of the paths contain a reference to type.
+            // NOTE: I am not sure if this is normative to add a `type` field to the path
+            // for a verifiable credential.
+            .any(|path| path.contains(&"type".to_string()))
+        {
+            // Check the filter field to determine the `const`
+            // value for the credential type, e.g. `iso.org.18013.5.1.mDL`, etc.
+            if let Some(credential) = self
+                .filter
+                .as_ref()
+                .map(|filter| {
+                    filter
+                        .get("const")
+                        .and_then(Value::as_str)
+                        .map(CredentialType::from)
+                })
+                .flatten()
+            {
+                return Some(credential);
+            }
+
+            // The `type` field may be an array with a nested const value.
+            if let Some(credential) = self
+                .filter
+                .as_ref()
+                .map(|filter| {
+                    filter
+                        .get("contains")
+                        .and_then(|value| value.get("const"))
+                        .and_then(Value::as_str)
+                        .map(CredentialType::from)
+                })
+                .flatten()
+            {
+                return Some(credential);
+            }
+        }
+
+        None
     }
 }
 
