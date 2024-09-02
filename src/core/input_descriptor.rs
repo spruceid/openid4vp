@@ -635,33 +635,23 @@ impl ConstraintsField {
         {
             // Check the filter field to determine the `const`
             // value for the credential type, e.g. `iso.org.18013.5.1.mDL`, etc.
-            if let Some(credential) = self
-                .filter
-                .as_ref()
-                .map(|filter| {
-                    filter
-                        .get("const")
-                        .and_then(Value::as_str)
-                        .map(CredentialType::from)
-                })
-                .flatten()
-            {
+            if let Some(credential) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .get("const")
+                    .and_then(Value::as_str)
+                    .map(CredentialType::from)
+            }) {
                 return Some(credential);
             }
 
             // The `type` field may be an array with a nested const value.
-            if let Some(credential) = self
-                .filter
-                .as_ref()
-                .map(|filter| {
-                    filter
-                        .get("contains")
-                        .and_then(|value| value.get("const"))
-                        .and_then(Value::as_str)
-                        .map(CredentialType::from)
-                })
-                .flatten()
-            {
+            if let Some(credential) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .get("contains")
+                    .and_then(|value| value.get("const"))
+                    .and_then(Value::as_str)
+                    .map(CredentialType::from)
+            }) {
                 return Some(credential);
             }
         }
