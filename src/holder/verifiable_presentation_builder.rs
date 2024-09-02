@@ -111,7 +111,7 @@ impl VerifiablePresentationBuilder {
     pub fn as_base64_encoded_vp_token(self) -> Result<VpToken> {
         let json_string = serde_json::to_string(&self.0).context("Failed to encode JSON string")?;
 
-        let token = BASE64_STANDARD.encode(&json_string);
+        let token = BASE64_STANDARD.encode(json_string);
 
         Ok(VpToken(token))
     }
