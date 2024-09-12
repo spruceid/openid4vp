@@ -2,11 +2,14 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-// TODO: Does the `isomdl` crate provide this constant value, or another crate?
-const ORG_ISO_18013_5_1_MDL: &str = "org.iso.18013.5.1.mDL";
-
 /// A Json object of claim formats.
 pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
+
+/// The credential type that may be requested in a presentation request.
+// NOTE: Credential types can be presented in a number of formats and therefore
+// is an alias of a String is used. In the future, there may be a case to create
+// a new type with associative methods, e.g., to parse various credential types, etc.
+pub type CredentialType = String;
 
 /// The Presentation Definition MAY include a format property. The value MUST be an object with one or
 /// more properties matching the registered [ClaimFormatDesignation] (e.g., jwt, jwt_vc, jwt_vp, etc.).
@@ -74,6 +77,10 @@ pub enum ClaimFormat {
     },
     #[serde(rename = "mso_mdoc")]
     MsoMDoc(serde_json::Value),
+    /// Support for non-standard claim formats.
+    // NOTE: a `format` property will be included within the serialized
+    // type. This will help for identifying the claim format designation type.
+    #[serde(untagged)]
     Other(serde_json::Value),
 }
 
@@ -95,14 +102,14 @@ impl ClaimFormat {
             ClaimFormat::AcVp { .. } => ClaimFormatDesignation::AcVp,
             ClaimFormat::MsoMDoc(_) => ClaimFormatDesignation::MsoMDoc,
             ClaimFormat::Other(value) => {
-                // parse the format from the value
+                // Parse the format from the first key found in the value map.
                 let format = value
-                    .get("format")
-                    .and_then(|format| format.as_str())
-                    // If a `format` property is not present, default to "unknown"
-                    .unwrap_or("unknown");
+                    .as_object()
+                    .and_then(|map| map.keys().next())
+                    .map(ToOwned::to_owned)
+                    .unwrap_or("other".into());
 
-                ClaimFormatDesignation::Other(format.to_string())
+                ClaimFormatDesignation::Other(format)
             }
         }
     }
@@ -209,6 +216,7 @@ pub enum ClaimFormatDesignation {
     /// Other claim format designations not covered by the above.
     ///
     /// The value of this variant is the name of the claim format designation.
+    #[serde(untagged)]
     Other(String),
 }
 
@@ -250,42 +258,48 @@ impl From<ClaimFormatDesignation> for String {
     }
 }
 
-/// Credential types that may be requested in a credential request.
-///
-/// Credential types can be presented in a number of formats.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum CredentialType {
-    /// an ISO 18013-5:2021 mobile driving license (mDL) Credential
-    #[serde(rename = "org.iso.18013.5.1.mDL")]
-    Iso18013_5_1mDl,
-    /// A vehicle title credential
-    ///
-    /// Given there is no universal standard for how to present a vehicle title credential,
-    /// the inner String provides a dynamic way to represent a vehicle title credential.
-    // TODO: is there a standard identifier for a vehicle title credential instead of `vehicle_title`?
-    #[serde(rename = "vehicle_title")]
-    VehicleTitle(String),
-    // TODO: Add additional credential types here. Fallback to a string for any other credential type.
-    /// Other credential types not covered by the above.
-    Other(String),
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl From<&str> for CredentialType {
-    fn from(s: &str) -> Self {
-        match s {
-            s if s.contains(ORG_ISO_18013_5_1_MDL) => Self::Iso18013_5_1mDl,
-            s if s.contains("vehicle_title.") => Self::VehicleTitle(s.to_string()),
-            s => Self::Other(s.to_string()),
-        }
-    }
-}
+    use serde_json::json;
 
-impl From<CredentialType> for String {
-    fn from(cred_type: CredentialType) -> Self {
-        match cred_type {
-            CredentialType::Iso18013_5_1mDl => ORG_ISO_18013_5_1_MDL.to_string(),
-            CredentialType::VehicleTitle(title) => format!("vehicle_title.{title}"),
-            CredentialType::Other(s) => s,
-        }
+    #[test]
+    fn test_credential_format_serialization() {
+        let value = json!({
+          "claim_formats_supported": {
+            "jwt_vc": {
+              "alg": ["ES256", "EdDSA"],
+              "proof_type": ["JsonWebSignature2020"]
+            },
+            "ldp_vc": {
+              "proof_type": ["Ed25519Signature2018", "EcdsaSecp256k1Signature2019"]
+            },
+            "sd_jwt_vc": {
+              "alg": ["ES256", "ES384"],
+              "kb_jwt_alg": ["ES256"]
+            },
+            "com.example.custom_vc": {
+              "version": "1.0",
+              "encryption": ["AES-GCM"],
+              "signature": ["ED25519"]
+            }
+          }
+        });
+
+        let claim_format_map: ClaimFormatMap =
+            serde_json::from_value(value["claim_formats_supported"].clone())
+                .expect("Failed to parse claim format map");
+
+        assert!(claim_format_map.contains_key(&ClaimFormatDesignation::JwtVc));
+        assert!(claim_format_map.contains_key(&ClaimFormatDesignation::LdpVc));
+        assert!(
+            claim_format_map.contains_key(&ClaimFormatDesignation::Other("sd_jwt_vc".to_string()))
+        );
+        assert!(
+            claim_format_map.contains_key(&ClaimFormatDesignation::Other(
+                "com.example.custom_vc".to_string()
+            ))
+        );
     }
 }
