@@ -1,14 +1,9 @@
 pub use crate::core::authorization_request::parameters::State;
 use crate::core::object::TypedParameter;
-use crate::core::presentation_definition::PresentationDefinition;
-use crate::core::presentation_submission::{
-    DescriptorMap, PresentationSubmission as PresentationSubmissionParsed,
-};
+use crate::core::presentation_submission::PresentationSubmission as PresentationSubmissionParsed;
 
 use anyhow::Error;
-use base64::prelude::*;
 use serde_json::Value as Json;
-use ssi_claims::jwt::VerifiablePresentation;
 
 #[derive(Debug, Clone)]
 pub struct IdToken(pub String);
@@ -31,6 +26,16 @@ impl From<IdToken> for Json {
     }
 }
 
+// TODO: Update this type to something like:
+//
+// enum VpToken {
+//     Single(String),
+//     SingleAsMap(Map<String, Value>),
+//     Many(Vec<VpToken>),
+// }
+//
+// See: https://github.com/spruceid/oid4vp-rs/pull/8#discussion_r1750274969
+//
 #[derive(Debug, Clone)]
 pub struct VpToken(pub String);
 
@@ -49,76 +54,6 @@ impl TryFrom<Json> for VpToken {
 impl From<VpToken> for Json {
     fn from(value: VpToken) -> Self {
         value.0.into()
-    }
-}
-
-impl VpToken {
-    /// Parse the VP Token as a JSON object.
-    ///
-    /// This will attempt to decode the token as base64, and if that fails, it
-    /// will attempt to parse the token as a JSON object.
-    ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2
-    ///
-    /// If you want to check for decode errors, use [VpToken::decode_base64].
-    pub fn parse(&self) -> Result<Json, Error> {
-        match self.decode_base64() {
-            Ok(decoded) => Ok(decoded),
-            Err(_) => Ok(serde_json::from_str(&self.0)?),
-        }
-    }
-
-    /// Return the Verifiable Presentation Token as a JSON object from a base64
-    /// encoded string.
-    pub fn decode_base64(&self) -> Result<Json, Error> {
-        let decoded = BASE64_STANDARD.decode(&self.0)?;
-        Ok(serde_json::from_slice(&decoded)?)
-    }
-
-    /// Validate an unencoded Verifiable Presentation Token.
-    ///
-    /// This method assumtes the VP token is not encoded as a JWT.
-    ///
-    /// # Returns
-    ///
-    /// This method will return `Ok(())` if the VP token is valid.
-    ///
-    /// # Errors
-    ///
-    /// This method will return an error if the VP token is invalid,
-    /// or if the verifiable presentation is invalid or does not meet
-    /// the requirements of the presentation definition.
-    ///
-    ///
-    pub fn validate_unencoded(
-        &self,
-        presentation_definition: &PresentationDefinition,
-        descriptor_map: &[DescriptorMap],
-    ) -> Result<(), Error> {
-        let vp_payload = self.parse()?;
-
-        // Check if the vp_payload is an array of VPs
-        match vp_payload.as_array() {
-            None => {
-                // handle a single verifiable presentation
-                presentation_definition.validate_presentation(
-                    VerifiablePresentation(json_syntax::Value::from(vp_payload)),
-                    descriptor_map,
-                )?;
-            }
-            Some(vps) => {
-                // Each item in the array is a VP
-                for vp in vps {
-                    // handle the verifiable presentation
-                    presentation_definition.validate_presentation(
-                        VerifiablePresentation(json_syntax::Value::from(vp.clone())),
-                        descriptor_map,
-                    )?;
-                }
-            }
-        }
-
-        Ok(())
     }
 }
 

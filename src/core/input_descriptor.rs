@@ -55,10 +55,10 @@ pub struct InputDescriptor {
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<ClaimFormatMap>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    group: Option<Vec<GroupId>>,
+    #[serde(default, skip_serializing_if = "ClaimFormatMap::is_empty")]
+    format: ClaimFormatMap,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    group: Vec<GroupId>,
 }
 
 impl InputDescriptor {
@@ -131,24 +131,24 @@ impl InputDescriptor {
     /// This format property is identical in value signature to the top-level format object,
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
     pub fn set_format(mut self, format: ClaimFormatMap) -> Self {
-        self.format = Some(format);
+        self.format = format;
         self
     }
 
     /// Set the group of the constraints field.
     pub fn set_group(mut self, group: Vec<GroupId>) -> Self {
-        self.group = Some(group);
+        self.group = group;
         self
     }
 
     /// Return the group of the constraints field.
-    pub fn groups(&self) -> Option<&Vec<GroupId>> {
+    pub fn groups(&self) -> &Vec<GroupId> {
         self.group.as_ref()
     }
 
     /// Return a mutable reference to the group of the constraints field.
     pub fn add_to_group(mut self, member: GroupId) -> Self {
-        self.group.get_or_insert_with(Vec::new).push(member);
+        self.group.push(member);
 
         self
     }
@@ -170,87 +170,83 @@ impl InputDescriptor {
             from_value(vp.clone()).context("failed to parse value into json type")?;
 
         if let Some(ConstraintsLimitDisclosure::Required) = self.constraints.limit_disclosure {
-            if self.constraints.fields().is_none() {
+            if self.constraints.fields().is_empty() {
                 bail!("Required limit disclosure must have fields.")
             }
         };
 
-        if let Some(constraint_fields) = self.constraints.fields() {
-            for constraint_field in constraint_fields.iter() {
-                // Check if the filter exists if the predicate is present
-                // and set to required.
-                if let Some(Predicate::Required) = constraint_field.predicate() {
-                    if constraint_field.filter().is_none() {
-                        bail!("Required predicate must have a filter.")
-                    }
+        for constraint_field in self.constraints.fields.iter() {
+            // Check if the filter exists if the predicate is present
+            // and set to required.
+            if let Some(Predicate::Required) = constraint_field.predicate() {
+                if constraint_field.filter().is_none() {
+                    bail!("Required predicate must have a filter.")
+                }
+            }
+
+            let mut selector = jsonpath_lib::selector(&vp_json);
+
+            // The root element is relative to the descriptor map path returned.
+            let Ok(root_element) = selector(descriptor_map.path()) else {
+                bail!("Failed to select root element from verifiable presentation.")
+            };
+
+            let root_element = root_element
+                .first()
+                .ok_or(anyhow::anyhow!("Root element not found."))?;
+
+            let mut map_selector = jsonpath_lib::selector(root_element);
+
+            let validator = constraint_field.validator();
+
+            let mut found_elements = false;
+
+            for field_path in constraint_field.path.iter() {
+                let field_elements = map_selector(field_path)
+                    .context("Failed to select field elements from verifiable presentation.")?;
+
+                // Check if the field matches are empty.
+                if field_elements.is_empty() {
+                    // According the specification, found here:
+                    // [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation)
+                    // > If the result returned no JSONPath match, skip to the next path array element.
+                    continue;
                 }
 
-                let mut selector = jsonpath_lib::selector(&vp_json);
+                found_elements = true;
 
-                // The root element is relative to the descriptor map path returned.
-                let Ok(root_element) = selector(descriptor_map.path()) else {
-                    bail!("Failed to select root element from verifiable presentation.")
-                };
-
-                let root_element = root_element
-                    .first()
-                    .ok_or(anyhow::anyhow!("Root element not found."))?;
-
-                let mut map_selector = jsonpath_lib::selector(root_element);
-
-                let validator = constraint_field.validator();
-
-                let mut found_elements = false;
-
-                for field_path in constraint_field.path.iter() {
-                    let field_elements = map_selector(field_path)
-                        .context("Failed to select field elements from verifiable presentation.")?;
-
-                    // Check if the field matches are empty.
-                    if field_elements.is_empty() {
-                        // According the specification, found here:
-                        // [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation)
-                        // > If the result returned no JSONPath match, skip to the next path array element.
-                        continue;
-                    }
-
-                    found_elements = true;
-
-                    // If a filter is available with a valid schema, handle the field validation.
-                    if let Some(Ok(schema_validator)) = validator.as_ref() {
-                        let validated_fields = field_elements.iter().find(|element| {
-                            match schema_validator.validate(element) {
-                                Err(errors) => {
-                                    for error in errors {
-                                        tracing::debug!(
-                                            "Field did not pass filter validation: {error}",
-                                        );
-                                    }
-                                    false
+                // If a filter is available with a valid schema, handle the field validation.
+                if let Some(Ok(schema_validator)) = validator.as_ref() {
+                    let validated_fields = field_elements.iter().find(|element| {
+                        match schema_validator.validate(element) {
+                            Err(errors) => {
+                                for error in errors {
+                                    tracing::debug!(
+                                        "Field did not pass filter validation: {error}",
+                                    );
                                 }
-                                Ok(_) => true,
+                                false
                             }
-                        });
+                            Ok(_) => true,
+                        }
+                    });
 
-                        if validated_fields.is_none() {
-                            if let Some(Predicate::Required) = constraint_field.predicate() {
-                                bail!(
-                                    "Field did not pass filter validation, required by predicate."
-                                );
-                            } else if constraint_field.is_required() {
-                                bail!("Field did not pass filter validation, and is not an optional field.");
-                            }
+                    if validated_fields.is_none() {
+                        if let Some(Predicate::Required) = constraint_field.predicate() {
+                            bail!("Field did not pass filter validation, required by predicate.");
+                        } else if constraint_field.is_required() {
+                            bail!("Field did not pass filter validation, and is not an optional field.");
                         }
                     }
                 }
+            }
 
-                // If no elements are found, and limit disclosure is required, return an error.
-                if !found_elements {
-                    if let Some(ConstraintsLimitDisclosure::Required) =
-                        self.constraints.limit_disclosure
-                    {
-                        bail!("Field elements are empty while limit disclosure is required.")
-                    }
+            // If no elements are found, and limit disclosure is required, return an error.
+            if !found_elements {
+                if let Some(ConstraintsLimitDisclosure::Required) =
+                    self.constraints.limit_disclosure
+                {
+                    bail!("Field elements are empty while limit disclosure is required.")
                 }
             }
         }
@@ -266,8 +262,8 @@ impl InputDescriptor {
     ///
     /// This format property is identical in value signature to the top-level format object,
     /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn format(&self) -> Option<&ClaimFormatMap> {
-        self.format.as_ref()
+    pub fn format(&self) -> &ClaimFormatMap {
+        &self.format
     }
 }
 
@@ -278,8 +274,8 @@ impl InputDescriptor {
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Constraints {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    fields: Option<Vec<ConstraintsField>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    fields: Vec<ConstraintsField>,
     #[serde(skip_serializing_if = "Option::is_none")]
     limit_disclosure: Option<ConstraintsLimitDisclosure>,
 }
@@ -292,12 +288,12 @@ impl Constraints {
 
     /// Add a new field constraint to the constraints list.
     pub fn add_constraint(mut self, field: ConstraintsField) -> Self {
-        self.fields.get_or_insert_with(Vec::new).push(field);
+        self.fields.push(field);
         self
     }
 
     /// Returns the fields of the constraints object.
-    pub fn fields(&self) -> Option<&Vec<ConstraintsField>> {
+    pub fn fields(&self) -> &Vec<ConstraintsField> {
         self.fields.as_ref()
     }
 
@@ -325,9 +321,7 @@ impl Constraints {
     /// Returns if the constraints fields contain non-optional
     /// fields that must be satisfied.
     pub fn is_required(&self) -> bool {
-        self.fields()
-            .map(|fields| fields.iter().any(|field| field.is_required()))
-            .unwrap_or(false)
+        self.fields.iter().any(|field| field.is_required())
     }
 }
 
@@ -336,7 +330,7 @@ impl Constraints {
 /// must satisfy to fulfill an Input Descriptor.
 ///
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConstraintsField {
     path: NonEmptyVec<JsonPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -351,8 +345,8 @@ pub struct ConstraintsField {
     filter: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     optional: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    intent_to_retain: Option<bool>,
+    #[serde(default)]
+    intent_to_retain: bool,
 }
 
 pub type ConstraintsFields = Vec<ConstraintsField>;
@@ -367,7 +361,7 @@ impl From<NonEmptyVec<JsonPath>> for ConstraintsField {
             filter: None,
             predicate: None,
             optional: None,
-            intent_to_retain: None,
+            intent_to_retain: false,
         }
     }
 }
@@ -382,13 +376,7 @@ impl ConstraintsField {
     pub fn new(path: JsonPath) -> ConstraintsField {
         ConstraintsField {
             path: NonEmptyVec::new(path),
-            id: None,
-            purpose: None,
-            name: None,
-            filter: None,
-            predicate: None,
-            optional: None,
-            intent_to_retain: None,
+            ..Default::default()
         }
     }
 
@@ -529,13 +517,13 @@ impl ConstraintsField {
     /// This value indicates the verifier's intent to retain the
     /// field in the presentation, storing the value in the verifier's system.
     pub fn set_retained(mut self, intent_to_retain: bool) -> Self {
-        self.intent_to_retain = Some(intent_to_retain);
+        self.intent_to_retain = intent_to_retain;
         self
     }
 
     /// Return the intent to retain the constraints field.
     pub fn intent_to_retain(&self) -> bool {
-        self.intent_to_retain.unwrap_or(false)
+        self.intent_to_retain
     }
 
     /// Return the humanly-readable requested fields of the constraints field.

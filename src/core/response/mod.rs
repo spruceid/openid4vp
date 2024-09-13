@@ -1,11 +1,8 @@
-use super::{
-    object::{ParsingErrorContext, UntypedObject},
-    presentation_definition::PresentationDefinition,
-};
+use super::object::{ParsingErrorContext, UntypedObject};
 
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
@@ -37,51 +34,6 @@ impl AuthorizationResponse {
             .collect();
 
         Ok(Self::Unencoded(UntypedObject(map).try_into()?))
-    }
-
-    /// Validate an authorization response against a presentation definition.
-    ///
-    /// This method will parse the presentation submission from the auth response and
-    /// validate it against the provided presentation definition.
-    ///
-    /// # Parameters
-    ///
-    /// - `self` - The authorization response to validate.
-    /// - `presentation_definition` - The presentation definition to validate against.
-    ///
-    /// # Errors
-    ///
-    /// This method will return an error if the presentation submission does not match the
-    /// presentation definition.
-    ///
-    /// # Returns
-    ///
-    /// This method will return `Ok(())` if the presentation submission matches the presentation
-    /// definition.
-    pub fn validate(&self, presentation_definition: &PresentationDefinition) -> Result<()> {
-        match self {
-            AuthorizationResponse::Jwt(_jwt) => {
-                // TODO: Handle JWT Encoded authorization response.
-
-                bail!("Authorization Response Presentation Definition validation not implemented.")
-            }
-            AuthorizationResponse::Unencoded(response) => {
-                let presentation_submission = response.presentation_submission().parsed();
-
-                // Ensure the definition id matches the submission's definition id.
-                if presentation_submission.definition_id() != presentation_definition.id() {
-                    bail!("Presentation Definition ID does not match the Presentation Submission.")
-                }
-
-                // Validate the VP Token as an unencoded payload.
-                response.vp_token().validate_unencoded(
-                    presentation_definition,
-                    presentation_submission.descriptor_map(),
-                )?;
-
-                Ok(())
-            }
-        }
     }
 }
 

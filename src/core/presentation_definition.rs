@@ -29,8 +29,8 @@ pub struct PresentationDefinition {
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<ClaimFormatMap>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    format: Vec<ClaimFormat>,
 }
 
 impl PresentationDefinition {
@@ -163,21 +163,19 @@ impl PresentationDefinition {
     /// as noted in the Claim Format Designations section.
     ///
     /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
-    pub fn set_format(mut self, format: ClaimFormatMap) -> Self {
-        self.format = Some(format);
+    pub fn set_format(mut self, format: Vec<ClaimFormat>) -> Self {
+        self.format = format;
         self
     }
 
     /// Add a new format to the presentation definition.
-    pub fn add_format(mut self, format: ClaimFormatDesignation, value: ClaimFormatPayload) -> Self {
-        self.format
-            .get_or_insert_with(HashMap::new)
-            .insert(format, value);
+    pub fn add_format(mut self, value: ClaimFormat) -> Self {
+        self.format.push(value);
         self
     }
 
     /// Return the format of the presentation definition.
-    pub fn format(&self) -> Option<&ClaimFormatMap> {
+    pub fn format(&self) -> &Vec<ClaimFormat> {
         self.format.as_ref()
     }
 
@@ -192,16 +190,14 @@ impl PresentationDefinition {
     pub fn requested_fields(&self) -> Vec<String> {
         self.input_descriptors
             .iter()
-            .filter_map(|input_descriptor| {
-                input_descriptor.constraints().fields().map(|fields| {
-                    fields
-                        .iter()
-                        .map(|constraint| constraint.requested_fields())
-                })
+            .flat_map(|input_descriptor| {
+                input_descriptor
+                    .constraints()
+                    .fields()
+                    .iter()
+                    .map(|constraint| constraint.requested_fields())
             })
-            .flat_map(|field| field.into_iter())
             .flatten()
-            .map(|field| field.to_string())
             .collect()
     }
 
@@ -286,12 +282,7 @@ impl SubmissionRequirement {
         // Group all the input descriptors according to the matching groups of this submission requirement.
         let grouped_input_descriptors = input_descriptors
             .iter()
-            .filter(|input_descriptor| {
-                input_descriptor
-                    .groups()
-                    .map(|input_group| input_group.contains(group))
-                    .unwrap_or(false)
-            })
+            .filter(|input_descriptor| input_descriptor.groups().contains(group))
             .collect::<Vec<&InputDescriptor>>();
 
         // Filter for the descriptor maps that match the grouped input descriptors.
