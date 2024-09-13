@@ -29,8 +29,8 @@ pub struct PresentationDefinition {
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     purpose: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    format: Vec<ClaimFormat>,
+    #[serde(default, skip_serializing_if = "ClaimFormatMap::is_empty")]
+    format: ClaimFormatMap,
 }
 
 impl PresentationDefinition {
@@ -163,20 +163,20 @@ impl PresentationDefinition {
     /// as noted in the Claim Format Designations section.
     ///
     /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
-    pub fn set_format(mut self, format: Vec<ClaimFormat>) -> Self {
+    pub fn set_format(mut self, format: ClaimFormatMap) -> Self {
         self.format = format;
         self
     }
 
     /// Add a new format to the presentation definition.
-    pub fn add_format(mut self, value: ClaimFormat) -> Self {
-        self.format.push(value);
+    pub fn add_format(mut self, key: ClaimFormatDesignation, value: ClaimFormatPayload) -> Self {
+        self.format.insert(key, value);
         self
     }
 
     /// Return the format of the presentation definition.
-    pub fn format(&self) -> &Vec<ClaimFormat> {
-        self.format.as_ref()
+    pub fn format(&self) -> &ClaimFormatMap {
+        &self.format
     }
 
     /// Return the human-readable string representation of the fields requested
