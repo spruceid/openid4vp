@@ -14,8 +14,8 @@ use crate::{
             WalletMetadata,
         },
         object::{ParsingErrorContext, TypedParameter, UntypedObject},
+        presentation_definition::PresentationDefinition,
     },
-    presentation_exchange::PresentationDefinition,
     verifier::{by_reference::ByReference, session::Status},
 };
 

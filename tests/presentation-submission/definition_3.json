@@ -1,0 +1,42 @@
+{
+  "id": "multi_requirement_example",
+  "input_descriptors": [
+    {
+      "id": "university_degree",
+      "group": ["education"],
+      "schema": [
+        { "uri": "https://schema.org/EducationalOccupationalCredential" }
+      ]
+    },
+    {
+      "id": "high_school_diploma",
+      "group": ["education"],
+      "schema": [
+        { "uri": "https://schema.org/EducationalOccupationalCredential" }
+      ]
+    },
+    {
+      "id": "work_experience",
+      "group": ["professional"],
+      "schema": [{ "uri": "https://schema.org/WorkExperience" }]
+    },
+    {
+      "id": "professional_certification",
+      "group": ["professional", "education"],
+      "schema": [{ "uri": "https://schema.org/Certification" }]
+    }
+  ],
+  "submission_requirements": [
+    {
+      "name": "Education Requirement",
+      "rule": "pick",
+      "count": 1,
+      "from": "education"
+    },
+    {
+      "name": "Professional Requirement",
+      "rule": "all",
+      "from": "professional"
+    }
+  ]
+}

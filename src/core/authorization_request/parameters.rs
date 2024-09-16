@@ -1,7 +1,8 @@
-use std::fmt;
+use std::{fmt, ops::Deref};
 
 use crate::core::{
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
+    presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
     util::{base_request, AsyncHttpClient},
 };
 use anyhow::{bail, Context, Error, Ok};
@@ -193,7 +194,42 @@ impl TryFrom<Json> for ClientMetadataUri {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Nonce(pub String);
+pub struct Nonce(String);
+
+impl From<String> for Nonce {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for Nonce {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl Deref for Nonce {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Nonce {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Nonce {
+    /// Crate a new `Nonce` with a random value of the given length.
+    pub fn random(rng: &mut impl rand::Rng, length: usize) -> Self {
+        use rand::distributions::{Alphanumeric, DistString};
+
+        Self(Alphanumeric.sample_string(rng, length))
+    }
+}
 
 impl TypedParameter for Nonce {
     const KEY: &'static str = "nonce";
@@ -432,25 +468,23 @@ impl From<State> for Json {
 #[derive(Debug, Clone)]
 pub struct PresentationDefinition {
     raw: Json,
-    parsed: crate::presentation_exchange::PresentationDefinition,
+    parsed: PresentationDefinitionParsed,
 }
 
 impl PresentationDefinition {
-    pub fn into_parsed(self) -> crate::presentation_exchange::PresentationDefinition {
+    pub fn into_parsed(self) -> PresentationDefinitionParsed {
         self.parsed
     }
 
-    pub fn parsed(&self) -> &crate::presentation_exchange::PresentationDefinition {
+    pub fn parsed(&self) -> &PresentationDefinitionParsed {
         &self.parsed
     }
 }
 
-impl TryFrom<crate::presentation_exchange::PresentationDefinition> for PresentationDefinition {
+impl TryFrom<PresentationDefinitionParsed> for PresentationDefinition {
     type Error = Error;
 
-    fn try_from(
-        parsed: crate::presentation_exchange::PresentationDefinition,
-    ) -> Result<Self, Self::Error> {
+    fn try_from(parsed: PresentationDefinitionParsed) -> Result<Self, Self::Error> {
         let raw = serde_json::to_value(parsed.clone())?;
         Ok(Self { raw, parsed })
     }

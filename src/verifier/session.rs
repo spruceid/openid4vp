@@ -6,9 +6,9 @@ pub use oid4vp_frontend::*;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::{
-    core::authorization_request::AuthorizationRequestObject,
-    presentation_exchange::PresentationDefinition,
+use crate::core::{
+    authorization_request::AuthorizationRequestObject,
+    presentation_definition::PresentationDefinition,
 };
 
 #[derive(Debug, Clone)]

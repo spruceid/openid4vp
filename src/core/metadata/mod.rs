@@ -1,9 +1,11 @@
+use super::credential_format::*;
+
 use std::ops::{Deref, DerefMut};
 
-use anyhow::Error;
+use anyhow::{Error, Result};
 use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value as Json};
+use ssi_jwk::Algorithm;
 
 use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
 
@@ -35,8 +37,14 @@ impl WalletMetadata {
         &self.1
     }
 
+    /// Return a reference to the vp formats supported.
     pub fn vp_formats_supported(&self) -> &VpFormatsSupported {
         &self.2
+    }
+
+    /// Return a mutable reference to the vp formats supported.
+    pub fn vp_formats_supported_mut(&mut self) -> &mut VpFormatsSupported {
+        &mut self.2
     }
 
     /// The static wallet metadata bound to `openid4vp:`:
@@ -65,19 +73,21 @@ impl WalletMetadata {
 
         let response_types_supported = ResponseTypesSupported(vec![ResponseType::VpToken]);
 
-        let mut format_definition = Map::new();
-        format_definition.insert(
-            "alg_values_supported".to_owned(),
-            Json::Array(vec![Json::String("ES256".to_owned())]),
+        let alg_values_supported = vec![Algorithm::ES256.to_string()];
+
+        let mut vp_formats_supported = ClaimFormatMap::new();
+        vp_formats_supported.insert(
+            ClaimFormatDesignation::JwtVpJson,
+            ClaimFormatPayload::AlgValuesSupported(alg_values_supported.clone()),
         );
-        let format_definition = Json::Object(format_definition);
-        let mut vp_formats_supported = Map::new();
-        vp_formats_supported.insert("jwt_vp_json".to_owned(), format_definition.clone());
-        vp_formats_supported.insert("jwt_vc_json".to_owned(), format_definition.clone());
+        vp_formats_supported.insert(
+            ClaimFormatDesignation::JwtVcJson,
+            ClaimFormatPayload::AlgValuesSupported(alg_values_supported.clone()),
+        );
         let vp_formats_supported = VpFormatsSupported(vp_formats_supported);
 
         let request_object_signing_alg_values_supported =
-            RequestObjectSigningAlgValuesSupported(vec!["ES256".to_owned()]);
+            RequestObjectSigningAlgValuesSupported(alg_values_supported);
 
         let mut object = UntypedObject::default();
 

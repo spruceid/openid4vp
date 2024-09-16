@@ -1,3 +1,5 @@
+use super::object::{ParsingErrorContext, UntypedObject};
+
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Error, Result};
@@ -6,8 +8,6 @@ use serde_json::Value;
 use url::Url;
 
 use self::parameters::{PresentationSubmission, VpToken};
-
-use super::object::{ParsingErrorContext, UntypedObject};
 
 pub mod parameters;
 
@@ -52,6 +52,16 @@ impl UnencodedAuthorizationResponse {
         inner.insert(self.2);
         serde_urlencoded::to_string(inner.flatten_for_form()?)
             .context("failed to encode response as 'application/x-www-form-urlencoded'")
+    }
+
+    /// Return the Verifiable Presentation Token.
+    pub fn vp_token(&self) -> &VpToken {
+        &self.1
+    }
+
+    /// Return the Presentation Submission.
+    pub fn presentation_submission(&self) -> &PresentationSubmission {
+        &self.2
     }
 }
 

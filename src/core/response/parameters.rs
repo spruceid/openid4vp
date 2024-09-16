@@ -1,8 +1,9 @@
-use anyhow::Error;
-use serde_json::Value as Json;
-
 pub use crate::core::authorization_request::parameters::State;
 use crate::core::object::TypedParameter;
+use crate::core::presentation_submission::PresentationSubmission as PresentationSubmissionParsed;
+
+use anyhow::Error;
+use serde_json::Value as Json;
 
 #[derive(Debug, Clone)]
 pub struct IdToken(pub String);
@@ -25,6 +26,16 @@ impl From<IdToken> for Json {
     }
 }
 
+// TODO: Update this type to something like:
+//
+// enum VpToken {
+//     Single(String),
+//     SingleAsMap(Map<String, Value>),
+//     Many(Vec<VpToken>),
+// }
+//
+// See: https://github.com/spruceid/oid4vp-rs/pull/8#discussion_r1750274969
+//
 #[derive(Debug, Clone)]
 pub struct VpToken(pub String);
 
@@ -49,25 +60,23 @@ impl From<VpToken> for Json {
 #[derive(Debug, Clone)]
 pub struct PresentationSubmission {
     raw: Json,
-    parsed: crate::presentation_exchange::PresentationSubmission,
+    parsed: PresentationSubmissionParsed,
 }
 
 impl PresentationSubmission {
-    pub fn into_parsed(self) -> crate::presentation_exchange::PresentationSubmission {
+    pub fn into_parsed(self) -> PresentationSubmissionParsed {
         self.parsed
     }
 
-    pub fn parsed(&self) -> &crate::presentation_exchange::PresentationSubmission {
+    pub fn parsed(&self) -> &PresentationSubmissionParsed {
         &self.parsed
     }
 }
 
-impl TryFrom<crate::presentation_exchange::PresentationSubmission> for PresentationSubmission {
+impl TryFrom<PresentationSubmissionParsed> for PresentationSubmission {
     type Error = Error;
 
-    fn try_from(
-        parsed: crate::presentation_exchange::PresentationSubmission,
-    ) -> Result<Self, Self::Error> {
+    fn try_from(parsed: PresentationSubmissionParsed) -> Result<Self, Self::Error> {
         let raw = serde_json::to_value(parsed.clone())?;
         Ok(Self { raw, parsed })
     }

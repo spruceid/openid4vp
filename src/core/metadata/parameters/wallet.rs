@@ -1,9 +1,11 @@
 use crate::core::{
     authorization_request::parameters::{ClientIdScheme, ResponseType},
+    credential_format::{ClaimFormatDesignation, ClaimFormatMap},
     object::TypedParameter,
 };
+
 use anyhow::{bail, Error, Result};
-use serde_json::{Map, Value as Json};
+use serde_json::Value as Json;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -132,9 +134,8 @@ impl From<RequestObjectSigningAlgValuesSupported> for Json {
     }
 }
 
-// TODO: Better types
-#[derive(Debug, Clone)]
-pub struct VpFormatsSupported(pub Map<String, Json>);
+#[derive(Debug, Clone, Default)]
+pub struct VpFormatsSupported(pub ClaimFormatMap);
 
 impl TypedParameter for VpFormatsSupported {
     const KEY: &'static str = "vp_formats_supported";
@@ -144,13 +145,21 @@ impl TryFrom<Json> for VpFormatsSupported {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(serde_json::from_value(value)?))
+        serde_json::from_value(value).map(Self).map_err(Into::into)
     }
 }
 
-impl From<VpFormatsSupported> for Json {
-    fn from(value: VpFormatsSupported) -> Json {
-        Json::Object(value.0)
+impl TryFrom<VpFormatsSupported> for Json {
+    type Error = Error;
+
+    fn try_from(value: VpFormatsSupported) -> Result<Json, Self::Error> {
+        serde_json::to_value(value.0).map_err(Into::into)
+    }
+}
+
+impl VpFormatsSupported {
+    pub fn is_claim_format_supported(&self, designation: &ClaimFormatDesignation) -> bool {
+        self.0.contains_key(designation)
     }
 }
 
@@ -200,7 +209,10 @@ impl From<AuthorizationEncryptionEncValuesSupported> for Json {
 mod test {
     use serde_json::json;
 
-    use crate::core::object::UntypedObject;
+    use crate::core::{
+        credential_format::{ClaimFormatDesignation, ClaimFormatPayload},
+        object::UntypedObject,
+    };
 
     use super::*;
 
@@ -277,8 +289,8 @@ mod test {
         let VpFormatsSupported(mut m) = metadata().get().unwrap().unwrap();
         assert_eq!(m.len(), 1);
         assert_eq!(
-            m.remove("mso_mdoc").unwrap(),
-            Json::Object(Default::default())
+            m.remove(&ClaimFormatDesignation::MsoMDoc).unwrap(),
+            ClaimFormatPayload::Json(serde_json::Value::Object(Default::default()))
         );
     }
 

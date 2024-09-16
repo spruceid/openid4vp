@@ -1,4 +1,3 @@
-#[cfg(feature = "reqwest")]
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -16,10 +15,9 @@ pub(crate) fn base_request() -> http::request::Builder {
     Request::builder().header("Prefer", "OID4VP-0.0.20")
 }
 
-#[cfg(feature = "reqwest")]
+#[derive(Debug)]
 pub struct ReqwestClient(reqwest::Client);
 
-#[cfg(feature = "reqwest")]
 impl ReqwestClient {
     pub fn new() -> Result<Self> {
         reqwest::Client::builder()
@@ -30,7 +28,6 @@ impl ReqwestClient {
     }
 }
 
-#[cfg(feature = "reqwest")]
 #[async_trait]
 impl AsyncHttpClient for ReqwestClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {

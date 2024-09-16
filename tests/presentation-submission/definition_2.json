@@ -1,0 +1,50 @@
+{
+  "id": "complex_example",
+  "input_descriptors": [
+    {
+      "id": "given_name",
+      "group": ["name", "basic_info"],
+      "schema": [{ "uri": "https://schema.org/givenName" }]
+    },
+    {
+      "id": "family_name",
+      "group": ["name", "basic_info"],
+      "schema": [{ "uri": "https://schema.org/familyName" }]
+    },
+    {
+      "id": "birth_date",
+      "group": ["basic_info"],
+      "schema": [{ "uri": "https://schema.org/birthDate" }]
+    },
+    {
+      "id": "passport_number",
+      "group": ["id_document"],
+      "schema": [{ "uri": "https://schema.org/identifier" }]
+    },
+    {
+      "id": "drivers_license",
+      "group": ["id_document"],
+      "schema": [{ "uri": "https://schema.org/DriversLicense" }]
+    }
+  ],
+  "submission_requirements": [
+    {
+      "name": "Identity Verification",
+      "rule": "all",
+      "from_nested": [
+        {
+          "name": "Basic Information",
+          "rule": "pick",
+          "count": 2,
+          "from": "basic_info"
+        },
+        {
+          "name": "Identification Document",
+          "rule": "pick",
+          "count": 1,
+          "from": "id_document"
+        }
+      ]
+    }
+  ]
+}

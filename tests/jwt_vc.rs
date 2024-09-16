@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use did_method_key::DIDKey;
 use http::{Request, Response};
 use oid4vp::{
     core::{
@@ -22,7 +21,8 @@ use oid4vp::{
     wallet::Wallet,
 };
 use serde_json::json;
-use ssi::did::DIDMethod;
+use ssi_dids::{DIDKey, VerificationMethodDIDResolver};
+use ssi_verification_methods::AnyJwkMethod;
 
 pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
     let verifier_did = "did:key:zDnaeaDj3YpPR4JXos2kCCNPS86hdELeN5PZh97KGkoFzUtGn".to_owned();
@@ -36,11 +36,15 @@ pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
         )
         .unwrap(),
     );
+
+    let resolver: VerificationMethodDIDResolver<DIDKey, AnyJwkMethod> =
+        VerificationMethodDIDResolver::new(DIDKey);
+
     let client = Arc::new(
         oid4vp::verifier::client::DIDClient::new(
             verifier_did_vm.clone(),
             signer.clone(),
-            DIDKey.to_resolver(),
+            &resolver,
         )
         .await
         .unwrap(),
@@ -125,12 +129,15 @@ impl RequestVerifier for JwtVcWallet {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<()> {
+        let resolver: VerificationMethodDIDResolver<DIDKey, AnyJwkMethod> =
+            VerificationMethodDIDResolver::new(DIDKey);
+
         did::verify_with_resolver(
             self.metadata(),
             decoded_request,
             request_jwt,
             Some(self.trusted_dids()),
-            DIDKey.to_resolver(),
+            &resolver,
         )
         .await
     }
@@ -153,7 +160,7 @@ impl AsyncHttpClient for MockHttpClient {
                 AuthorizationResponse::from_x_www_form_urlencoded(body)
                     .context("failed to parse authorization response request")?,
                 |_, _| {
-                    Box::pin(async {
+                    Box::pin(async move {
                         Outcome::Success {
                             info: serde_json::Value::Null,
                         }
