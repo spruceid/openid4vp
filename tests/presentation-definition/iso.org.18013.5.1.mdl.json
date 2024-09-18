@@ -1,0 +1,67 @@
+{
+  "id": "mDL_presentation_request",
+  "input_descriptors": [
+    {
+      "id": "mDL_credential",
+      "name": "Mobile Driving License",
+      "purpose": "To verify your driving privileges and age.",
+      "constraints": {
+        "fields": [
+          {
+            "path": ["$.type"],
+            "filter": {
+              "type": "array",
+              "contains": {
+                "const": "iso.org.18013.5.1.mDL"
+              }
+            }
+          },
+          {
+            "path": ["$.credentialSubject.family_name", "$.vc.credentialSubject.family_name"],
+            "purpose": "We need your family name for identification.",
+            "filter": {
+              "type": "string"
+            }
+          },
+          {
+            "path": ["$.credentialSubject.given_name", "$.vc.credentialSubject.given_name"],
+            "purpose": "We need your given name for identification.",
+            "filter": {
+              "type": "string"
+            }
+          },
+          {
+            "path": ["$.credentialSubject.birth_date", "$.vc.credentialSubject.birth_date"],
+            "purpose": "We need your birth date to verify your age.",
+            "filter": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "path": ["$.credentialSubject.driving_privileges", "$.vc.credentialSubject.driving_privileges"],
+            "purpose": "We need to verify your driving privileges.",
+            "filter": {
+              "type": "array"
+            }
+          },
+          {
+            "path": ["$.credentialSubject.document_number", "$.vc.credentialSubject.document_number"],
+            "purpose": "We need your license number for record-keeping.",
+            "filter": {
+              "type": "string"
+            }
+          },
+          {
+            "path": ["$.credentialSubject.expiry_date", "$.vc.credentialSubject.expiry_date"],
+            "purpose": "We need to check if your license is still valid.",
+            "filter": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
