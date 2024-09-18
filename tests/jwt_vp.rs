@@ -6,9 +6,9 @@ use oid4vp::holder::verifiable_presentation_builder::{
     VerifiablePresentationBuilder, VerifiablePresentationBuilderOptions,
 };
 use oid4vp::verifier::request_signer::P256Signer;
-use ssi_claims::jwt;
-use ssi_dids::DIDKey;
-use ssi_jwk::JWK;
+use ssi::claims::jwt;
+use ssi::dids::DIDKey;
+use ssi::jwk::JWK;
 
 pub async fn create_test_verifiable_presentation() -> Result<String> {
     let verifier = JWK::from_str(include_str!("examples/verifier.jwk"))?;
@@ -26,7 +26,7 @@ pub async fn create_test_verifiable_presentation() -> Result<String> {
     // Create a verifiable presentation using the `examples/vc.jwt` file
     // The signer information is the holder's key, also found in the `examples/subject.jwk` file.
     let verifiable_credential: jwt::VerifiableCredential =
-        ssi_claims::jwt::decode_unverified(include_str!("examples/vc.jwt"))?;
+        ssi::claims::jwt::decode_unverified(include_str!("examples/vc.jwt"))?;
 
     let verifiable_presentation =
         VerifiablePresentationBuilder::from_options(VerifiablePresentationBuilderOptions {

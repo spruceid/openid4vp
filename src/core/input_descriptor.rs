@@ -4,8 +4,8 @@ use crate::utils::NonEmptyVec;
 use anyhow::{bail, Context, Result};
 use jsonschema::{JSONSchema, ValidationError};
 use serde::{Deserialize, Serialize};
-use ssi_claims::jwt::VerifiablePresentation;
-use ssi_dids::ssi_json_ld::syntax::from_value;
+use ssi::claims::jwt::VerifiablePresentation;
+use ssi::dids::ssi_json_ld::syntax::from_value;
 
 /// A GroupId represents a unique identifier for a group of Input Descriptors.
 ///

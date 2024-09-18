@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 use anyhow::{Error, Result};
 use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
 use serde::{Deserialize, Serialize};
-use ssi_jwk::Algorithm;
+use ssi::jwk::Algorithm;
 
 use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
 

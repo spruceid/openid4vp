@@ -106,7 +106,7 @@ pub(crate) async fn verify_request<W: Wallet + ?Sized>(
     jwt: String,
 ) -> Result<AuthorizationRequestObject> {
     let request: AuthorizationRequestObject =
-        ssi_claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+        ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
             .context("unable to decode Authorization Request Object JWT")?
             .try_into()?;
 

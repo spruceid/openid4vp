@@ -21,8 +21,8 @@ use oid4vp::{
     wallet::Wallet,
 };
 use serde_json::json;
-use ssi_dids::{DIDKey, VerificationMethodDIDResolver};
-use ssi_verification_methods::AnyJwkMethod;
+use ssi::dids::{DIDKey, VerificationMethodDIDResolver};
+use ssi::verification_methods::AnyJwkMethod;
 
 pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
     let verifier_did = "did:key:zDnaeaDj3YpPR4JXos2kCCNPS86hdELeN5PZh97KGkoFzUtGn".to_owned();

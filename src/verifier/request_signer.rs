@@ -1,10 +1,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use p256::ecdsa::{signature::Signer, Signature, SigningKey};
-use ssi_claims::jws::{JWSSigner, JWSSignerInfo};
-use ssi_jwk::Algorithm;
+use ssi::claims::jws::{JWSSigner, JWSSignerInfo};
+use ssi::jwk::Algorithm;
 
-use ssi_jwk::JWK;
+use ssi::jwk::JWK;
 
 use std::fmt::Debug;
 
@@ -66,7 +66,7 @@ impl RequestSigner for P256Signer {
 }
 
 impl JWSSigner for P256Signer {
-    async fn fetch_info(&self) -> std::result::Result<JWSSignerInfo, ssi_claims::SignatureError> {
+    async fn fetch_info(&self) -> std::result::Result<JWSSignerInfo, ssi::claims::SignatureError> {
         let algorithm = self.jwk.algorithm.unwrap_or(Algorithm::ES256);
 
         let key_id = self.jwk.key_id.clone();
@@ -77,9 +77,9 @@ impl JWSSigner for P256Signer {
     async fn sign_bytes(
         &self,
         signing_bytes: &[u8],
-    ) -> std::result::Result<Vec<u8>, ssi_claims::SignatureError> {
+    ) -> std::result::Result<Vec<u8>, ssi::claims::SignatureError> {
         self.try_sign(signing_bytes)
             .await
-            .map_err(|e| ssi_claims::SignatureError::Other(format!("Failed to sign bytes: {}", e)))
+            .map_err(|e| ssi::claims::SignatureError::Other(format!("Failed to sign bytes: {}", e)))
     }
 }

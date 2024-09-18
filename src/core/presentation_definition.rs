@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-use ssi_claims::jwt::VerifiablePresentation;
+use ssi::claims::jwt::VerifiablePresentation;
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
