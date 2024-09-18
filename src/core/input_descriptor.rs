@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use super::{credential_format::*, presentation_submission::*};
-use crate::utils::NonEmptyVec;
+use crate::utils::{to_human_readable_string, NonEmptyVec};
 
 use anyhow::{bail, Context, Result};
 use jsonschema::{JSONSchema, ValidationError};
@@ -599,17 +599,13 @@ impl ConstraintsField {
         self.intent_to_retain
     }
 
-    /// Return the humanly-readable requested fields of the constraints field.
+    /// Return the requested field in the format specified in the constraints field,
+    /// without changing its type casing, e.g. camelCase, snake_case, etc.
     ///
-    /// This will convert camelCase to space-separated words with capitalized first letter.
+    /// This will stripe the delimiters from the JSON path and return the last value in the path.
     ///
-    /// For example, if the path is `["dateOfBirth"]`, this will return `["Date of Birth"]`.
-    ///
-    /// This will also stripe the periods from the JSON path and return the last word in the path.
-    ///
-    /// e.g., `["$.verifiableCredential.credentialSubject.dateOfBirth"]` will return `["Date of Birth"]`.
-    /// e.g., `["$.verifiableCredential.credentialSubject.familyName"]` will return `["Family Name"]`.
-    ///
+    /// e.g., `["$.verifiableCredential.credentialSubject.dateOfBirth"]` will return `["dateOfBirth"]`.
+    /// e.g., `["$.verifiableCredential.credentialSubject.familyName"]` will return `["familyName"]`.
     pub fn requested_fields(&self) -> Vec<String> {
         self.path()
             .iter()
@@ -618,47 +614,25 @@ impl ConstraintsField {
             // credential types.
             // NOTE: Include the namespace for uniqueness of the requested field type.
             .filter_map(|path| path.split(&['-', '.', ':', '@'][..]).last())
-            .map(|path| {
-                path.chars()
-                    .fold(String::new(), |mut acc, c| {
-                        // Convert camelCase to space-separated words with capitalized first letter.
-                        if c.is_uppercase() {
-                            acc.push(' ');
-                        }
+            .map(ToOwned::to_owned)
+            .collect()
+    }
 
-                        // Check if the field is snake_case and convert to
-                        // space-separated words with capitalized first letter.
-                        if c == '_' {
-                            acc.push(' ');
-                            return acc;
-                        }
-
-                        acc.push(c);
-                        acc
-                    })
-                    // Split the path based on empty spaces and uppercase the first letter of each word.
-                    .split(' ')
-                    .fold(String::new(), |desc, word| {
-                        let word =
-                            word.chars()
-                                .enumerate()
-                                .fold(String::new(), |mut acc, (i, c)| {
-                                    // Capitalize the first letter of the word.
-                                    if i == 0 {
-                                        if let Some(c) = c.to_uppercase().next() {
-                                            acc.push(c);
-                                            return acc;
-                                        }
-                                    }
-                                    acc.push(c);
-                                    acc
-                                });
-
-                        format!("{desc} {}", word.trim_end())
-                    })
-                    .trim_end()
-                    .to_string()
-            })
+    /// Return the humanly-readable requested fields of the constraints field.
+    ///
+    /// This will convert camelCase to space-separated words with capitalized first letter.
+    ///
+    /// For example, if the path is `["dateOfBirth"]`, this will return `["Date of Birth"]`.
+    ///
+    /// This will stripe the delimiters from the JSON path and return the last value in the path.
+    ///
+    /// e.g., `["$.verifiableCredential.credentialSubject.dateOfBirth"]` will return `["Date of Birth"]`.
+    /// e.g., `["$.verifiableCredential.credentialSubject.familyName"]` will return `["Family Name"]`.
+    ///
+    pub fn requested_fields_human_readable(&self) -> Vec<String> {
+        self.requested_fields()
+            .into_iter()
+            .map(to_human_readable_string)
             .collect()
     }
 

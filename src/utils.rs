@@ -54,3 +54,48 @@ impl<T: Clone> Deref for NonEmptyVec<T> {
         &self.0
     }
 }
+
+/// String utilities for parsing and displaying humanly readable values.
+pub fn to_human_readable_string(value: impl Into<String>) -> String {
+    value
+        .into()
+        .chars()
+        .fold(String::new(), |mut acc, c| {
+            // Convert camelCase to space-separated words with capitalized first letter.
+            if c.is_uppercase() {
+                acc.push(' ');
+            }
+
+            // Check if the field is snake_case and convert to
+            // space-separated words with capitalized first letter.
+            if c == '_' {
+                acc.push(' ');
+                return acc;
+            }
+
+            acc.push(c);
+            acc
+        })
+        // Split the path based on empty spaces and uppercase the first letter of each word.
+        .split(' ')
+        .fold(String::new(), |desc, word| {
+            let word = word
+                .chars()
+                .enumerate()
+                .fold(String::new(), |mut acc, (i, c)| {
+                    // Capitalize the first letter of the word.
+                    if i == 0 {
+                        if let Some(c) = c.to_uppercase().next() {
+                            acc.push(c);
+                            return acc;
+                        }
+                    }
+                    acc.push(c);
+                    acc
+                });
+
+            format!("{desc} {}", word.trim_end())
+        })
+        .trim_end()
+        .to_string()
+}
