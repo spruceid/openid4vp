@@ -4,7 +4,7 @@ use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::{json, Value as Json};
-use ssi_jwk::JWKResolver;
+use ssi::jwk::JWKResolver;
 
 use tracing::debug;
 use x509_cert::{

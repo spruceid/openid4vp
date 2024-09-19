@@ -12,7 +12,7 @@ use anyhow::Result;
 use serde::Deserialize;
 use serde_json::json;
 use serde_json::Value;
-use ssi_claims::jwt::VerifiablePresentation;
+use ssi::claims::jwt::VerifiablePresentation;
 
 #[test]
 fn request_example() {

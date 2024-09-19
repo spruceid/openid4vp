@@ -1,10 +1,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use ssi_claims::jwt::{VerifiableCredential, VerifiablePresentation};
-use ssi_claims::vc::v2::syntax::VERIFIABLE_PRESENTATION_TYPE;
-use ssi_dids::ssi_json_ld::CREDENTIALS_V1_CONTEXT;
-use ssi_dids::{
+use ssi::claims::jwt::{VerifiableCredential, VerifiablePresentation};
+use ssi::claims::vc::v2::syntax::VERIFIABLE_PRESENTATION_TYPE;
+use ssi::dids::ssi_json_ld::CREDENTIALS_V1_CONTEXT;
+use ssi::dids::{
     ssi_json_ld::syntax::{Object, Value},
     DIDURLBuf,
 };

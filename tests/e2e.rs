@@ -12,7 +12,7 @@ use oid4vp::{
     verifier::session::{Outcome, Status},
     wallet::Wallet,
 };
-use ssi_jwk::Algorithm;
+use ssi::jwk::Algorithm;
 
 mod jwt_vc;
 mod jwt_vp;
