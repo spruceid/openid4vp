@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use p256::ecdsa::{signature::Signer, Signature, SigningKey};
-use ssi::claims::jws::{JWSSigner, JWSSignerInfo};
+use ssi::claims::jws::{JwsSigner, JwsSignerInfo};
 use ssi::jwk::Algorithm;
 
 use ssi::jwk::JWK;
@@ -65,13 +65,13 @@ impl RequestSigner for P256Signer {
     }
 }
 
-impl JWSSigner for P256Signer {
-    async fn fetch_info(&self) -> std::result::Result<JWSSignerInfo, ssi::claims::SignatureError> {
+impl JwsSigner for P256Signer {
+    async fn fetch_info(&self) -> std::result::Result<JwsSignerInfo, ssi::claims::SignatureError> {
         let algorithm = self.jwk.algorithm.unwrap_or(Algorithm::ES256);
 
         let key_id = self.jwk.key_id.clone();
 
-        Ok(JWSSignerInfo { algorithm, key_id })
+        Ok(JwsSignerInfo { algorithm, key_id })
     }
 
     async fn sign_bytes(
