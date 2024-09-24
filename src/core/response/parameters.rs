@@ -75,20 +75,12 @@ impl TryFrom<Json> for VpToken {
     }
 }
 
-impl TryFrom<VpToken> for Json {
-    type Error = Error;
-
-    fn try_from(value: VpToken) -> Result<Self, Self::Error> {
+impl From<VpToken> for Json {
+    fn from(value: VpToken) -> Self {
         match value {
-            VpToken::Single(s) => Ok(serde_json::Value::String(BASE64_URL_SAFE_NO_PAD.encode(s))),
-            VpToken::SingleAsMap(map) => Ok(serde_json::Value::Object(map)),
-            VpToken::Many(tokens) => {
-                let mut arr: Vec<Json> = Vec::new();
-                for token in tokens {
-                    arr.push(token.try_into()?);
-                }
-                Ok(arr.into())
-            }
+            VpToken::Single(s) => serde_json::Value::String(BASE64_URL_SAFE_NO_PAD.encode(s)),
+            VpToken::SingleAsMap(map) => serde_json::Value::Object(map),
+            VpToken::Many(tokens) => Self::Array(tokens.into_iter().map(Self::from).collect()),
         }
     }
 }
