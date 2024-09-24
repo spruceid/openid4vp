@@ -65,11 +65,10 @@ impl TryFrom<Json> for VpToken {
             // NOTE: When the Json is an object, it must be a map.
             Json::Object(map) => Ok(Self::SingleAsMap(map)),
             Json::Array(arr) => {
-                let mut tokens = Vec::new();
-                for value in arr {
-                    tokens.push(Self::try_from(value)?);
-                }
-                Ok(Self::Many(tokens))
+                arr.into_iter()
+                    .map(Self::try_from)
+                    .collect::<Result<Vec<Self>, Self::Error>>()
+                    .map(Self::Many)
             }
             _ => Err(Error::msg("Invalid vp_token")),
         }
