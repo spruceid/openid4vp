@@ -5,7 +5,10 @@ use crate::core::presentation_submission::PresentationSubmission as Presentation
 use anyhow::Error;
 use base64::prelude::*;
 use serde_json::{Map, Value as Json};
-use ssi::prelude::AnyJsonPresentation;
+use ssi::{
+    claims::vc::{self, syntax::NonEmptyObject},
+    prelude::AnyJsonPresentation,
+};
 
 #[derive(Debug, Clone)]
 pub struct IdToken(pub String);
@@ -85,11 +88,35 @@ impl From<VpToken> for Json {
     }
 }
 
-impl TryFrom<AnyJsonPresentation> for VpToken {
+impl TryFrom<AnyJsonPresentation<vc::v1::syntax::JsonCredential<NonEmptyObject>>> for VpToken {
     type Error = Error;
 
-    fn try_from(vp: AnyJsonPresentation) -> Result<Self, Self::Error> {
-        Ok(VpToken::Single(serde_json::to_vec(&vp)?))
+    fn try_from(
+        vp: AnyJsonPresentation<vc::v1::syntax::JsonCredential<NonEmptyObject>>,
+    ) -> Result<Self, Self::Error> {
+        let map = serde_json::to_value(&vp)?
+            .as_object()
+            .ok_or_else(|| Error::msg("Invalid VP"))?
+            .to_owned()
+            .into();
+
+        Ok(VpToken::SingleAsMap(map))
+    }
+}
+
+impl TryFrom<AnyJsonPresentation<vc::v2::syntax::JsonCredential<NonEmptyObject>>> for VpToken {
+    type Error = Error;
+
+    fn try_from(
+        vp: AnyJsonPresentation<vc::v2::syntax::JsonCredential<NonEmptyObject>>,
+    ) -> Result<Self, Self::Error> {
+        let map = serde_json::to_value(&vp)?
+            .as_object()
+            .ok_or_else(|| Error::msg("Invalid VP"))?
+            .to_owned()
+            .into();
+
+        Ok(VpToken::SingleAsMap(map))
     }
 }
 
