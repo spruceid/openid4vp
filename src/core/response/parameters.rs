@@ -5,10 +5,7 @@ use crate::core::presentation_submission::PresentationSubmission as Presentation
 use anyhow::Error;
 use base64::prelude::*;
 use serde_json::{Map, Value as Json};
-use ssi::{
-    claims::vc::{self, syntax::NonEmptyObject},
-    prelude::AnyJsonPresentation,
-};
+use ssi::{claims::vc, prelude::AnyJsonPresentation};
 
 #[derive(Debug, Clone)]
 pub struct IdToken(pub String);
@@ -49,6 +46,8 @@ impl From<IdToken> for Json {
 pub enum VpToken {
     Single(Vec<u8>),
     SingleAsMap(Map<String, Json>),
+    /// Presentation type will accept a VCDM v1 or v2 Json Presentation.
+    Presentation(AnyJsonPresentation),
     Many(Vec<VpToken>),
 }
 
@@ -67,12 +66,11 @@ impl TryFrom<Json> for VpToken {
             Json::String(s) => Ok(Self::Single(BASE64_URL_SAFE_NO_PAD.decode(s)?)),
             // NOTE: When the Json is an object, it must be a map.
             Json::Object(map) => Ok(Self::SingleAsMap(map)),
-            Json::Array(arr) => {
-                arr.into_iter()
-                    .map(Self::try_from)
-                    .collect::<Result<Vec<Self>, Self::Error>>()
-                    .map(Self::Many)
-            }
+            Json::Array(arr) => arr
+                .into_iter()
+                .map(Self::try_from)
+                .collect::<Result<Vec<Self>, Self::Error>>()
+                .map(Self::Many),
             _ => Err(Error::msg("Invalid vp_token")),
         }
     }
@@ -83,40 +81,35 @@ impl From<VpToken> for Json {
         match value {
             VpToken::Single(s) => serde_json::Value::String(BASE64_URL_SAFE_NO_PAD.encode(s)),
             VpToken::SingleAsMap(map) => serde_json::Value::Object(map),
+            // NOTE: Safe to unwrap because the conversion from `AnyJsonPresentation` to `serde_json::Value`
+            // is infallible.
+            VpToken::Presentation(presentation) => serde_json::to_value(presentation).unwrap(),
             VpToken::Many(tokens) => Self::Array(tokens.into_iter().map(Self::from).collect()),
         }
     }
 }
 
-impl TryFrom<AnyJsonPresentation<vc::v1::syntax::JsonCredential<NonEmptyObject>>> for VpToken {
+impl TryFrom<vc::v1::syntax::JsonPresentation> for VpToken {
     type Error = Error;
 
-    fn try_from(
-        vp: AnyJsonPresentation<vc::v1::syntax::JsonCredential<NonEmptyObject>>,
-    ) -> Result<Self, Self::Error> {
-        let map = serde_json::to_value(&vp)?
-            .as_object()
-            .ok_or_else(|| Error::msg("Invalid VP"))?
-            .to_owned()
-            .into();
-
-        Ok(VpToken::SingleAsMap(map))
+    fn try_from(vp: vc::v1::syntax::JsonPresentation) -> Result<Self, Self::Error> {
+        Ok(VpToken::Presentation(AnyJsonPresentation::V1(vp)))
     }
 }
 
-impl TryFrom<AnyJsonPresentation<vc::v2::syntax::JsonCredential<NonEmptyObject>>> for VpToken {
+impl TryFrom<vc::v2::syntax::JsonPresentation> for VpToken {
     type Error = Error;
 
-    fn try_from(
-        vp: AnyJsonPresentation<vc::v2::syntax::JsonCredential<NonEmptyObject>>,
-    ) -> Result<Self, Self::Error> {
-        let map = serde_json::to_value(&vp)?
-            .as_object()
-            .ok_or_else(|| Error::msg("Invalid VP"))?
-            .to_owned()
-            .into();
+    fn try_from(vp: vc::v2::syntax::JsonPresentation) -> Result<Self, Self::Error> {
+        Ok(VpToken::Presentation(AnyJsonPresentation::V2(vp)))
+    }
+}
 
-        Ok(VpToken::SingleAsMap(map))
+impl TryFrom<AnyJsonPresentation> for VpToken {
+    type Error = Error;
+
+    fn try_from(vp: AnyJsonPresentation) -> Result<Self, Self::Error> {
+        Ok(VpToken::Presentation(vp))
     }
 }
 
