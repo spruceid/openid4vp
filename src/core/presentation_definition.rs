@@ -263,6 +263,47 @@ impl PresentationDefinition {
 
         Ok(())
     }
+
+    /// Validate a JSON-encoded credential against the presentation definition.
+    ///
+    /// NOTE: this method accepts a generic serde_json::Value argument and checks whether
+    /// the JSON value conforms to the presentation definition's input descriptor constraint
+    /// fields.
+    ///
+    /// If the credential satisifies the presentation definition, this method will return true.
+    pub fn check_credential_validation(&self, credential: &serde_json::Value) -> bool {
+        let mut selector = jsonpath_lib::selector(credential);
+
+        self.input_descriptors()
+            .iter()
+            .flat_map(|descriptor| descriptor.constraints().fields())
+            // skip optional fields
+            .filter(|field| field.is_required())
+            .all(|field| {
+                match field.validator() {
+                    Some(validator) => {
+                        let is_valid = field
+                            .path()
+                            .iter()
+                            // NOTE: Errors are ignored to allow other paths to
+                            // be checked. Interested in whether there is at least
+                            // one valid path.
+                            //
+                            // An empty iterator will return false on an any() call.
+                            .filter_map(|path| selector(path).ok())
+                            .flatten()
+                            // NOTE: This is currently assuming that if any of the paths are a match
+                            // to the credential, then the validation is, at least partially, successful,
+                            // and the credential may satisfy the presentation definition.
+                            .any(|value| validator.validate(value).is_ok());
+
+                        is_valid
+                    }
+                    // Allow for fields without validators to pass through.
+                    _ => true,
+                }
+            })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
