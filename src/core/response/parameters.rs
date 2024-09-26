@@ -2,7 +2,7 @@ pub use crate::core::authorization_request::parameters::State;
 use crate::core::object::TypedParameter;
 use crate::core::presentation_submission::PresentationSubmission as PresentationSubmissionParsed;
 
-use anyhow::Error;
+use anyhow::{bail, Error};
 use base64::prelude::*;
 use serde_json::{Map, Value as Json};
 use ssi::{claims::vc, prelude::AnyJsonPresentation};
@@ -46,8 +46,6 @@ impl From<IdToken> for Json {
 pub enum VpToken {
     Single(Vec<u8>),
     SingleAsMap(Map<String, Json>),
-    /// Presentation type will accept a VCDM v1 or v2 Json Presentation.
-    Presentation(AnyJsonPresentation),
     Many(Vec<VpToken>),
 }
 
@@ -81,11 +79,15 @@ impl From<VpToken> for Json {
         match value {
             VpToken::Single(s) => serde_json::Value::String(BASE64_URL_SAFE_NO_PAD.encode(s)),
             VpToken::SingleAsMap(map) => serde_json::Value::Object(map),
-            // NOTE: Safe to unwrap because the conversion from `AnyJsonPresentation` to `serde_json::Value`
-            // is infallible.
-            VpToken::Presentation(presentation) => serde_json::to_value(presentation).unwrap(),
             VpToken::Many(tokens) => Self::Array(tokens.into_iter().map(Self::from).collect()),
         }
+    }
+}
+
+fn extract_object(json: Json) -> Result<Map<String, Json>, Error> {
+    match json {
+        Json::Object(m) => Ok(m),
+        _ => bail!("expected JSON object"),
     }
 }
 
@@ -93,7 +95,9 @@ impl TryFrom<vc::v1::syntax::JsonPresentation> for VpToken {
     type Error = Error;
 
     fn try_from(vp: vc::v1::syntax::JsonPresentation) -> Result<Self, Self::Error> {
-        Ok(VpToken::Presentation(AnyJsonPresentation::V1(vp)))
+        Ok(VpToken::SingleAsMap(extract_object(serde_json::to_value(
+            vp,
+        )?)?))
     }
 }
 
@@ -101,7 +105,9 @@ impl TryFrom<vc::v2::syntax::JsonPresentation> for VpToken {
     type Error = Error;
 
     fn try_from(vp: vc::v2::syntax::JsonPresentation) -> Result<Self, Self::Error> {
-        Ok(VpToken::Presentation(AnyJsonPresentation::V2(vp)))
+        Ok(VpToken::SingleAsMap(extract_object(serde_json::to_value(
+            vp,
+        )?)?))
     }
 }
 
@@ -109,7 +115,9 @@ impl TryFrom<AnyJsonPresentation> for VpToken {
     type Error = Error;
 
     fn try_from(vp: AnyJsonPresentation) -> Result<Self, Self::Error> {
-        Ok(VpToken::Presentation(vp))
+        Ok(VpToken::SingleAsMap(extract_object(serde_json::to_value(
+            vp,
+        )?)?))
     }
 }
 
