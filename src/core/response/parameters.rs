@@ -46,8 +46,6 @@ impl From<IdToken> for Json {
 pub enum VpToken {
     Single(Vec<u8>),
     SingleAsMap(Map<String, Json>),
-    /// Presentation type will accept a VCDM v1 or v2 Json Presentation.
-    Presentation(AnyJsonPresentation),
     Many(Vec<VpToken>),
 }
 
@@ -81,9 +79,6 @@ impl From<VpToken> for Json {
         match value {
             VpToken::Single(s) => serde_json::Value::String(BASE64_URL_SAFE_NO_PAD.encode(s)),
             VpToken::SingleAsMap(map) => serde_json::Value::Object(map),
-            // NOTE: Safe to unwrap because the conversion from `AnyJsonPresentation` to `serde_json::Value`
-            // is infallible.
-            VpToken::Presentation(presentation) => serde_json::to_value(presentation).unwrap(),
             VpToken::Many(tokens) => Self::Array(tokens.into_iter().map(Self::from).collect()),
         }
     }
