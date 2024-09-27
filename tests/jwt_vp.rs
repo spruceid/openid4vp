@@ -17,8 +17,6 @@ pub async fn create_test_verifiable_presentation() -> Result<AnyJsonPresentation
 
     let holder_did = DIDKey::generate_url(signer.jwk())?;
 
-    println!("holder_did: {:?}", holder_did);
-
     // Create a verifiable presentation using the `examples/vc.jwt` file
     // The signer information is the holder's key, also found in the `examples/subject.jwk` file.
     let verifiable_credential: VerifiableCredential =

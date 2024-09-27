@@ -70,8 +70,6 @@ async fn w3c_vc_did_client_direct_post() {
         .await
         .unwrap();
 
-    println!("Request: {:?}", request);
-
     let request = wallet.validate_request(request).await.unwrap();
 
     let parsed_presentation_definition = request
@@ -147,8 +145,6 @@ async fn w3c_vc_did_client_direct_post() {
     assert_eq!(None, redirect);
 
     let status = verifier.poll_status(id).await.unwrap();
-
-    println!("Status: {:?}", status);
 
     assert!(matches!(status, Status::Complete(Outcome::Success { .. })))
 }
