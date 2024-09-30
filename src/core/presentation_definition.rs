@@ -63,8 +63,9 @@ impl PresentationDefinition {
     }
 
     /// Add a new input descriptor to the presentation definition.
-    pub fn add_input_descriptors(mut self, input_descriptor: InputDescriptor) -> Self {
+    pub fn add_input_descriptor(mut self, input_descriptor: InputDescriptor) -> Self {
         self.input_descriptors.push(input_descriptor);
+
         self
     }
 
@@ -186,6 +187,25 @@ impl PresentationDefinition {
     /// Return the format of the presentation definition.
     pub fn format(&self) -> &ClaimFormatMap {
         &self.format
+    }
+
+    /// Check whether a format exists for the presentation definition or
+    /// any of the input descriptors.
+    pub fn contains_format(&self, format: impl Into<ClaimFormatDesignation>) -> bool {
+        let format = format.into();
+
+        // Check input descriptors.
+        for descriptor in self.input_descriptors().iter() {
+            if descriptor.format().contains_key(&format) {
+                // return early if the format is included in an
+                // input descriptor.
+                return true;
+            }
+        }
+
+        // Lastly, check the presentation definition itself for the
+        // format.
+        self.format().contains_key(&format)
     }
 
     /// Return the human-readable string representation of the fields requested
