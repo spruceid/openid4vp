@@ -16,6 +16,10 @@ anyhow = "1.0.75"
 async-trait = "0.1.73"
 base64 = "0.21.4"
 http = "1.1.0"
+# NOTE: ssi rexports syntax_json, but does not use the `serde_json` feature for serialization/deserialization.
+# This is currently used in the jwt_vp test to go from a `VeriableCredential` to an `AnyJsonCredential` type.
+# There may be a better way to handle this that doesn't require the `json-syntax` crate directly.
+json-syntax = { version = "0.12.5", features = ["serde_json"] }
 jsonpath_lib = "0.3.0"
 jsonschema = "0.18.0"
 oid4vp-frontend = { version = "0.1.0", path = "oid4vp-frontend" }
@@ -34,7 +38,7 @@ x509-cert = "0.2.4"
 [dev-dependencies]
 serde_path_to_error = "0.1.8"
 tokio = { version = "1.32.0", features = ["macros"] }
-did-method-key = "0.2"
+did-method-key = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { version = "1.2", features = ["v4", "serde", "js"] }

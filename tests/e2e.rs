@@ -7,7 +7,7 @@ use oid4vp::{
         object::UntypedObject,
         presentation_definition::*,
         presentation_submission::*,
-        response::{parameters::VpToken, AuthorizationResponse, UnencodedAuthorizationResponse},
+        response::{AuthorizationResponse, UnencodedAuthorizationResponse},
     },
     verifier::session::{Outcome, Status},
     wallet::Wallet,
@@ -70,8 +70,6 @@ async fn w3c_vc_did_client_direct_post() {
         .await
         .unwrap();
 
-    println!("Request: {:?}", request);
-
     let request = wallet.validate_request(request).await.unwrap();
 
     let parsed_presentation_definition = request
@@ -129,14 +127,13 @@ async fn w3c_vc_did_client_direct_post() {
         descriptor_map,
     );
 
+    let vp = create_test_verifiable_presentation()
+        .await
+        .expect("failed to create verifiable presentation");
+
     let response = AuthorizationResponse::Unencoded(UnencodedAuthorizationResponse(
         Default::default(),
-        VpToken(
-            create_test_verifiable_presentation()
-                .await
-                .expect("failed to create verifiable presentation")
-                .to_string(),
-        ),
+        vp.try_into().expect("failed to convert vp to vp token"),
         presentation_submission.try_into().unwrap(),
     ));
 
@@ -148,8 +145,6 @@ async fn w3c_vc_did_client_direct_post() {
     assert_eq!(None, redirect);
 
     let status = verifier.poll_status(id).await.unwrap();
-
-    println!("Status: {:?}", status);
 
     assert!(matches!(status, Status::Complete(Outcome::Success { .. })))
 }
