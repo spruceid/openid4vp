@@ -223,6 +223,18 @@ impl PresentationDefinition {
             .collect()
     }
 
+    /// Returns the requested fields of a given JSON-encoded credential
+    /// that match the constraint fields of the input descriptors of the
+    /// presentation definition.
+    pub fn requested_fields_cred(&self, credential: &serde_json::Value) -> Vec<RequestedField> {
+        let mut selector = jsonpath_lib::selector(credential);
+
+        self.input_descriptors
+            .iter()
+            .flat_map(|descriptor| descriptor.requested_fields_cred(&mut selector))
+            .collect()
+    }
+
     /// Return the credential types requested in the presentation definition,
     /// if any.
     pub fn credential_types_hint(&self) -> Vec<CredentialType> {

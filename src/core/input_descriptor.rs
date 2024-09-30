@@ -5,10 +5,12 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
+use jsonpath_lib::JsonPathError;
 use jsonschema::{JSONSchema, ValidationError};
 use serde::{Deserialize, Serialize};
 use ssi::claims::jwt::VerifiablePresentation;
 use ssi::dids::ssi_json_ld::syntax::from_value;
+use uuid::Uuid;
 
 /// A GroupId represents a unique identifier for a group of Input Descriptors.
 ///
@@ -280,6 +282,20 @@ impl InputDescriptor {
             .fields()
             .iter()
             .flat_map(|field| field.requested_fields())
+            .collect()
+    }
+
+    /// Returns the requested fields of a given JSON-encoded credential
+    /// that match the constraint fields of the input descriptors of the
+    /// presentation definition.
+    pub fn requested_fields_cred<'a>(
+        &self,
+        mut selector: impl FnMut(&str) -> Result<Vec<&'a serde_json::Value>, JsonPathError>,
+    ) -> Vec<RequestedField> {
+        self.constraints()
+            .fields()
+            .iter()
+            .map(|field| field.requested_fields_cred(&mut selector))
             .collect()
     }
 
@@ -725,6 +741,59 @@ impl ConstraintsField {
             .collect()
     }
 
+    /// Returns the requested fields given a JSON-encoded credential
+    /// that is compared against the constraint fields of the input
+    /// descriptor.
+    ///
+    /// This method returns constraint fields of the credential itself, as opposed
+    /// to the what is defined in the presentation definition. This ensures the
+    /// holder of the credential may verify what information is shared versus
+    /// requested.
+    pub fn requested_fields_cred<'a>(
+        &self,
+        mut selector: impl FnMut(&str) -> Result<Vec<&'a serde_json::Value>, JsonPathError>,
+    ) -> RequestedField {
+        let raw_values = self
+            .path()
+            .iter()
+            .filter_map(|path| selector(path).ok())
+            .flatten()
+            .map(ToOwned::to_owned)
+            // NOTE: It is likely that only one of the paths will
+            // match the selector. Therefore, we're selecting only
+            // the first match that exists, if any.
+            //
+            // It may also be possible that multiple paths match,
+            // in which case there may be multiple raw fields
+            // that can be requested.
+            //
+            // As a result, it may be more acceptable to use `collect()` instead
+            // of `first()` to return all the possible requested fields.
+            .collect::<Vec<serde_json::Value>>()
+            .pop();
+
+        let purpose = self.purpose().map(ToOwned::to_owned);
+
+        let name = self
+            .name()
+            .map(ToOwned::to_owned)
+            // TODO: Add an "unknown field" if the name is not provided.
+            // Consider skipping or erroring on unknown fields.
+            .unwrap_or_default();
+
+        let required = self.is_required();
+        let retained = self.intent_to_retain();
+
+        RequestedField::new(
+            name,
+            required,
+            retained,
+            purpose,
+            self.id().map(ToOwned::to_owned),
+            raw_values,
+        )
+    }
+
     /// Returns the Credential Type(s) found in the constraints field.
     ///
     /// Note: This is a `hint` in that it is not guaranteed that the credential type
@@ -833,4 +902,67 @@ impl ConstraintsField {
 pub enum ConstraintsLimitDisclosure {
     Required,
     Preferred,
+}
+
+/// The [RequestedField] type is non-normative and is not part of the
+/// core OID4VP specification. However, it is provided as a helper function
+/// for returning requested fields parsed from a given credential that
+/// correspond to the input descriptor constraint fields that are requested.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RequestedField {
+    /// A unique ID for the requested field
+    pub id: Uuid,
+    pub name: String,
+    pub required: bool,
+    pub retained: bool,
+    pub purpose: Option<String>,
+    pub constraint_field_id: Option<String>,
+    // the `raw_field` represents the actual field
+    // being selected by the input descriptor JSON path
+    // selector.
+    pub raw_fields: Option<serde_json::Value>,
+}
+
+impl RequestedField {
+    /// Construct a new requested field given the required parameters. This method is exposed as
+    /// public, however, it is likely that the `from_definition` method will be used to construct
+    /// requested fields from a presentation definition.
+    ///
+    /// See [RequestedField::from_definition] to return a vector of requested fields
+    /// according to a presentation definition.
+    pub fn new(
+        name: String,
+        required: bool,
+        retained: bool,
+        purpose: Option<String>,
+        constraint_field_id: Option<String>,
+        raw_fields: Option<serde_json::Value>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            required,
+            retained,
+            purpose,
+            constraint_field_id,
+            raw_fields,
+        }
+    }
+
+    /// Return the unique ID for the request field.
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+
+    /// Return the constraint field id this requested field belongs to,
+    /// if it exists.
+    pub fn constraint_field_id(&self) -> Option<String> {
+        self.constraint_field_id.clone()
+    }
+
+    /// Return the raw values of the credential matching the
+    /// constraint fields filter.
+    pub fn raw_fields(&self) -> Option<&serde_json::Value> {
+        self.raw_fields.as_ref()
+    }
 }
