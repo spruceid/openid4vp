@@ -9,6 +9,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use ssi::claims::jwt::VerifiablePresentation;
 
+/// A non-normative mappings of credential type(s) to requested fields.
+///
+/// This is used for parsing human-readable requested fields and their associated credential types,
+/// if any are provided.
+///
+/// This type is not part of the OID4VP specification, but is provided as a part of helper method for presenting
+/// information about the presentation definition to the holder.
+pub type CredentialTypesRequestedMap = HashMap<String, CredentialTypesRequestedFields>;
+
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
 /// > Presentation Definitions are objects that articulate what proofs a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires.
@@ -190,14 +199,30 @@ impl PresentationDefinition {
     pub fn requested_fields(&self) -> Vec<String> {
         self.input_descriptors
             .iter()
-            .flat_map(|input_descriptor| {
-                input_descriptor
-                    .constraints()
-                    .fields()
-                    .iter()
-                    .map(|constraint| constraint.requested_fields())
+            .flat_map(|descriptor| descriptor.requested_fields())
+            .collect()
+    }
+
+    /// Return the credential types requested in the presentation definition,
+    /// if any.
+    pub fn credential_types_hint(&self) -> Vec<CredentialType> {
+        self.input_descriptors
+            .iter()
+            .flat_map(|descriptor| descriptor.credential_types_hint())
+            .collect()
+    }
+
+    /// Returns a map of the input descriptor ID to the credential type(s)
+    /// and their requested fields.
+    pub fn requested_credential_types_map(&self) -> CredentialTypesRequestedMap {
+        self.input_descriptors
+            .iter()
+            .map(|descriptor| {
+                (
+                    descriptor.id().to_string(),
+                    descriptor.requested_fields_with_credential_types(),
+                )
             })
-            .flatten()
             .collect()
     }
 
@@ -370,4 +395,112 @@ pub struct SubmissionRequirementPick {
     pub count: Option<usize>,
     pub min: Option<usize>,
     pub max: Option<usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use anyhow::Result;
+
+    #[test]
+    fn test_input_descriptor_credential_type() -> Result<()> {
+        let definition: PresentationDefinition = serde_json::from_str(include_str!(
+            "../../tests/presentation-definition/iso.org.18013.5.1.mdl.json"
+        ))?;
+
+        let credentials = definition.credential_types_hint();
+
+        assert_eq!(
+            credentials.first(),
+            Some(&"iso.org.18013.5.1.mDL".to_string())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_input_descriptor_multi_credential_types_pattern() -> Result<()> {
+        let definition: PresentationDefinition = serde_json::from_str(include_str!(
+            "../../tests/presentation-definition/multi-credential-pattern.json"
+        ))?;
+
+        let credentials = definition.credential_types_hint();
+
+        assert!(credentials.contains(&"PassportCredential".into()));
+        assert!(credentials.contains(&"DriversLicenseCredential".into()));
+        assert!(credentials.contains(&"NationalIDCredential".into()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_input_descriptor_multi_credential_types_array() -> Result<()> {
+        let definition: PresentationDefinition = serde_json::from_str(include_str!(
+            "../../tests/presentation-definition/multi-credential-array.json"
+        ))?;
+
+        let credentials = definition.credential_types_hint();
+
+        assert!(credentials.contains(&"IdentityCredential".into()));
+        assert!(credentials.contains(&"EducationalCredential".into()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_input_descriptor_multi_input_credential_types_enum() -> Result<()> {
+        let definition: PresentationDefinition = serde_json::from_str(include_str!(
+            "../../tests/presentation-definition/multi-input-credential-enum.json"
+        ))?;
+
+        let input_descriptor_id_1 = "identity_credential";
+        let input_descriptor_id_2 = "educational_credential";
+        let input_descriptor_id_3 = "professional_credential";
+
+        let requested_credentials = definition.requested_credential_types_map();
+
+        assert_eq!(requested_credentials.len(), 3);
+
+        let request_1 = requested_credentials
+            .get(input_descriptor_id_1)
+            .expect("failed to find input descriptor id");
+
+        assert!(request_1
+            .credential_type_hint()
+            .contains(&"PassportCredential".into()));
+        assert!(request_1
+            .credential_type_hint()
+            .contains(&"DriversLicenseCredential".into()));
+        assert!(request_1
+            .credential_type_hint()
+            .contains(&"NationalIDCredential".into()));
+
+        let request_2 = requested_credentials
+            .get(input_descriptor_id_2)
+            .expect("failed to find input descriptor id");
+
+        assert!(request_2
+            .credential_type_hint()
+            .contains(&"BachelorDegreeCredential".into()));
+        assert!(request_2
+            .credential_type_hint()
+            .contains(&"MasterDegreeCredential".into()));
+        assert!(request_2
+            .credential_type_hint()
+            .contains(&"DoctoralDegreeCredential".into()));
+
+        let request_3 = requested_credentials
+            .get(input_descriptor_id_3)
+            .expect("failed to find input descriptor id");
+
+        assert!(request_3
+            .credential_type_hint()
+            .contains(&"ProfessionalLicenseCredential".into()));
+        assert!(request_3
+            .credential_type_hint()
+            .contains(&"CertificationCredential".into()));
+
+        Ok(())
+    }
 }

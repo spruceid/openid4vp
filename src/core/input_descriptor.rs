@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::{credential_format::*, presentation_submission::*};
 use crate::utils::NonEmptyVec;
 
@@ -135,6 +137,23 @@ impl InputDescriptor {
         self
     }
 
+    /// Return the format of the input descriptor.
+    ///
+    /// The Input Descriptor Object MAY contain a format property. If present,
+    /// its value MUST be an object with one or more properties matching the registered
+    /// Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
+    ///
+    /// This format property is identical in value signature to the top-level format object,
+    /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
+    pub fn format(&self) -> &ClaimFormatMap {
+        &self.format
+    }
+
+    /// Return the format designations of the input descriptor as a hash set.
+    pub fn format_designations(&self) -> HashSet<&ClaimFormatDesignation> {
+        self.format.keys().collect()
+    }
+
     /// Set the group of the constraints field.
     pub fn set_group(mut self, group: Vec<GroupId>) -> Self {
         self.group = group;
@@ -254,16 +273,70 @@ impl InputDescriptor {
         Ok(())
     }
 
-    /// Return the format of the input descriptor.
+    /// Return the humanly readable requested fields of the input descriptor.
+    pub fn requested_fields(&self) -> Vec<String> {
+        self.constraints()
+            .fields()
+            .iter()
+            .flat_map(|field| field.requested_fields())
+            .collect()
+    }
+
+    /// Return the credential types of the input descriptor, if any.
+    pub fn credential_types_hint(&self) -> Vec<CredentialType> {
+        self.constraints()
+            .fields()
+            .iter()
+            .flat_map(|field| field.credential_types_hint())
+            .collect()
+    }
+
+    /// Return the requested fields and the associated credential type(s) of the input descriptor.
+    pub fn requested_fields_with_credential_types(&self) -> CredentialTypesRequestedFields {
+        CredentialTypesRequestedFields {
+            input_descriptor_id: self.id.clone(),
+            credential_type_hint: self.credential_types_hint(),
+            requested_fields: self.requested_fields(),
+        }
+    }
+}
+
+/// A parsed object containing the credential type(s) and their
+/// respective requested fields, parsed from the input descriptor contraints fields.
+///
+/// NOTE: This object is not part of the OID4VP specification, but is used to simplify the
+/// extraction of the requested fields and credential types from the input descriptor.
+///
+/// If the credential types hint is non-empty, then the holder MUST select from the list of
+/// credentials that satisfies the requested fields. Otherwise, if the list is empty, the holder
+/// may choose to select any credential that satisfies the requested fields.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CredentialTypesRequestedFields {
+    input_descriptor_id: String,
+    credential_type_hint: Vec<CredentialType>,
+    requested_fields: Vec<String>,
+}
+
+impl CredentialTypesRequestedFields {
+    /// Return the input descriptor ID.
+    pub fn input_descriptor_id(&self) -> &str {
+        &self.input_descriptor_id
+    }
+
+    /// Return the credential type hint(s).
     ///
-    /// The Input Descriptor Object MAY contain a format property. If present,
-    /// its value MUST be an object with one or more properties matching the registered
-    /// Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
+    /// NOTE: If credential types hint is non-empty, then the holder MUST
+    /// select from the list of credentials that satisfies the requested fields.
     ///
-    /// This format property is identical in value signature to the top-level format object,
-    /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn format(&self) -> &ClaimFormatMap {
-        &self.format
+    /// Otherwise, if the list is empty, the holder may choose to select any
+    /// credential that satisfies the requested fields.
+    pub fn credential_type_hint(&self) -> &[CredentialType] {
+        &self.credential_type_hint
+    }
+
+    /// Return the requested fields.
+    pub fn requested_fields(&self) -> &[String] {
+        &self.requested_fields
     }
 }
 
@@ -587,6 +660,104 @@ impl ConstraintsField {
                     .to_string()
             })
             .collect()
+    }
+
+    /// Returns the Credential Type(s) found in the constraints field.
+    ///
+    /// Note: This is a `hint` in that it is not guaranteed that the credential type
+    /// can be parsed from the input descriptor.
+    ///
+    /// This will return an empty vector if the credential type cannot be parsed.
+    ///
+    /// Multiple credentials can be returned if the input descriptor contains a pattern
+    /// filter that matches multiple credentials.
+    pub fn credential_types_hint(&self) -> Vec<CredentialType> {
+        // NOTE: There may be other ways to search for a valid the credential type
+        // that meets the input descriptor constraints.
+        //
+        // A more exhaustive search may require parsing each credential to
+        // check if it contains a certain field, e.g. `firstName`, `familyName`, etc.,
+        // and see if it will satisfy the constraints.
+        //
+        // For now, we explicity check the type of the credential if it is present
+        // in the credential `type` field.
+
+        let mut parsed_credentials = Vec::new();
+
+        if self
+            .path
+            .as_ref()
+            .iter()
+            // Check if any of the paths contain a reference to type.
+            // NOTE: It may not be guaranteed or normative that a `type` field to the path
+            // for a verifiable credential is present.
+            .any(|path| path.contains(&"type".to_string()))
+        {
+            // Check the filter field to determine the `const`
+            // value for the credential type, e.g. `iso.org.18013.5.1.mDL`, etc.
+            if let Some(credential) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .get("const")
+                    .and_then(serde_json::Value::as_str)
+                    .map(CredentialType::from)
+            }) {
+                parsed_credentials.push(credential);
+            }
+
+            // The `type` field may be an array with a nested `const` value.
+            if let Some(credential) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .get("contains")
+                    .and_then(|value| value.get("const"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(CredentialType::from)
+            }) {
+                parsed_credentials.push(credential);
+            }
+
+            // The `type` field may be an array with a nested `enum` value.
+            if let Some(credential) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .get("contains")
+                    .and_then(|value| value.get("enum"))
+                    .and_then(serde_json::Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .map(CredentialType::from)
+                            .collect::<Vec<String>>()
+                    })
+            }) {
+                parsed_credentials.extend(credential);
+            }
+
+            // Check a pattern for the filter that may include multiple credentials
+            // that may satisfy the constraints.
+            if let Some(credentials) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .get("pattern")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|pattern| {
+                        // Remove the start (^) and end ($) anchors
+                        let trimmed = pattern.trim_start_matches('^').trim_end_matches('$');
+
+                        // Remove the outer parentheses
+                        let inner = trimmed.trim_start_matches('(').trim_end_matches(')');
+
+                        // Split by the '|' character
+                        inner
+                            .split('|')
+                            .map(|s| s.to_string())
+                            .collect::<Vec<CredentialType>>()
+                    })
+            }) {
+                // Found multiple credentials that may satisfy the constraints.
+                parsed_credentials.extend(credentials);
+            }
+        }
+
+        parsed_credentials
     }
 }
 
