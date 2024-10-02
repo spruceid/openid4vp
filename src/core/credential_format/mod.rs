@@ -77,6 +77,8 @@ pub enum ClaimFormat {
     },
     #[serde(rename = "mso_mdoc")]
     MsoMDoc(serde_json::Value),
+    #[serde(rename = "sd_jwt_vc")]
+    SdJwtVc(serde_json::Value),
     /// Support for non-standard claim formats.
     // NOTE: a `format` property will be included within the serialized
     // type. This will help for identifying the claim format designation type.
@@ -101,6 +103,7 @@ impl ClaimFormat {
             ClaimFormat::AcVc { .. } => ClaimFormatDesignation::AcVc,
             ClaimFormat::AcVp { .. } => ClaimFormatDesignation::AcVp,
             ClaimFormat::MsoMDoc(_) => ClaimFormatDesignation::MsoMDoc,
+            ClaimFormat::SdJwtVc(_) => ClaimFormatDesignation::SdJwtVc,
             ClaimFormat::Other(value) => {
                 // Parse the format from the first key found in the value map.
                 let format = value
@@ -213,6 +216,10 @@ pub enum ClaimFormatDesignation {
     /// the Credential format can be utilized with any type of Credential (or mdoc document types).
     #[serde(rename = "mso_mdoc")]
     MsoMDoc,
+    /// The format is defined by IETF Web Authorization Protocol (https://datatracker.ietf.org/doc/draft-ietf-oauth-selective-disclosure-jwt/)
+    /// which defines a Selective Disclosure for JWTs (SD-JWT)
+    #[serde(rename = "sd_jwt_vc")]
+    SdJwtVc,
     /// Other claim format designations not covered by the above.
     ///
     /// The value of this variant is the name of the claim format designation.
@@ -234,6 +241,7 @@ impl From<&str> for ClaimFormatDesignation {
             "ac_vc" => Self::AcVc,
             "ac_vp" => Self::AcVp,
             "mso_mdoc" => Self::MsoMDoc,
+            "sd_jwt_vc" => Self::SdJwtVc,
             s => Self::Other(s.to_string()),
         }
     }
@@ -253,6 +261,7 @@ impl From<ClaimFormatDesignation> for String {
             ClaimFormatDesignation::LdpVc => "ldp_vc".to_string(),
             ClaimFormatDesignation::LdpVp => "ldp_vp".to_string(),
             ClaimFormatDesignation::MsoMDoc => "mso_mdoc".to_string(),
+            ClaimFormatDesignation::SdJwtVc => "sd_jwt_vc".to_string(),
             ClaimFormatDesignation::Other(s) => s,
         }
     }
@@ -293,9 +302,7 @@ mod tests {
 
         assert!(claim_format_map.contains_key(&ClaimFormatDesignation::JwtVc));
         assert!(claim_format_map.contains_key(&ClaimFormatDesignation::LdpVc));
-        assert!(
-            claim_format_map.contains_key(&ClaimFormatDesignation::Other("sd_jwt_vc".to_string()))
-        );
+        assert!(claim_format_map.contains_key(&ClaimFormatDesignation::SdJwtVc));
         assert!(
             claim_format_map.contains_key(&ClaimFormatDesignation::Other(
                 "com.example.custom_vc".to_string()
