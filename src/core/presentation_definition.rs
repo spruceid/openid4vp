@@ -3,6 +3,7 @@ use super::input_descriptor::*;
 use super::presentation_submission::*;
 
 use std::collections::HashMap;
+use std::sync::RwLock;
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -262,6 +263,50 @@ impl PresentationDefinition {
         }
 
         Ok(())
+    }
+
+    /// Validate a JSON-encoded credential against the presentation definition.
+    ///
+    /// NOTE: this method accepts a generic serde_json::Value argument and checks whether
+    /// the JSON value conforms to the presentation definition's input descriptor constraint
+    /// fields.
+    ///
+    /// If the credential satisifies the presentation definition, this method will return true.
+    pub fn check_credential_validation(&self, credential: &serde_json::Value) -> bool {
+        let selector_lock = RwLock::new(jsonpath_lib::selector(credential));
+
+        self.input_descriptors().iter().any(|descriptor| {
+            descriptor
+                .constraints()
+                .fields()
+                .iter()
+                .filter_map(|field| match field.validator() {
+                    Some(Ok(validator)) => {
+                        let is_valid = field
+                            .path()
+                            .iter()
+                            .filter_map(|path| match selector_lock.try_write() {
+                                Ok(mut selector) => selector(path).ok(),
+                                _ => None,
+                            })
+                            .flatten()
+                            // NOTE: This is currently assuming that if any of the paths are a match
+                            // to the credential, then the validation is, at least partially, successful,
+                            // and the credential may satisfy the presentation definition.
+                            .any(|value| validator.validate(value).is_ok());
+
+                        // NOTE: if the field is not required and is not a match,
+                        // skip and continue checking the other fields.
+                        if !is_valid && field.is_optional() {
+                            return None;
+                        }
+
+                        Some(is_valid)
+                    }
+                    _ => None,
+                })
+                .all(|is_valid| is_valid)
+        })
     }
 }
 
