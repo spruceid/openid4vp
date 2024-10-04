@@ -4,3 +4,4 @@ pub(crate) mod tests;
 mod utils;
 pub mod verifier;
 pub mod wallet;
+pub use jsonpath_lib;
