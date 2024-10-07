@@ -285,6 +285,14 @@ impl PresentationDefinition {
             // skip optional fields
             .filter(|field| field.is_required())
             .map(|field| {
+                // NOTE: using `try_validator` here instead of `validator` to
+                // ensure there is a valid validator for the field, and not
+                // an empty option that has not been checked.
+                //
+                // There could be an optimistic check on validator, to check
+                // if it has indeed been initialized, but this might be better
+                // solved in a subsequent PR where the validation is always
+                // constructed on deserialization or construction.
                 match field.try_validator() {
                     Some(Ok(validator)) => {
                         let is_valid = field
