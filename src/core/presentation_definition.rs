@@ -312,7 +312,7 @@ impl PresentationDefinition {
 
                         Ok(Some(is_valid))
                     }
-                    // Handle the case where the field is not a valid validator.
+                    // Handle the case where the constraint field does contain a valid filter validator.
                     Some(Err(e)) => Err(e),
                     _ => Ok(None),
                 }
