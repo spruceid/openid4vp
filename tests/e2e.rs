@@ -35,10 +35,11 @@ async fn w3c_vc_did_client_direct_post() {
                         .add_path("$.vp.verifiableCredential[0].vc.credentialSubject.id".into())
                         .set_name("Verify Identity Key".into())
                         .set_purpose("Check whether your identity key has been verified.".into())
-                        .set_filter(serde_json::json!({
+                        .set_filter(&serde_json::json!({
                             "type": "string",
                             "pattern": "did:key:.*"
                         }))
+                        .expect("Failed to set filter, invalid validation schema.")
                         .set_predicate(Predicate::Required),
                 )
                 .set_limit_disclosure(ConstraintsLimitDisclosure::Required),

@@ -280,7 +280,7 @@ impl PresentationDefinition {
                 .constraints()
                 .fields()
                 .iter()
-                .filter_map(|field| match field.validator() {
+                .filter_map(|field| match field.try_validator() {
                     Some(Ok(validator)) => {
                         let is_valid = field
                             .path()

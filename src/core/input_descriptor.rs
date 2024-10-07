@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use super::{credential_format::*, presentation_submission::*};
 use crate::utils::NonEmptyVec;
@@ -216,7 +217,7 @@ impl InputDescriptor {
 
             let mut map_selector = jsonpath_lib::selector(root_element);
 
-            let validator = constraint_field.validator();
+            let validator = constraint_field.try_validator();
 
             let mut found_elements = false;
 
@@ -403,7 +404,7 @@ impl Constraints {
 /// must satisfy to fulfill an Input Descriptor.
 ///
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ConstraintsField {
     path: NonEmptyVec<JsonPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -416,11 +417,34 @@ pub struct ConstraintsField {
     predicate: Option<Predicate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     filter: Option<serde_json::Value>,
+    // NOTE: Skip the JSON schema from serialization,
+    // and use the filter value for constructing the schema.
+    // NOTE: This will mean the validation will be None on
+    // deserialization, and will need to be set manually.
+    #[serde(skip)]
+    // NOTE: Wrapping JSONSchema in an Arc for cloning.
+    validator: Option<Arc<JSONSchema>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     optional: Option<bool>,
     #[serde(default)]
     intent_to_retain: bool,
 }
+
+// NOTE: implementing PartialEq directly due to JSONSchema not implementing PartialEq.
+impl PartialEq for ConstraintsField {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+            && self.id == other.id
+            && self.purpose == other.purpose
+            && self.name == other.name
+            && self.predicate == other.predicate
+            && self.filter == other.filter
+            && self.optional == other.optional
+            && self.intent_to_retain == other.intent_to_retain
+    }
+}
+
+impl Eq for ConstraintsField {}
 
 pub type ConstraintsFields = Vec<ConstraintsField>;
 
@@ -432,6 +456,7 @@ impl From<NonEmptyVec<JsonPath>> for ConstraintsField {
             purpose: None,
             name: None,
             filter: None,
+            validator: None,
             predicate: None,
             optional: None,
             intent_to_retain: false,
@@ -516,9 +541,12 @@ impl ConstraintsField {
     ///
     /// If present its value MUST be a JSON Schema descriptor used to filter against
     /// the values returned from evaluation of the JSONPath string expressions in the path array.
-    pub fn set_filter(mut self, filter: serde_json::Value) -> Self {
-        self.filter = Some(filter);
-        self
+    pub fn set_filter(mut self, filter: &serde_json::Value) -> Result<Self, ValidationError> {
+        JSONSchema::compile(filter).map(|validator| {
+            self.validator = Some(Arc::new(validator));
+            self.filter = Some(filter.clone());
+            self
+        })
     }
 
     /// Set the predicate of the constraints field.
@@ -557,7 +585,19 @@ impl ConstraintsField {
     /// # Errors
     ///
     /// If the filter is invalid, this will return an error.
-    pub fn validator(&self) -> Option<Result<JSONSchema, ValidationError>> {
+    pub fn validator(&self) -> Option<Arc<JSONSchema>> {
+        self.validator.clone()
+    }
+
+    /// Return a JSON schema validator using the internal filter.
+    ///
+    /// If no filter is provided on the constraint field, this
+    /// will return None.
+    ///
+    /// # Errors
+    ///
+    /// If the filter is invalid, this will return an error.
+    pub fn try_validator(&self) -> Option<Result<JSONSchema, ValidationError>> {
         self.filter.as_ref().map(JSONSchema::compile)
     }
 
