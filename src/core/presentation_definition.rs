@@ -299,7 +299,8 @@ impl PresentationDefinition {
 
                         is_valid
                     }
-                    _ => false,
+                    // Allow for fields without validators to pass through.
+                    _ => true,
                 }
             })
     }
