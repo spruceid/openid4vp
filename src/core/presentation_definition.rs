@@ -5,7 +5,6 @@ use super::presentation_submission::*;
 use std::collections::HashMap;
 
 use anyhow::{bail, Result};
-use jsonschema::ValidationError;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use ssi::claims::jwt::VerifiablePresentation;
@@ -272,29 +271,17 @@ impl PresentationDefinition {
     /// fields.
     ///
     /// If the credential satisifies the presentation definition, this method will return true.
-    pub fn check_credential_validation(
-        &self,
-        credential: &serde_json::Value,
-    ) -> Result<bool, ValidationError> {
+    pub fn check_credential_validation(&self, credential: &serde_json::Value) -> bool {
         let mut selector = jsonpath_lib::selector(credential);
 
-        let validation = self
-            .input_descriptors()
+        self.input_descriptors()
             .iter()
             .flat_map(|descriptor| descriptor.constraints().fields())
             // skip optional fields
             .filter(|field| field.is_required())
-            .map(|field| {
-                // NOTE: using `try_validator` here instead of `validator` to
-                // ensure there is a valid validator for the field, and not
-                // an empty option that has not been checked.
-                //
-                // There could be an optimistic check on validator, to check
-                // if it has indeed been initialized, but this might be better
-                // solved in a subsequent PR where the validation is always
-                // constructed on deserialization or construction.
-                match field.try_validator() {
-                    Some(Ok(validator)) => {
+            .all(|field| {
+                match field.validator() {
+                    Some(validator) => {
                         let is_valid = field
                             .path()
                             .iter()
@@ -310,19 +297,11 @@ impl PresentationDefinition {
                             // and the credential may satisfy the presentation definition.
                             .any(|value| validator.validate(value).is_ok());
 
-                        Ok(Some(is_valid))
+                        is_valid
                     }
-                    // Handle the case where the constraint field does contain a valid filter validator.
-                    Some(Err(e)) => Err(e),
-                    _ => Ok(None),
+                    _ => false,
                 }
             })
-            .collect::<Result<Vec<Option<bool>>, ValidationError>>()?
-            .iter()
-            .flatten()
-            .all(|is_valid| *is_valid);
-
-        Ok(validation)
     }
 }
 

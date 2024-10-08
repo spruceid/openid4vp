@@ -217,7 +217,7 @@ impl InputDescriptor {
 
             let mut map_selector = jsonpath_lib::selector(root_element);
 
-            let validator = constraint_field.try_validator();
+            let validator = constraint_field.validator();
 
             let mut found_elements = false;
 
@@ -236,7 +236,7 @@ impl InputDescriptor {
                 found_elements = true;
 
                 // If a filter is available with a valid schema, handle the field validation.
-                if let Some(Ok(schema_validator)) = validator.as_ref() {
+                if let Some(schema_validator) = validator.as_ref() {
                     let validated_fields = field_elements.iter().find(|element| {
                         match schema_validator.validate(element) {
                             Err(errors) => {
@@ -399,12 +399,81 @@ impl Constraints {
     }
 }
 
+/// This type is non-normative and used to simplify the construction
+/// of constraint field validators at deserialization and construction,
+/// thereby reducing runtime error checking requirements.
+///
+/// Only the inner raw JSON value is serialized and deserialized.
+#[derive(Debug, Clone)]
+pub struct ConstraintsFieldValidator {
+    raw: serde_json::Value,
+    compiled: Arc<JSONSchema>,
+}
+
+impl ConstraintsFieldValidator {
+    pub fn validator(&self) -> &Arc<JSONSchema> {
+        &self.compiled
+    }
+}
+
+impl AsRef<serde_json::Value> for ConstraintsFieldValidator {
+    fn as_ref(&self) -> &serde_json::Value {
+        &self.raw
+    }
+}
+
+impl<'a> TryFrom<&'a serde_json::Value> for ConstraintsFieldValidator {
+    type Error = ValidationError<'a>;
+
+    fn try_from(value: &'a serde_json::Value) -> Result<Self, Self::Error> {
+        let compiled = JSONSchema::compile(value)?;
+        Ok(Self {
+            raw: value.to_owned(),
+            compiled: Arc::new(compiled),
+        })
+    }
+}
+
+// NOTE: implementing PartialEq directly due to JSONSchema not implementing PartialEq.
+impl PartialEq for ConstraintsFieldValidator {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+impl Eq for ConstraintsFieldValidator {}
+
+impl Serialize for ConstraintsFieldValidator {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.raw.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConstraintsFieldValidator {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+        D::Error: std::error::Error,
+    {
+        let raw = serde_json::Value::deserialize(deserializer)?;
+
+        let compiled = JSONSchema::compile(&raw).map(Arc::new).map_err(|e| {
+            serde::de::Error::custom(format!("Failed to compile JSON schema: {}", e))
+        })?;
+
+        Ok(ConstraintsFieldValidator { raw, compiled })
+    }
+}
+
 /// ConstraintsField objects are used to describe the constraints that a
 /// [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder)
 /// must satisfy to fulfill an Input Descriptor.
 ///
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConstraintsField {
     path: NonEmptyVec<JsonPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -416,35 +485,12 @@ pub struct ConstraintsField {
     // Optional predicate value
     predicate: Option<Predicate>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    filter: Option<serde_json::Value>,
-    // NOTE: Skip the JSON schema from serialization,
-    // and use the filter value for constructing the schema.
-    // NOTE: This will mean the validation will be None on
-    // deserialization, and will need to be set manually.
-    #[serde(skip)]
-    // NOTE: Wrapping JSONSchema in an Arc for cloning.
-    validator: Option<Arc<JSONSchema>>,
+    filter: Option<ConstraintsFieldValidator>,
     #[serde(skip_serializing_if = "Option::is_none")]
     optional: Option<bool>,
     #[serde(default)]
     intent_to_retain: bool,
 }
-
-// NOTE: implementing PartialEq directly due to JSONSchema not implementing PartialEq.
-impl PartialEq for ConstraintsField {
-    fn eq(&self, other: &Self) -> bool {
-        self.path == other.path
-            && self.id == other.id
-            && self.purpose == other.purpose
-            && self.name == other.name
-            && self.predicate == other.predicate
-            && self.filter == other.filter
-            && self.optional == other.optional
-            && self.intent_to_retain == other.intent_to_retain
-    }
-}
-
-impl Eq for ConstraintsField {}
 
 pub type ConstraintsFields = Vec<ConstraintsField>;
 
@@ -456,7 +502,6 @@ impl From<NonEmptyVec<JsonPath>> for ConstraintsField {
             purpose: None,
             name: None,
             filter: None,
-            validator: None,
             predicate: None,
             optional: None,
             intent_to_retain: false,
@@ -542,11 +587,18 @@ impl ConstraintsField {
     /// If present its value MUST be a JSON Schema descriptor used to filter against
     /// the values returned from evaluation of the JSONPath string expressions in the path array.
     pub fn set_filter(mut self, filter: &serde_json::Value) -> Result<Self, ValidationError> {
-        JSONSchema::compile(filter).map(|validator| {
-            self.validator = Some(Arc::new(validator));
-            self.filter = Some(filter.clone());
-            self
-        })
+        self.filter = Some(ConstraintsFieldValidator::try_from(filter)?);
+        Ok(self)
+    }
+
+    /// Return the raw filter of the constraints field.
+    pub fn filter(&self) -> Option<&serde_json::Value> {
+        self.filter.as_ref().map(|f| f.as_ref())
+    }
+
+    /// Return the validator for the constraints field.
+    pub fn validator(&self) -> Option<&Arc<JSONSchema>> {
+        self.filter.as_ref().map(|f| f.validator())
     }
 
     /// Set the predicate of the constraints field.
@@ -570,35 +622,6 @@ impl ConstraintsField {
     /// See: [https://identity.foundation/presentation-exchange/#predicate-feature](https://identity.foundation/presentation-exchange/#predicate-feature)
     pub fn predicate(&self) -> Option<&Predicate> {
         self.predicate.as_ref()
-    }
-
-    /// Return the raw filter of the constraints field.
-    pub fn filter(&self) -> Option<&serde_json::Value> {
-        self.filter.as_ref()
-    }
-
-    /// Return a JSON schema validator using the internal filter.
-    ///
-    /// If no filter is provided on the constraint field, this
-    /// will return None.
-    ///
-    /// # Errors
-    ///
-    /// If the filter is invalid, this will return an error.
-    pub fn validator(&self) -> Option<Arc<JSONSchema>> {
-        self.validator.clone()
-    }
-
-    /// Return a JSON schema validator using the internal filter.
-    ///
-    /// If no filter is provided on the constraint field, this
-    /// will return None.
-    ///
-    /// # Errors
-    ///
-    /// If the filter is invalid, this will return an error.
-    pub fn try_validator(&self) -> Option<Result<JSONSchema, ValidationError>> {
-        self.filter.as_ref().map(JSONSchema::compile)
     }
 
     /// Set the optional value of the constraints field.
@@ -737,6 +760,7 @@ impl ConstraintsField {
             // value for the credential type, e.g. `iso.org.18013.5.1.mDL`, etc.
             if let Some(credential) = self.filter.as_ref().and_then(|filter| {
                 filter
+                    .as_ref()
                     .get("const")
                     .and_then(serde_json::Value::as_str)
                     .map(CredentialType::from)
@@ -747,6 +771,7 @@ impl ConstraintsField {
             // The `type` field may be an array with a nested `const` value.
             if let Some(credential) = self.filter.as_ref().and_then(|filter| {
                 filter
+                    .as_ref()
                     .get("contains")
                     .and_then(|value| value.get("const"))
                     .and_then(serde_json::Value::as_str)
@@ -758,6 +783,7 @@ impl ConstraintsField {
             // The `type` field may be an array with a nested `enum` value.
             if let Some(credential) = self.filter.as_ref().and_then(|filter| {
                 filter
+                    .as_ref()
                     .get("contains")
                     .and_then(|value| value.get("enum"))
                     .and_then(serde_json::Value::as_array)
@@ -776,6 +802,7 @@ impl ConstraintsField {
             // that may satisfy the constraints.
             if let Some(credentials) = self.filter.as_ref().and_then(|filter| {
                 filter
+                    .as_ref()
                     .get("pattern")
                     .and_then(serde_json::Value::as_str)
                     .map(|pattern| {

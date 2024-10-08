@@ -60,6 +60,9 @@ impl WalletMetadata {
     ///     },
     ///     "jwt_vc_json": {
     ///       "alg_values_supported": ["ES256"]
+    ///     },
+    ///     "vcdm2_sd_jwt": {
+    ///       "alg_values_supported": ["ES256"]
     ///     }
     ///   },
     ///   "request_object_signing_alg_values_supported": [
@@ -82,6 +85,10 @@ impl WalletMetadata {
         );
         vp_formats_supported.insert(
             ClaimFormatDesignation::JwtVcJson,
+            ClaimFormatPayload::AlgValuesSupported(alg_values_supported.clone()),
+        );
+        vp_formats_supported.insert(
+            ClaimFormatDesignation::Other("vcdm2_sd_jwt".to_string()),
             ClaimFormatPayload::AlgValuesSupported(alg_values_supported.clone()),
         );
         let vp_formats_supported = VpFormatsSupported(vp_formats_supported);
@@ -151,6 +158,9 @@ mod test {
                 "alg_values_supported": ["ES256"]
               },
               "jwt_vc_json": {
+                "alg_values_supported": ["ES256"]
+              },
+              "vcdm2_sd_jwt": {
                 "alg_values_supported": ["ES256"]
               }
             },
