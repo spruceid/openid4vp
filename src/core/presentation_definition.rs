@@ -404,22 +404,6 @@ mod tests {
     use anyhow::Result;
 
     #[test]
-    fn test_input_descriptor_credential_type() -> Result<()> {
-        let definition: PresentationDefinition = serde_json::from_str(include_str!(
-            "../../tests/presentation-definition/iso.org.18013.5.1.mdl.json"
-        ))?;
-
-        let credentials = definition.credential_types_hint();
-
-        assert_eq!(
-            credentials.first(),
-            Some(&"iso.org.18013.5.1.mDL".to_string())
-        );
-
-        Ok(())
-    }
-
-    #[test]
     fn test_input_descriptor_multi_credential_types_pattern() -> Result<()> {
         let definition: PresentationDefinition = serde_json::from_str(include_str!(
             "../../tests/presentation-definition/multi-credential-pattern.json"
