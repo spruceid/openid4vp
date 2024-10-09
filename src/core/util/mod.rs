@@ -19,9 +19,10 @@ pub(crate) fn base_request() -> http::request::Builder {
 pub struct ReqwestClient(reqwest::Client);
 
 impl ReqwestClient {
-    pub fn new() -> Result<Self> {
+    pub fn new(allow_invalid_certs: bool) -> Result<Self> {
         reqwest::Client::builder()
             .use_rustls_tls()
+            .danger_accept_invalid_certs(allow_invalid_certs)
             .build()
             .context("unable to build http_client")
             .map(Self)
