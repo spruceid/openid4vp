@@ -67,6 +67,9 @@ impl WalletMetadata {
     ///       "alg_values_supported": ["ES256"]
     ///     }
     ///   },
+    ///   "client_id_schemes_supported": [
+    ///      "did"
+    ///   ],
     ///   "request_object_signing_alg_values_supported": [
     ///     "ES256"
     ///   ]
@@ -105,7 +108,8 @@ impl WalletMetadata {
         object.insert(vp_formats_supported);
         object.insert(request_object_signing_alg_values_supported);
 
-        // Add Client ID to this?
+        // Insert client ID schemes supported.
+        // Use `Did` scheme (DIDWeb) as a client id scheme.
         object.insert(ClientIdSchemesSupported(vec![ClientIdScheme::Did]));
 
         // Unwrap safety: unit tested.
@@ -171,6 +175,9 @@ mod test {
             },
             "request_object_signing_alg_values_supported": [
               "ES256"
+            ],
+            "client_id_schemes_supported": [
+                "did"
             ]
           }
         );
