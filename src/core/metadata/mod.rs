@@ -1,9 +1,11 @@
-use super::credential_format::*;
+use super::{authorization_request::parameters::ClientIdScheme, credential_format::*};
 
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{Error, Result};
-use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
+use parameters::wallet::{
+    ClientIdSchemesSupported, RequestObjectSigningAlgValuesSupported, ResponseTypesSupported,
+};
 use serde::{Deserialize, Serialize};
 use ssi::jwk::Algorithm;
 
@@ -102,6 +104,9 @@ impl WalletMetadata {
         object.insert(response_types_supported);
         object.insert(vp_formats_supported);
         object.insert(request_object_signing_alg_values_supported);
+
+        // Add Client ID to this?
+        object.insert(ClientIdSchemesSupported(vec![ClientIdScheme::Did]));
 
         // Unwrap safety: unit tested.
         object.try_into().unwrap()
