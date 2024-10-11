@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Spruce Systems, Inc."]
 license = "MIT OR Apache-2.0"
 description = "OpenID Connect for Verifiable Presentations"
-repository = "https://github.com/spruceid/oidc4vp-rs/"
+repository = "https://github.com/spruceid/openid4vp/"
 documentation = "https://docs.rs/openid4vp/"
 
 [features]
