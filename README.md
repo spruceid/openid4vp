@@ -13,13 +13,13 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oid4vp-rs = "0.1"
+openid4vp = "0.1"
 ```
 
 or
 
 ```shell
-cargo add oid4vp-rs
+cargo add openid4vp
 ```
 
 ## Testing

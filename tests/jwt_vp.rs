@@ -1,5 +1,5 @@
 use anyhow::Result;
-use oid4vp::verifier::request_signer::P256Signer;
+use openid4vp::verifier::request_signer::P256Signer;
 use ssi::claims::jwt::VerifiableCredential;
 use ssi::claims::vc::v1::{Context, JsonPresentation};
 use ssi::dids::DIDKey;

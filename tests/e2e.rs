@@ -1,5 +1,5 @@
 use jwt_vp::create_test_verifiable_presentation;
-use oid4vp::{
+use openid4vp::{
     core::{
         authorization_request::parameters::{ClientMetadata, Nonce, ResponseMode, ResponseType},
         credential_format::*,

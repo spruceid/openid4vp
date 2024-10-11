@@ -1,12 +1,12 @@
 [package]
-name = "oid4vp"
+name = "openid4vp"
 version = "0.1.0"
 edition = "2021"
 authors = ["Spruce Systems, Inc."]
 license = "MIT OR Apache-2.0"
 description = "OpenID Connect for Verifiable Presentations"
 repository = "https://github.com/spruceid/oidc4vp-rs/"
-documentation = "https://docs.rs/oid4vp/"
+documentation = "https://docs.rs/openid4vp/"
 
 [features]
 default = []
