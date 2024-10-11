@@ -4,6 +4,7 @@ use crate::core::presentation_submission::PresentationSubmission as Presentation
 
 use anyhow::{bail, Error};
 use base64::prelude::*;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
 use ssi::{claims::vc, prelude::AnyJsonPresentation};
 
@@ -42,7 +43,8 @@ impl From<IdToken> for Json {
 /// > any additional encoding when a Credential format is already represented as a JSON object or a JSON string.
 ///
 /// See: [OpenID.VP#section-6.1-2.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum VpToken {
     Single(Vec<u8>),
     SingleAsMap(Map<String, Json>),
