@@ -22,7 +22,7 @@ http = "1.1.0"
 json-syntax = { version = "0.12.5", features = ["serde_json"] }
 jsonpath_lib = "0.3.0"
 jsonschema = "0.18.0"
-oid4vp-frontend = { version = "0.1.0", path = "oid4vp-frontend" }
+openid4vp-frontend = { version = "0.1.0", path = "openid4vp-frontend" }
 p256 = { version = "0.13.2", features = ["jwk"] }
 rand = { version = "0.8.5" }
 reqwest = { version = "0.12.5", features = ["rustls-tls"] }

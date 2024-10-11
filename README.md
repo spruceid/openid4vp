@@ -1,7 +1,7 @@
 # OpenID for Verifiable Presentations (OID4VP)
 
-[![Crates.io](https://img.shields.io/crates/v/oid4vp)](https://crates.io/crates/oid4vp)
-[![Docs.rs](https://docs.rs/oid4vp/badge.svg)](https://docs.rs/oid4vp)
+[![Crates.io](https://img.shields.io/crates/v/openid4vp)](https://crates.io/crates/openid4vp)
+[![Docs.rs](https://docs.rs/openid4vp/badge.svg)](https://docs.rs/openid4vp)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ### Rust implementation of the OpenID for Verifiable Presentations (OID4VP) specification.
