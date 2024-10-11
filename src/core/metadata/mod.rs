@@ -60,7 +60,7 @@ impl WalletMetadata {
     ///     },
     ///     "jwt_vc_json": {
     ///       "alg_values_supported": ["ES256"]
-    ///     }
+    ///     },
     ///   },
     ///   "request_object_signing_alg_values_supported": [
     ///     "ES256"
