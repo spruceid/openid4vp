@@ -1,12 +1,10 @@
 pub use crate::core::authorization_request::parameters::State;
 use crate::core::object::TypedParameter;
-use crate::core::presentation_submission::PresentationSubmission as PresentationSubmissionParsed;
 
-use anyhow::{bail, Error};
-use base64::prelude::*;
+use anyhow::Error;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value as Json};
-use ssi::{claims::vc, prelude::AnyJsonPresentation};
+use serde_json::Value as Json;
+use ssi::{claims::vc, one_or_many::OneOrManyRef, prelude::AnyJsonPresentation, OneOrMany};
 
 #[derive(Debug, Clone)]
 pub struct IdToken(pub String);
@@ -43,126 +41,144 @@ impl From<IdToken> for Json {
 /// > any additional encoding when a Credential format is already represented as a JSON object or a JSON string.
 ///
 /// See: [OpenID.VP#section-6.1-2.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1-2.2)
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum VpToken {
-    Single(Vec<u8>),
-    SingleAsMap(Map<String, Json>),
-    Many(Vec<VpToken>),
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VpToken(pub Vec<VpTokenItem>);
+
+impl VpToken {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<VpTokenItem> {
+        self.0.iter()
+    }
 }
 
 impl TypedParameter for VpToken {
     const KEY: &'static str = "vp_token";
 }
 
+impl Serialize for VpToken {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        OneOrManyRef::from_slice(&self.0).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for VpToken {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        OneOrMany::<VpTokenItem>::deserialize(deserializer)
+            .map(OneOrMany::into_vec)
+            .map(Self)
+    }
+}
+
+impl From<vc::v1::syntax::JsonPresentation> for VpToken {
+    fn from(value: vc::v1::syntax::JsonPresentation) -> Self {
+        Self(vec![value.into()])
+    }
+}
+
+impl From<vc::v2::syntax::JsonPresentation> for VpToken {
+    fn from(value: vc::v2::syntax::JsonPresentation) -> Self {
+        Self(vec![value.into()])
+    }
+}
+
+impl From<AnyJsonPresentation> for VpToken {
+    fn from(value: AnyJsonPresentation) -> Self {
+        Self(vec![value.into()])
+    }
+}
+
 impl TryFrom<Json> for VpToken {
-    type Error = Error;
+    type Error = anyhow::Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        match value {
-            // NOTE: When parsing a Json string, it must be base64Url encoded,
-            // therefore the base64 encoded string is decoded for internal representation
-            // of the VP token.
-            Json::String(s) => Ok(Self::Single(BASE64_URL_SAFE_NO_PAD.decode(s)?)),
-            // NOTE: When the Json is an object, it must be a map.
-            Json::Object(map) => Ok(Self::SingleAsMap(map)),
-            Json::Array(arr) => arr
-                .into_iter()
-                .map(Self::try_from)
-                .collect::<Result<Vec<Self>, Self::Error>>()
-                .map(Self::Many),
-            _ => Err(Error::msg("Invalid vp_token")),
-        }
+        serde_json::from_value(value).map_err(Into::into)
     }
 }
 
 impl From<VpToken> for Json {
     fn from(value: VpToken) -> Self {
-        match value {
-            VpToken::Single(s) => serde_json::Value::String(BASE64_URL_SAFE_NO_PAD.encode(s)),
-            VpToken::SingleAsMap(map) => serde_json::Value::Object(map),
-            VpToken::Many(tokens) => Self::Array(tokens.into_iter().map(Self::from).collect()),
-        }
+        serde_json::to_value(value)
+            // SAFETY: a vp token has a valid JSON representation by definition.
+            .unwrap()
     }
 }
 
-fn extract_object(json: Json) -> Result<Map<String, Json>, Error> {
-    match json {
-        Json::Object(m) => Ok(m),
-        _ => bail!("expected JSON object"),
+impl<'a> IntoIterator for &'a VpToken {
+    type IntoIter = std::slice::Iter<'a, VpTokenItem>;
+    type Item = &'a VpTokenItem;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }
 
-impl TryFrom<vc::v1::syntax::JsonPresentation> for VpToken {
-    type Error = Error;
+impl IntoIterator for VpToken {
+    type IntoIter = std::vec::IntoIter<VpTokenItem>;
+    type Item = VpTokenItem;
 
-    fn try_from(vp: vc::v1::syntax::JsonPresentation) -> Result<Self, Self::Error> {
-        Ok(VpToken::SingleAsMap(extract_object(serde_json::to_value(
-            vp,
-        )?)?))
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
-impl TryFrom<vc::v2::syntax::JsonPresentation> for VpToken {
-    type Error = Error;
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum VpTokenItem {
+    String(String),
+    JsonObject(serde_json::Map<String, serde_json::Value>),
+}
 
-    fn try_from(vp: vc::v2::syntax::JsonPresentation) -> Result<Self, Self::Error> {
-        Ok(VpToken::SingleAsMap(extract_object(serde_json::to_value(
-            vp,
-        )?)?))
+impl From<vc::v1::syntax::JsonPresentation> for VpTokenItem {
+    fn from(value: vc::v1::syntax::JsonPresentation) -> Self {
+        let serde_json::Value::Object(obj) = serde_json::to_value(value)
+            // SAFETY: by definition a VCDM1.1 presentation is a JSON object.
+            .unwrap()
+        else {
+            // SAFETY: by definition a VCDM1.1 presentation is a JSON object.
+            unreachable!()
+        };
+
+        Self::JsonObject(obj)
     }
 }
 
-impl TryFrom<AnyJsonPresentation> for VpToken {
-    type Error = Error;
+impl From<vc::v2::syntax::JsonPresentation> for VpTokenItem {
+    fn from(value: vc::v2::syntax::JsonPresentation) -> Self {
+        let serde_json::Value::Object(obj) = serde_json::to_value(value)
+            // SAFETY: by definition a VCDM2.0 presentation is a JSON object.
+            .unwrap()
+        else {
+            // SAFETY: by definition a VCDM2.0 presentation is a JSON object.
+            unreachable!()
+        };
 
-    fn try_from(vp: AnyJsonPresentation) -> Result<Self, Self::Error> {
-        Ok(VpToken::SingleAsMap(extract_object(serde_json::to_value(
-            vp,
-        )?)?))
+        Self::JsonObject(obj)
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct PresentationSubmission {
-    raw: Json,
-    parsed: PresentationSubmissionParsed,
-}
+impl From<AnyJsonPresentation> for VpTokenItem {
+    fn from(value: AnyJsonPresentation) -> Self {
+        let serde_json::Value::Object(obj) = serde_json::to_value(value)
+            // SAFETY: by definition a VCDM presentation is a JSON object.
+            .unwrap()
+        else {
+            // SAFETY: by definition a VCDM presentation is a JSON object.
+            unreachable!()
+        };
 
-impl PresentationSubmission {
-    pub fn into_parsed(self) -> PresentationSubmissionParsed {
-        self.parsed
-    }
-
-    pub fn parsed(&self) -> &PresentationSubmissionParsed {
-        &self.parsed
-    }
-}
-
-impl TryFrom<PresentationSubmissionParsed> for PresentationSubmission {
-    type Error = Error;
-
-    fn try_from(parsed: PresentationSubmissionParsed) -> Result<Self, Self::Error> {
-        let raw = serde_json::to_value(parsed.clone())?;
-        Ok(Self { raw, parsed })
-    }
-}
-
-impl TypedParameter for PresentationSubmission {
-    const KEY: &'static str = "presentation_submission";
-}
-
-impl TryFrom<Json> for PresentationSubmission {
-    type Error = Error;
-
-    fn try_from(raw: Json) -> Result<Self, Self::Error> {
-        let parsed = serde_json::from_value(raw.clone())?;
-        Ok(Self { raw, parsed })
-    }
-}
-
-impl From<PresentationSubmission> for Json {
-    fn from(value: PresentationSubmission) -> Self {
-        value.raw
+        Self::JsonObject(obj)
     }
 }

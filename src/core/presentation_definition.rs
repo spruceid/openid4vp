@@ -28,7 +28,7 @@ pub type CredentialTypesRequestedMap = HashMap<String, CredentialTypesRequestedF
 /// in cases where different types of proofs may satisfy an input requirement.
 ///
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PresentationDefinition {
     id: String,
     input_descriptors: Vec<InputDescriptor>,
@@ -306,7 +306,7 @@ impl PresentationDefinition {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct SubmissionRequirementObject {
     pub name: Option<String>,
     pub purpose: Option<String>,
@@ -314,7 +314,7 @@ pub struct SubmissionRequirementObject {
     pub property_set: Option<Map<String, serde_json::Value>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum SubmissionRequirementBase {
     From {
@@ -329,7 +329,7 @@ pub enum SubmissionRequirementBase {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "rule", rename_all = "snake_case")]
 pub enum SubmissionRequirement {
     All(SubmissionRequirementBase),
@@ -429,7 +429,7 @@ impl SubmissionRequirement {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct SubmissionRequirementPick {
     #[serde(flatten)]
     pub submission_requirement: SubmissionRequirementBase,

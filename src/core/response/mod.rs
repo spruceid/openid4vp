@@ -1,4 +1,7 @@
-use super::object::{ParsingErrorContext, UntypedObject};
+use super::{
+    object::{ParsingErrorContext, UntypedObject},
+    presentation_submission::PresentationSubmission,
+};
 
 use std::collections::BTreeMap;
 
@@ -7,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
 
-use self::parameters::{PresentationSubmission, VpToken};
+use self::parameters::VpToken;
 
 pub mod parameters;
 

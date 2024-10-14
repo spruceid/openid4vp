@@ -1,6 +1,6 @@
-use super::{credential_format::*, input_descriptor::*};
-
+use super::{credential_format::*, input_descriptor::*, object::TypedParameter};
 use serde::{Deserialize, Serialize};
+use serde_json::Value as Json;
 
 /// A DescriptorMapId is a unique identifier for a DescriptorMap.
 pub type DescriptorMapId = String;
@@ -20,6 +20,10 @@ pub struct PresentationSubmission {
     id: uuid::Uuid,
     definition_id: DescriptorMapId,
     descriptor_map: Vec<DescriptorMap>,
+}
+
+impl TypedParameter for PresentationSubmission {
+    const KEY: &'static str = "presentation_submission";
 }
 
 impl PresentationSubmission {
@@ -74,6 +78,23 @@ impl PresentationSubmission {
             .iter()
             .map(|descriptor_map| (descriptor_map.id.clone(), descriptor_map))
             .collect()
+    }
+}
+
+impl TryFrom<Json> for PresentationSubmission {
+    type Error = anyhow::Error;
+
+    fn try_from(raw: Json) -> Result<Self, Self::Error> {
+        serde_json::from_value(raw.clone()).map_err(Into::into)
+    }
+}
+
+impl From<PresentationSubmission> for Json {
+    fn from(value: PresentationSubmission) -> Self {
+        serde_json::to_value(value)
+            // SAFETY: by definition, a presentation submission has a valid
+            //         JSON representation.
+            .unwrap()
     }
 }
 
