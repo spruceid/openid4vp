@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use http::{Request, Response};
-use oid4vp::{
+use openid4vp::{
     core::{
         authorization_request::{
             verification::{did, RequestVerifier},
@@ -41,7 +41,7 @@ pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
         VerificationMethodDIDResolver::new(DIDKey);
 
     let client = Arc::new(
-        oid4vp::verifier::client::DIDClient::new(
+        openid4vp::verifier::client::DIDClient::new(
             verifier_did_vm.clone(),
             signer.clone(),
             &resolver,

@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
 use anyhow::{bail, Ok, Result};
 use async_trait::async_trait;
-pub use oid4vp_frontend::*;
+pub use openid4vp_frontend::*;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 

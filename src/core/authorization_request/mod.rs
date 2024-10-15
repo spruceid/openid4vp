@@ -115,8 +115,8 @@ impl AuthorizationRequest {
 
     /// Encode as [Url], using the `authorization_endpoint` as a base.
     /// ```
-    /// # use oid4vp::core::authorization_request::AuthorizationRequest;
-    /// # use oid4vp::core::authorization_request::RequestIndirection;
+    /// # use openid4vp::core::authorization_request::AuthorizationRequest;
+    /// # use openid4vp::core::authorization_request::RequestIndirection;
     /// # use url::Url;
     /// let authorization_endpoint: Url = "example://".parse().unwrap();
     /// let authorization_request = AuthorizationRequest {
@@ -136,8 +136,8 @@ impl AuthorizationRequest {
 
     /// Parse from [Url], validating the authorization_endpoint.
     /// ```
-    /// # use oid4vp::core::authorization_request::AuthorizationRequest;
-    /// # use oid4vp::core::authorization_request::RequestIndirection;
+    /// # use openid4vp::core::authorization_request::AuthorizationRequest;
+    /// # use openid4vp::core::authorization_request::RequestIndirection;
     /// # use url::Url;
     /// let url: Url = "example://?client_id=xyz&request=test".parse().unwrap();
     /// let authorization_endpoint: Url = "example://".parse().unwrap();
@@ -177,8 +177,8 @@ impl AuthorizationRequest {
 
     /// Parse from urlencoded query parameters.
     /// ```
-    /// # use oid4vp::core::authorization_request::AuthorizationRequest;
-    /// # use oid4vp::core::authorization_request::RequestIndirection;
+    /// # use openid4vp::core::authorization_request::AuthorizationRequest;
+    /// # use openid4vp::core::authorization_request::RequestIndirection;
     /// let query = "client_id=xyz&request=test";
     ///
     /// let authorization_request = AuthorizationRequest::from_query_params(query).unwrap();
