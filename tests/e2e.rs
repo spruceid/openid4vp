@@ -134,7 +134,7 @@ async fn w3c_vc_did_client_direct_post() {
 
     let response = AuthorizationResponse::Unencoded(UnencodedAuthorizationResponse(
         Default::default(),
-        vp.try_into().expect("failed to convert vp to vp token"),
+        vp.into(),
         presentation_submission.try_into().unwrap(),
     ));
 
