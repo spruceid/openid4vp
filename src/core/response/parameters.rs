@@ -82,6 +82,18 @@ impl<'de> Deserialize<'de> for VpToken {
     }
 }
 
+impl From<VpTokenItem> for VpToken {
+    fn from(value: VpTokenItem) -> Self {
+        Self(vec![value])
+    }
+}
+
+impl From<String> for VpToken {
+    fn from(value: String) -> Self {
+        Self(vec![value.into()])
+    }
+}
+
 impl From<vc::v1::syntax::JsonPresentation> for VpToken {
     fn from(value: vc::v1::syntax::JsonPresentation) -> Self {
         Self(vec![value.into()])
@@ -139,6 +151,12 @@ impl IntoIterator for VpToken {
 pub enum VpTokenItem {
     String(String),
     JsonObject(serde_json::Map<String, serde_json::Value>),
+}
+
+impl From<String> for VpTokenItem {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
 }
 
 impl From<vc::v1::syntax::JsonPresentation> for VpTokenItem {
