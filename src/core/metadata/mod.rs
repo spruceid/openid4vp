@@ -1,9 +1,11 @@
-use super::credential_format::*;
+use super::{authorization_request::parameters::ClientIdScheme, credential_format::*};
 
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{Error, Result};
-use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
+use parameters::wallet::{
+    ClientIdSchemesSupported, RequestObjectSigningAlgValuesSupported, ResponseTypesSupported,
+};
 use serde::{Deserialize, Serialize};
 use ssi::jwk::Algorithm;
 
@@ -45,6 +47,26 @@ impl WalletMetadata {
     /// Return a mutable reference to the vp formats supported.
     pub fn vp_formats_supported_mut(&mut self) -> &mut VpFormatsSupported {
         &mut self.2
+    }
+
+    /// Add a client ID scheme to the list of the client ID schemes supported.
+    ///
+    /// This method will construct a `client_id_schemes_supported` proprety in the
+    /// wallet metadata if none exists previously, otherwise, this method will add
+    /// the client ID scheme to the existing list of the client ID schemes supported.
+    pub fn add_client_id_schemes_supported(
+        &mut self,
+        client_id_scheme: ClientIdScheme,
+    ) -> Result<()> {
+        let mut supported = self.0.get_or_default::<ClientIdSchemesSupported>()?;
+
+        // Insert the scheme.
+        supported.0.push(client_id_scheme);
+
+        // Insert the updated client IDs schemes supported.
+        self.0.insert(supported);
+
+        Ok(())
     }
 
     /// The static wallet metadata bound to `openid4vp:`:
