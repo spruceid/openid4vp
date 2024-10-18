@@ -276,26 +276,17 @@ impl InputDescriptor {
         Ok(())
     }
 
-    /// Return the humanly readable requested fields of the input descriptor.
-    pub fn requested_fields(&self) -> Vec<String> {
-        self.constraints()
-            .fields()
-            .iter()
-            .flat_map(|field| field.requested_fields())
-            .collect()
-    }
-
     /// Returns the requested fields of a given JSON-encoded credential
     /// that match the constraint fields of the input descriptors of the
     /// presentation definition.
-    pub fn requested_fields_cred<'a>(
+    pub fn requested_fields<'a>(
         &self,
         mut selector: impl FnMut(&str) -> Result<Vec<&'a serde_json::Value>, JsonPathError>,
     ) -> Vec<RequestedField> {
         self.constraints()
             .fields()
             .iter()
-            .map(|field| field.requested_fields_cred(&mut selector))
+            .map(|field| field.requested_fields(&mut selector))
             .collect()
     }
 
@@ -306,15 +297,6 @@ impl InputDescriptor {
             .iter()
             .flat_map(|field| field.credential_types_hint())
             .collect()
-    }
-
-    /// Return the requested fields and the associated credential type(s) of the input descriptor.
-    pub fn requested_fields_with_credential_types(&self) -> CredentialTypesRequestedFields {
-        CredentialTypesRequestedFields {
-            input_descriptor_id: self.id.clone(),
-            credential_type_hint: self.credential_types_hint(),
-            requested_fields: self.requested_fields(),
-        }
     }
 }
 
@@ -678,69 +660,6 @@ impl ConstraintsField {
         self.intent_to_retain
     }
 
-    /// Return the humanly-readable requested fields of the constraints field.
-    ///
-    /// This will convert camelCase to space-separated words with capitalized first letter.
-    ///
-    /// For example, if the path is `["dateOfBirth"]`, this will return `["Date of Birth"]`.
-    ///
-    /// This will also stripe the periods from the JSON path and return the last word in the path.
-    ///
-    /// e.g., `["$.verifiableCredential.credentialSubject.dateOfBirth"]` will return `["Date of Birth"]`.
-    /// e.g., `["$.verifiableCredential.credentialSubject.familyName"]` will return `["Family Name"]`.
-    ///
-    pub fn requested_fields(&self) -> Vec<String> {
-        self.path()
-            .iter()
-            // NOTE: It may not be a given that the last path is the field name.
-            // TODO: Cannot use the field path as a unique property, it may be associated to different
-            // credential types.
-            // NOTE: Include the namespace for uniqueness of the requested field type.
-            .filter_map(|path| path.split(&['-', '.', ':', '@'][..]).last())
-            .map(|path| {
-                path.chars()
-                    .fold(String::new(), |mut acc, c| {
-                        // Convert camelCase to space-separated words with capitalized first letter.
-                        if c.is_uppercase() {
-                            acc.push(' ');
-                        }
-
-                        // Check if the field is snake_case and convert to
-                        // space-separated words with capitalized first letter.
-                        if c == '_' {
-                            acc.push(' ');
-                            return acc;
-                        }
-
-                        acc.push(c);
-                        acc
-                    })
-                    // Split the path based on empty spaces and uppercase the first letter of each word.
-                    .split(' ')
-                    .fold(String::new(), |desc, word| {
-                        let word =
-                            word.chars()
-                                .enumerate()
-                                .fold(String::new(), |mut acc, (i, c)| {
-                                    // Capitalize the first letter of the word.
-                                    if i == 0 {
-                                        if let Some(c) = c.to_uppercase().next() {
-                                            acc.push(c);
-                                            return acc;
-                                        }
-                                    }
-                                    acc.push(c);
-                                    acc
-                                });
-
-                        format!("{desc} {}", word.trim_end())
-                    })
-                    .trim_end()
-                    .to_string()
-            })
-            .collect()
-    }
-
     /// Returns the requested fields given a JSON-encoded credential
     /// that is compared against the constraint fields of the input
     /// descriptor.
@@ -749,7 +668,7 @@ impl ConstraintsField {
     /// to the what is defined in the presentation definition. This ensures the
     /// holder of the credential may verify what information is shared versus
     /// requested.
-    pub fn requested_fields_cred<'a>(
+    pub fn requested_fields<'a>(
         &self,
         mut selector: impl FnMut(&str) -> Result<Vec<&'a serde_json::Value>, JsonPathError>,
     ) -> RequestedField {
