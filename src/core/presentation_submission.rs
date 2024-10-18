@@ -119,12 +119,12 @@ impl DescriptorMap {
     /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-submission)
     pub fn new(
         id: impl Into<DescriptorMapId>,
-        format: ClaimFormatDesignation,
+        format: impl Into<ClaimFormatDesignation>,
         path: JsonPath,
     ) -> Self {
         Self {
             id: id.into(),
-            format,
+            format: format.into(),
             path,
             path_nested: None,
         }
