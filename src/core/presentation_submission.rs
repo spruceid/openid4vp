@@ -86,7 +86,7 @@ impl PresentationSubmission {
             .collect()
     }
 
-    /// Find all the submission inputs in `value` matching the input descriptor
+    /// Find all the submission inputs in `value` matching the input descriptors
     /// specified in the presentation `definition`.
     pub fn find_inputs<T>(
         &self,
@@ -235,7 +235,7 @@ impl DescriptorMap {
         self
     }
 
-    /// Find all the submission inputs in `value` matching the input descriptor
+    /// Find all the submission inputs in `value` matching the input descriptors
     /// specified in the presentation `definition`.
     ///
     /// Inputs are added to the list of decoded `inputs` provided in argument.
@@ -256,7 +256,7 @@ impl DescriptorMap {
         self.find_inputs_with(definition, &input_descriptors, value, decoder, inputs)
     }
 
-    /// Find all the submission inputs in `value` matching the input descriptor
+    /// Find all the submission inputs in `value` matching the input descriptors
     /// specified in the presentation `definition`.
     ///
     /// This is the same as `find_inputs` but takes the presentation
