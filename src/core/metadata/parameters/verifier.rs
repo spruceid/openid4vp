@@ -162,7 +162,7 @@ mod test {
 
         assert_eq!(
             mso_doc,
-            &ClaimFormatPayload::Json(serde_json::Value::Object(Default::default()))
+            &ClaimFormatPayload::Other(serde_json::Value::Object(Default::default()))
         )
     }
 

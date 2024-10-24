@@ -29,10 +29,18 @@ async fn w3c_vc_did_client_direct_post() {
                 .add_constraint(
                     // Add a constraint fields to check if the credential
                     // conforms to a specific path.
-                    ConstraintsField::new("$.credentialSubject.id".into())
+                    ConstraintsField::new("$.credentialSubject.id".parse().unwrap())
                         // Add alternative path(s) to check multiple potential formats.
-                        .add_path("$.vp.verifiableCredential.vc.credentialSubject.id".into())
-                        .add_path("$.vp.verifiableCredential[0].vc.credentialSubject.id".into())
+                        .add_path(
+                            "$.vp.verifiableCredential.vc.credentialSubject.id"
+                                .parse()
+                                .unwrap(),
+                        )
+                        .add_path(
+                            "$.vp.verifiableCredential[0].vc.credentialSubject.id"
+                                .parse()
+                                .unwrap(),
+                        )
                         .set_name("Verify Identity Key".into())
                         .set_purpose("Check whether your identity key has been verified.".into())
                         .set_filter(&serde_json::json!({
@@ -95,7 +103,7 @@ async fn w3c_vc_did_client_direct_post() {
             // NOTE: the input descriptor constraint field path is relative to the path
             // of the descriptor map matching the input descriptor id.
             DescriptorMap::new(
-                descriptor.id().to_string(),
+                descriptor.id.clone(),
                 // NOTE: Since the input descriptor may support several different
                 // claim format types. This value should not be hardcoded in production
                 // code, but should be selected from available formats in the presentation definition
@@ -106,18 +114,18 @@ async fn w3c_vc_did_client_direct_post() {
                 // Starts at the top level path of the verifiable submission, which contains a `vp` key
                 // for verifiable presentations, which include the verifiable credentials under the `verifiableCredentials`
                 // field.
-                "$".into(),
+                "$".parse().unwrap(),
             )
             .set_path_nested(DescriptorMap::new(
                 // Descriptor map id must be the same as the parent descriptor map id.
-                descriptor.id().to_string(),
+                descriptor.id.clone(),
                 ClaimFormatDesignation::JwtVcJson,
                 // This nested path is relative to the resolved path of the parent descriptor map.
                 // In this case, the parent descriptor map resolved to the `vp` key.
                 // The nested path is relative to the `vp` key.
                 //
                 // See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries
-                "$.vp.verifiableCredential[0]".into(),
+                "$.vp.verifiableCredential[0]".parse().unwrap(),
             ))
         })
         .collect();

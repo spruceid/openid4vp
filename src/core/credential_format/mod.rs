@@ -1,6 +1,19 @@
-use std::collections::HashMap;
+use core::fmt;
+use std::{borrow::Cow, collections::HashMap, str::FromStr};
 
 use serde::{Deserialize, Serialize};
+
+const FORMAT_JWT: &str = "jwt";
+const FORMAT_JWT_VC: &str = "jwt_vc";
+const FORMAT_JWT_VP: &str = "jwt_vp";
+const FORMAT_JWT_VC_JSON: &str = "jwt_vc_json";
+const FORMAT_JWT_VP_JSON: &str = "jwt_vp_json";
+const FORMAT_LDP: &str = "ldp";
+const FORMAT_LDP_VC: &str = "ldp_vc";
+const FORMAT_LDP_VP: &str = "ldp_vp";
+const FORMAT_AC_VC: &str = "ac_vc";
+const FORMAT_AC_VP: &str = "ac_vp";
+const FORMAT_MSO_MDOC: &str = "mso_mdoc";
 
 /// A Json object of claim formats.
 pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
@@ -127,7 +140,7 @@ pub enum ClaimFormatPayload {
     #[serde(rename = "proof_type")]
     ProofType(Vec<String>),
     #[serde(untagged)]
-    Json(serde_json::Value),
+    Other(serde_json::Value),
 }
 
 impl ClaimFormatPayload {
@@ -155,106 +168,170 @@ impl ClaimFormatPayload {
 /// Registry of claim format type: https://identity.foundation/claim-format-registry/#registry
 ///
 /// Documentation based on the [DIF Presentation Exchange Specification v2.0](https://identity.foundation/presentation-exchange/spec/v2.0.0/#claim-format-designations)
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ClaimFormatDesignation {
     /// The format is a JSON Web Token (JWT) as defined by [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519)
     /// that will be submitted in the form of a JWT encoded string. Expression of
     /// supported algorithms in relation to this format MUST be conveyed using an `alg`
     /// property paired with values that are identifiers from the JSON Web Algorithms
     /// registry [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518).
-    #[serde(rename = "jwt")]
     Jwt,
+
     /// These formats are JSON Web Tokens (JWTs) [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519)
     /// that will be submitted in the form of a JWT-encoded string, with a payload extractable from it defined according to the
     /// JSON Web Token (JWT) [section] of the W3C [VC-DATA-MODEL](https://identity.foundation/claim-format-registry/#term:vc-data-model)
     /// specification. Expression of supported algorithms in relation to these formats MUST be conveyed using an JWT alg
     /// property paired with values that are identifiers from the JSON Web Algorithms registry in
     /// [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518) Section 3.
-    #[serde(rename = "jwt_vc")]
     JwtVc,
+
     /// See [JwtVc](JwtVc) for more information.
-    #[serde(rename = "jwt_vp")]
     JwtVp,
-    #[serde(rename = "jwt_vc_json")]
+
     JwtVcJson,
-    #[serde(rename = "jwt_vp_json")]
+
     JwtVpJson,
+
     /// The format is a Linked-Data Proof that will be submitted as an object.
     /// Expression of supported algorithms in relation to these formats MUST be
     /// conveyed using a proof_type property with values that are identifiers from
     /// the Linked Data Cryptographic Suite Registry [LDP-Registry](https://identity.foundation/claim-format-registry/#term:ldp-registry).
-    #[serde(rename = "ldp")]
     Ldp,
+
     /// Verifiable Credentials or Verifiable Presentations signed with Linked Data Proof formats.
     /// These are descriptions of formats normatively defined in the W3C Verifiable Credentials
     /// specification [VC-DATA-MODEL](https://identity.foundation/claim-format-registry/#term:vc-data-model),
     /// and will be submitted in the form of a JSON object. Expression of supported algorithms in relation to
     /// these formats MUST be conveyed using a proof_type property paired with values that are identifiers from the
     /// Linked Data Cryptographic Suite Registry (LDP-Registry).
-    #[serde(rename = "ldp_vc")]
     LdpVc,
+
     /// See [LdpVc](LdpVc) for more information.
-    #[serde(rename = "ldp_vp")]
     LdpVp,
+
     /// This format is for Verifiable Credentials using AnonCreds.
     /// AnonCreds is a VC format that adds important
     /// privacy-protecting ZKP (zero-knowledge proof) capabilities
     /// to the core VC assurances.
-    #[serde(rename = "ac_vc")]
     AcVc,
+
     /// This format is for Verifiable Presentations using AnonCreds.
     /// AnonCreds is a VC format that adds important privacy-protecting ZKP
     /// (zero-knowledge proof) capabilities to the core VC assurances.
-    #[serde(rename = "ac_vp")]
     AcVp,
+
     /// The format is defined by ISO/IEC 18013-5:2021 [ISO.18013-5](https://identity.foundation/claim-format-registry/#term:iso.18013-5)
     /// which defines a mobile driving license (mDL) Credential in the mobile document (mdoc) format.
     /// Although ISO/IEC 18013-5:2021 ISO.18013-5 is specific to mobile driving licenses (mDLs),
     /// the Credential format can be utilized with any type of Credential (or mdoc document types).
-    #[serde(rename = "mso_mdoc")]
     MsoMDoc,
+
     /// Other claim format designations not covered by the above.
     ///
     /// The value of this variant is the name of the claim format designation.
-    #[serde(untagged)]
     Other(String),
+}
+
+impl ClaimFormatDesignation {
+    pub fn from_name(name: Cow<str>) -> Self {
+        match name.as_ref() {
+            FORMAT_JWT => Self::Jwt,
+            FORMAT_JWT_VC => Self::JwtVc,
+            FORMAT_JWT_VP => Self::JwtVp,
+            FORMAT_JWT_VC_JSON => Self::JwtVcJson,
+            FORMAT_JWT_VP_JSON => Self::JwtVpJson,
+            FORMAT_LDP => Self::Ldp,
+            FORMAT_LDP_VC => Self::LdpVc,
+            FORMAT_LDP_VP => Self::LdpVp,
+            FORMAT_AC_VC => Self::AcVc,
+            FORMAT_AC_VP => Self::AcVp,
+            FORMAT_MSO_MDOC => Self::MsoMDoc,
+            _ => Self::Other(name.into_owned()),
+        }
+    }
+
+    fn name(&self) -> &str {
+        match self {
+            Self::Jwt => FORMAT_JWT,
+            Self::JwtVc => FORMAT_JWT_VC,
+            Self::JwtVp => FORMAT_JWT_VP,
+            Self::JwtVcJson => FORMAT_JWT_VC_JSON,
+            Self::JwtVpJson => FORMAT_JWT_VP_JSON,
+            Self::Ldp => FORMAT_LDP,
+            Self::LdpVc => FORMAT_LDP_VC,
+            Self::LdpVp => FORMAT_LDP_VP,
+            Self::AcVc => FORMAT_AC_VC,
+            Self::AcVp => FORMAT_AC_VP,
+            Self::MsoMDoc => FORMAT_MSO_MDOC,
+            Self::Other(other) => other,
+        }
+    }
+
+    fn into_name(self) -> Cow<'static, str> {
+        match self {
+            Self::Jwt => Cow::Borrowed(FORMAT_JWT),
+            Self::JwtVc => Cow::Borrowed(FORMAT_JWT_VC),
+            Self::JwtVp => Cow::Borrowed(FORMAT_JWT_VP),
+            Self::JwtVcJson => Cow::Borrowed(FORMAT_JWT_VC_JSON),
+            Self::JwtVpJson => Cow::Borrowed(FORMAT_JWT_VP_JSON),
+            Self::Ldp => Cow::Borrowed(FORMAT_LDP),
+            Self::LdpVc => Cow::Borrowed(FORMAT_LDP_VC),
+            Self::LdpVp => Cow::Borrowed(FORMAT_LDP_VP),
+            Self::AcVc => Cow::Borrowed(FORMAT_AC_VC),
+            Self::AcVp => Cow::Borrowed(FORMAT_AC_VP),
+            Self::MsoMDoc => Cow::Borrowed(FORMAT_MSO_MDOC),
+            Self::Other(other) => Cow::Owned(other),
+        }
+    }
 }
 
 impl From<&str> for ClaimFormatDesignation {
     fn from(s: &str) -> Self {
-        match s {
-            "jwt" => Self::Jwt,
-            "jwt_vc" => Self::JwtVc,
-            "jwt_vp" => Self::JwtVp,
-            "jwt_vc_json" => Self::JwtVcJson,
-            "jwt_vp_json" => Self::JwtVpJson,
-            "ldp" => Self::Ldp,
-            "ldp_vc" => Self::LdpVc,
-            "ldp_vp" => Self::LdpVp,
-            "ac_vc" => Self::AcVc,
-            "ac_vp" => Self::AcVp,
-            "mso_mdoc" => Self::MsoMDoc,
-            s => Self::Other(s.to_string()),
-        }
+        Self::from_name(Cow::Borrowed(s))
+    }
+}
+
+impl From<String> for ClaimFormatDesignation {
+    fn from(value: String) -> Self {
+        Self::from_name(Cow::Owned(value))
+    }
+}
+
+impl FromStr for ClaimFormatDesignation {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(s.into())
     }
 }
 
 impl From<ClaimFormatDesignation> for String {
     fn from(format: ClaimFormatDesignation) -> Self {
-        match format {
-            ClaimFormatDesignation::AcVc => "ac_vc".to_string(),
-            ClaimFormatDesignation::AcVp => "ac_vp".to_string(),
-            ClaimFormatDesignation::Jwt => "jwt".to_string(),
-            ClaimFormatDesignation::JwtVc => "jwt_vc".to_string(),
-            ClaimFormatDesignation::JwtVp => "jwt_vp".to_string(),
-            ClaimFormatDesignation::JwtVcJson => "jwt_vc_json".to_string(),
-            ClaimFormatDesignation::JwtVpJson => "jwt_vp_json".to_string(),
-            ClaimFormatDesignation::Ldp => "ldp".to_string(),
-            ClaimFormatDesignation::LdpVc => "ldp_vc".to_string(),
-            ClaimFormatDesignation::LdpVp => "ldp_vp".to_string(),
-            ClaimFormatDesignation::MsoMDoc => "mso_mdoc".to_string(),
-            ClaimFormatDesignation::Other(s) => s,
-        }
+        format.into_name().into_owned()
+    }
+}
+
+impl fmt::Display for ClaimFormatDesignation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.name().fmt(f)
+    }
+}
+
+impl Serialize for ClaimFormatDesignation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.name().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ClaimFormatDesignation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Into::into)
     }
 }
 
