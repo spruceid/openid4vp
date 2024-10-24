@@ -3,11 +3,11 @@ use super::input_descriptor::*;
 use super::presentation_submission::*;
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
-use ssi::claims::jwt::VerifiablePresentation;
 
 /// A non-normative mappings of credential type(s) to requested fields.
 ///
@@ -75,10 +75,10 @@ impl PresentationDefinition {
     }
 
     /// Return the input descriptors as a mapping of the input descriptor id to the input descriptor.
-    pub fn input_descriptors_map(&self) -> HashMap<String, &InputDescriptor> {
+    pub fn input_descriptors_map(&self) -> HashMap<&str, &InputDescriptor> {
         self.input_descriptors
             .iter()
-            .map(|input_descriptor| (input_descriptor.id().to_string(), input_descriptor))
+            .map(|input_descriptor| (input_descriptor.id.as_str(), input_descriptor))
             .collect()
     }
 
@@ -115,19 +115,6 @@ impl PresentationDefinition {
             .get_or_insert_with(Vec::new)
             .push(submission_requirement);
         self
-    }
-
-    /// Validate submission requirements provided an input descriptor and descriptor map.
-    pub fn validate_submission_requirements(&self, descriptor_map: &[DescriptorMap]) -> Result<()> {
-        match self.submission_requirements.as_ref() {
-            None => Ok(()),
-            Some(requirements) => {
-                for requirement in requirements {
-                    requirement.validate(self.input_descriptors(), descriptor_map)?;
-                }
-                Ok(())
-            }
-        }
     }
 
     /// Set the name of the presentation definition.
@@ -196,7 +183,7 @@ impl PresentationDefinition {
 
         // Check input descriptors.
         for descriptor in self.input_descriptors().iter() {
-            if descriptor.format().contains_key(&format) {
+            if descriptor.format.contains_key(&format) {
                 // return early if the format is included in an
                 // input descriptor.
                 return true;
@@ -239,90 +226,11 @@ impl PresentationDefinition {
             .iter()
             .map(|descriptor| {
                 (
-                    descriptor.id().to_string(),
+                    descriptor.id.clone(),
                     descriptor.requested_fields_with_credential_types(),
                 )
             })
             .collect()
-    }
-
-    /// Validate a presentation submission against the presentation definition.
-    ///
-    /// This descriptor map is a map of descriptor objects, keyed by their id.
-    ///
-    /// For convenience, use [PresentationSubmission::descriptor_map_by_id] to generate this map.
-    ///
-    /// Internally, this method will call [PresentationDefinition::validate_submission_requirements].
-    pub fn validate_presentation(
-        &self,
-        verifiable_presentation: VerifiablePresentation,
-        descriptor_map: &[DescriptorMap],
-    ) -> Result<()> {
-        // Validate the submission requirements. This will
-        // no-op if there are no submission requirements.
-        self.validate_submission_requirements(descriptor_map)?;
-
-        let input_descript_map = self.input_descriptors_map();
-
-        // Validate the submission requirements
-
-        for descriptor in descriptor_map.iter() {
-            match input_descript_map.get(descriptor.id()) {
-                None => {
-                    bail!(
-                        "Descriptor map ID, {}, does not match a valid input descriptor.",
-                        descriptor.id()
-                    )
-                }
-                Some(input_descriptor) => {
-                    input_descriptor
-                        .validate_verifiable_presentation(&verifiable_presentation, descriptor)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Validate a JSON-encoded credential against the presentation definition.
-    ///
-    /// NOTE: this method accepts a generic serde_json::Value argument and checks whether
-    /// the JSON value conforms to the presentation definition's input descriptor constraint
-    /// fields.
-    ///
-    /// If the credential satisifies the presentation definition, this method will return true.
-    pub fn check_credential_validation(&self, credential: &serde_json::Value) -> bool {
-        let mut selector = jsonpath_lib::selector(credential);
-
-        self.input_descriptors()
-            .iter()
-            .flat_map(|descriptor| descriptor.constraints().fields())
-            // skip optional fields
-            .filter(|field| field.is_required())
-            .all(|field| {
-                match field.validator() {
-                    Some(validator) => {
-                        let is_valid = field
-                            .path()
-                            .iter()
-                            // NOTE: Errors are ignored to allow other paths to
-                            // be checked. Interested in whether there is at least
-                            // one valid path.
-                            //
-                            // An empty iterator will return false on an any() call.
-                            .filter_map(|path| selector(path).ok())
-                            .flatten()
-                            // NOTE: This is currently assuming that if any of the paths are a match
-                            // to the credential, then the validation is, at least partially, successful,
-                            // and the credential may satisfy the presentation definition.
-                            .any(|value| validator.validate(value).is_ok());
-
-                        is_valid
-                    }
-                    // Allow for fields without validators to pass through.
-                    _ => true,
-                }
-            })
     }
 }
 
@@ -359,51 +267,72 @@ pub enum SubmissionRequirement {
 impl SubmissionRequirement {
     // Internal method to group the submission requirement,
     // based on the `from` or recurse the `from_nested` field.
-    fn validate_group(
+    fn validate_group<T>(
         group: &GroupId,
-        input_descriptors: &[InputDescriptor],
-        decriptor_map: &[DescriptorMap],
-        options: Option<&SubmissionRequirementPick>,
-    ) -> Result<()> {
+        definition: &PresentationDefinition,
+        inputs: &MatchingInputs<T>,
+        pick: Option<&SubmissionRequirementPick>,
+    ) -> Result<(), SubmissionValidationError> {
         // Group all the input descriptors according to the matching groups of this submission requirement.
-        let grouped_input_descriptors = input_descriptors
+        let grouped_input_descriptors = definition
+            .input_descriptors
             .iter()
-            .filter(|input_descriptor| input_descriptor.groups().contains(group))
-            .collect::<Vec<&InputDescriptor>>();
-
-        // Filter for the descriptor maps that match the grouped input descriptors.
-        let group_count = decriptor_map
-            .iter()
-            .filter(|descriptor| {
-                grouped_input_descriptors
-                    .iter()
-                    .any(|input_descriptor| input_descriptor.id() == descriptor.id())
+            .filter_map(|input_descriptor| {
+                if input_descriptor.groups.contains(group) {
+                    Some(input_descriptor.id.as_str())
+                } else {
+                    None
+                }
             })
-            .count();
+            .collect::<HashSet<_>>();
 
-        if let Some(opts) = options {
-            if let Some(min_count) = opts.min {
-                if group_count < min_count {
-                    bail!("Submission Requirement validation failed. Descriptor Map count {group_count} is less than the minimum count: {min_count}.");
+        match pick {
+            Some(pick) => {
+                // Filter for the descriptor maps that match the grouped input descriptors.
+                let group_count = inputs
+                    .inputs
+                    .iter()
+                    .filter(|input| grouped_input_descriptors.contains(input.descriptor_id))
+                    .count();
+
+                if let Some(min_count) = pick.min {
+                    if group_count < min_count {
+                        return Err(SubmissionValidationError::SelectionTooSmall {
+                            group: group.clone(),
+                            min: min_count,
+                            found: group_count,
+                        });
+                    }
+                }
+
+                if let Some(max_count) = pick.max {
+                    if group_count > max_count {
+                        return Err(SubmissionValidationError::SelectionTooLarge {
+                            group: group.clone(),
+                            max: max_count,
+                            found: group_count,
+                        });
+                    }
+                }
+
+                if let Some(count) = pick.count {
+                    if group_count != count {
+                        return Err(SubmissionValidationError::SelectionSizeMismatch {
+                            group: group.clone(),
+                            expected: count,
+                            found: group_count,
+                        });
+                    }
                 }
             }
-
-            if let Some(max_count) = opts.max {
-                if group_count > max_count {
-                    bail!("Submission Requirement validation failed. Descriptor Map count {group_count} is greater than the maximum count: {max_count}.");
+            None => {
+                for id in grouped_input_descriptors {
+                    if !inputs.by_descriptor.contains_key(id) {
+                        return Err(SubmissionValidationError::MissingRequiredInput(
+                            id.to_owned(),
+                        ));
+                    }
                 }
-            }
-
-            if let Some(count) = opts.count {
-                if group_count != count {
-                    bail!("Submission Requirement group, {group}, validation failed. Descriptor Map count {group_count} is not equal to the count: {count}.");
-                }
-            }
-        } else {
-            // If the descriptor maps are less than the grouped input descriptors,
-            // then the submission requirement is not satisfied.
-            if group_count < grouped_input_descriptors.len() {
-                bail!("Submission Requirement group, {group}, validation failed. Descriptor Map count {group_count} is not equal to the count of grouped input descriptors: {}.", grouped_input_descriptors.len());
             }
         }
 
@@ -411,35 +340,30 @@ impl SubmissionRequirement {
     }
 
     /// Validate a submission requirement against a input descriptors and descriptor maps.
-    pub fn validate(
+    pub fn validate<T>(
         &self,
-        input_descriptors: &[InputDescriptor],
-        decriptor_map: &[DescriptorMap],
-    ) -> Result<()> {
+        definition: &PresentationDefinition,
+        inputs: &MatchingInputs<T>,
+    ) -> Result<(), SubmissionValidationError> {
         // Validate the submission requirement against the grouped descriptor maps.
         match self {
             SubmissionRequirement::All(base) => match base {
                 SubmissionRequirementBase::From { from, .. } => {
-                    return Self::validate_group(from, input_descriptors, decriptor_map, None);
+                    return Self::validate_group(from, definition, inputs, None);
                 }
                 SubmissionRequirementBase::FromNested { from_nested, .. } => {
                     for requirement in from_nested {
-                        requirement.validate(input_descriptors, decriptor_map)?;
+                        requirement.validate(definition, inputs)?;
                     }
                 }
             },
             SubmissionRequirement::Pick(pick) => match &pick.submission_requirement {
                 SubmissionRequirementBase::From { from, .. } => {
-                    return Self::validate_group(
-                        from,
-                        input_descriptors,
-                        decriptor_map,
-                        Some(pick),
-                    );
+                    return Self::validate_group(from, definition, inputs, Some(pick));
                 }
                 SubmissionRequirementBase::FromNested { from_nested, .. } => {
                     for requirement in from_nested {
-                        requirement.validate(input_descriptors, decriptor_map)?;
+                        requirement.validate(definition, inputs)?;
                     }
                 }
             },

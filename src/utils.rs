@@ -2,11 +2,11 @@ use anyhow::{bail, Error};
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(try_from = "Vec<T>", into = "Vec<T>")]
-pub struct NonEmptyVec<T: Clone>(Vec<T>);
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "Vec<T>")]
+pub struct NonEmptyVec<T>(Vec<T>);
 
-impl<T: Clone> NonEmptyVec<T> {
+impl<T> NonEmptyVec<T> {
     pub fn new(t: T) -> Self {
         Self(vec![t])
     }
@@ -24,7 +24,7 @@ impl<T: Clone> NonEmptyVec<T> {
     }
 }
 
-impl<T: Clone> TryFrom<Vec<T>> for NonEmptyVec<T> {
+impl<T> TryFrom<Vec<T>> for NonEmptyVec<T> {
     type Error = Error;
 
     fn try_from(v: Vec<T>) -> Result<NonEmptyVec<T>, Error> {
@@ -35,22 +35,49 @@ impl<T: Clone> TryFrom<Vec<T>> for NonEmptyVec<T> {
     }
 }
 
-impl<T: Clone> From<NonEmptyVec<T>> for Vec<T> {
+impl<T> From<NonEmptyVec<T>> for Vec<T> {
     fn from(NonEmptyVec(v): NonEmptyVec<T>) -> Vec<T> {
         v
     }
 }
 
-impl<T: Clone> AsRef<[T]> for NonEmptyVec<T> {
+impl<T> AsRef<[T]> for NonEmptyVec<T> {
     fn as_ref(&self) -> &[T] {
         &self.0
     }
 }
 
-impl<T: Clone> Deref for NonEmptyVec<T> {
+impl<T> Deref for NonEmptyVec<T> {
     type Target = [T];
 
     fn deref(&self) -> &[T] {
         &self.0
+    }
+}
+
+impl<'a, T> IntoIterator for &'a NonEmptyVec<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<T> IntoIterator for NonEmptyVec<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<T: Serialize> Serialize for NonEmptyVec<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
     }
 }

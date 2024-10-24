@@ -12,7 +12,6 @@ use anyhow::Result;
 use serde::Deserialize;
 use serde_json::json;
 use serde_json::Value;
-use ssi::claims::jwt::VerifiablePresentation;
 
 #[test]
 fn request_example() {
@@ -150,21 +149,21 @@ fn test_presentation_submission_validation() -> Result<()> {
             format!("tests/presentation-submission/submission_{test_case}.json",),
         )?)?;
 
-        let presentation: VerifiablePresentation = serde_json::from_str(&fs::read_to_string(
-            format!("tests/presentation-submission/vp_{test_case}.json",),
-        )?)?;
+        let presentation: serde_json::Value = serde_json::from_str(&fs::read_to_string(format!(
+            "tests/presentation-submission/vp_{test_case}.json",
+        ))?)?;
 
         match test_case {
             1 | 2 => {
-                assert!(definition
-                    .validate_presentation(presentation, submission.descriptor_map())
+                assert!(submission
+                    .find_and_validate_inputs(&definition, &presentation, &NoClaimsDecoder)
                     .is_ok());
             }
             3 => {
                 // Expect this case to error because the presentation includes more descriptors
                 // than the submission requires.
-                assert!(definition
-                    .validate_presentation(presentation, submission.descriptor_map())
+                assert!(submission
+                    .find_and_validate_inputs(&definition, &presentation, &NoClaimsDecoder)
                     .is_err());
             }
             _ => {}
@@ -207,13 +206,17 @@ fn test_input_descriptor_validation() -> Result<()> {
         .flatten()
         .expect("failed to parse presentation submission")?;
 
-    let descriptor_map = presentation_submission.descriptor_map();
+    // let descriptor_map = presentation_submission.descriptor_map();
 
-    let verifiable_presentation: VerifiablePresentation = serde_json::from_value(value)?;
+    let verifiable_presentation: serde_json::Value = serde_json::from_value(value)?;
 
     // Expect the example to fail here because the submission does match the definition.
-    assert!(presentation_definition
-        .validate_presentation(verifiable_presentation, &descriptor_map)
+    assert!(presentation_submission
+        .find_and_validate_inputs(
+            &presentation_definition,
+            &verifiable_presentation,
+            &NoClaimsDecoder
+        )
         .is_err());
 
     Ok(())

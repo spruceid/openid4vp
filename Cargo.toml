@@ -20,7 +20,8 @@ http = "1.1.0"
 # This is currently used in the jwt_vp test to go from a `VeriableCredential` to an `AnyJsonCredential` type.
 # There may be a better way to handle this that doesn't require the `json-syntax` crate directly.
 json-syntax = { version = "0.12.5", features = ["serde_json"] }
-jsonpath_lib = "0.3.0"
+# jsonpath_lib = "0.3.0"
+serde_json_path = "0.6.7"
 jsonschema = "0.18.0"
 openid4vp-frontend = { version = "0.1.0", path = "openid4vp-frontend" }
 p256 = { version = "0.13.2", features = ["jwk"] }
@@ -34,8 +35,10 @@ tokio = "1.32.0"
 tracing = "0.1.37"
 url = { version = "2.4.1", features = ["serde"] }
 x509-cert = "0.2.4"
+thiserror = "1.0.65"
 
 [dev-dependencies]
+serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_path_to_error = "0.1.8"
 tokio = { version = "1.32.0", features = ["macros"] }
 did-method-key = "0.3"

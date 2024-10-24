@@ -290,7 +290,7 @@ mod test {
         assert_eq!(m.len(), 1);
         assert_eq!(
             m.remove(&ClaimFormatDesignation::MsoMDoc).unwrap(),
-            ClaimFormatPayload::Json(serde_json::Value::Object(Default::default()))
+            ClaimFormatPayload::Other(serde_json::Value::Object(Default::default()))
         );
     }
 
