@@ -5,10 +5,12 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
+use jsonpath_lib::JsonPathError;
 use jsonschema::{JSONSchema, ValidationError};
 use serde::{Deserialize, Serialize};
 use ssi::claims::jwt::VerifiablePresentation;
 use ssi::dids::ssi_json_ld::syntax::from_value;
+use uuid::Uuid;
 
 /// A GroupId represents a unique identifier for a group of Input Descriptors.
 ///
@@ -274,12 +276,17 @@ impl InputDescriptor {
         Ok(())
     }
 
-    /// Return the humanly readable requested fields of the input descriptor.
-    pub fn requested_fields(&self) -> Vec<String> {
+    /// Returns the requested fields of a given JSON-encoded credential
+    /// that match the constraint fields of the input descriptors of the
+    /// presentation definition.
+    pub fn requested_fields<'a>(
+        &self,
+        mut selector: impl FnMut(&str) -> Result<Vec<&'a serde_json::Value>, JsonPathError>,
+    ) -> Vec<RequestedField> {
         self.constraints()
             .fields()
             .iter()
-            .flat_map(|field| field.requested_fields())
+            .map(|field| field.requested_fields(&mut selector))
             .collect()
     }
 
@@ -290,15 +297,6 @@ impl InputDescriptor {
             .iter()
             .flat_map(|field| field.credential_types_hint())
             .collect()
-    }
-
-    /// Return the requested fields and the associated credential type(s) of the input descriptor.
-    pub fn requested_fields_with_credential_types(&self) -> CredentialTypesRequestedFields {
-        CredentialTypesRequestedFields {
-            input_descriptor_id: self.id.clone(),
-            credential_type_hint: self.credential_types_hint(),
-            requested_fields: self.requested_fields(),
-        }
     }
 }
 
@@ -662,67 +660,50 @@ impl ConstraintsField {
         self.intent_to_retain
     }
 
-    /// Return the humanly-readable requested fields of the constraints field.
+    /// Returns the requested fields given a JSON-encoded credential
+    /// that is compared against the constraint fields of the input
+    /// descriptor.
     ///
-    /// This will convert camelCase to space-separated words with capitalized first letter.
-    ///
-    /// For example, if the path is `["dateOfBirth"]`, this will return `["Date of Birth"]`.
-    ///
-    /// This will also stripe the periods from the JSON path and return the last word in the path.
-    ///
-    /// e.g., `["$.verifiableCredential.credentialSubject.dateOfBirth"]` will return `["Date of Birth"]`.
-    /// e.g., `["$.verifiableCredential.credentialSubject.familyName"]` will return `["Family Name"]`.
-    ///
-    pub fn requested_fields(&self) -> Vec<String> {
-        self.path()
+    /// This method returns constraint fields of the credential itself, as opposed
+    /// to the what is defined in the presentation definition. This ensures the
+    /// holder of the credential may verify what information is shared versus
+    /// requested.
+    pub fn requested_fields<'a>(
+        &self,
+        mut selector: impl FnMut(&str) -> Result<Vec<&'a serde_json::Value>, JsonPathError>,
+    ) -> RequestedField {
+        let raw_fields = self
+            .path()
             .iter()
-            // NOTE: It may not be a given that the last path is the field name.
-            // TODO: Cannot use the field path as a unique property, it may be associated to different
-            // credential types.
-            // NOTE: Include the namespace for uniqueness of the requested field type.
-            .filter_map(|path| path.split(&['-', '.', ':', '@'][..]).last())
-            .map(|path| {
-                path.chars()
-                    .fold(String::new(), |mut acc, c| {
-                        // Convert camelCase to space-separated words with capitalized first letter.
-                        if c.is_uppercase() {
-                            acc.push(' ');
-                        }
+            .filter_map(|path| selector(path).ok())
+            .flatten()
+            .map(ToOwned::to_owned)
+            // NOTE: It is likely that only one of the paths will
+            // match the selector. Therefore, we're selecting only
+            // the first match that exists, if any.
+            //
+            // It may also be possible that multiple paths match,
+            // in which case there may be multiple raw fields
+            // that can be requested.
+            //
+            // As a result, it may be more acceptable to use `collect()` instead
+            // of `first()` to return all the possible requested fields.
+            .collect::<Vec<serde_json::Value>>();
 
-                        // Check if the field is snake_case and convert to
-                        // space-separated words with capitalized first letter.
-                        if c == '_' {
-                            acc.push(' ');
-                            return acc;
-                        }
+        let purpose = self.purpose().map(ToOwned::to_owned);
+        let name = self.name().map(ToOwned::to_owned);
+        let required = self.is_required();
+        let retained = self.intent_to_retain();
 
-                        acc.push(c);
-                        acc
-                    })
-                    // Split the path based on empty spaces and uppercase the first letter of each word.
-                    .split(' ')
-                    .fold(String::new(), |desc, word| {
-                        let word =
-                            word.chars()
-                                .enumerate()
-                                .fold(String::new(), |mut acc, (i, c)| {
-                                    // Capitalize the first letter of the word.
-                                    if i == 0 {
-                                        if let Some(c) = c.to_uppercase().next() {
-                                            acc.push(c);
-                                            return acc;
-                                        }
-                                    }
-                                    acc.push(c);
-                                    acc
-                                });
-
-                        format!("{desc} {}", word.trim_end())
-                    })
-                    .trim_end()
-                    .to_string()
-            })
-            .collect()
+        RequestedField {
+            id: Uuid::new_v4(),
+            name,
+            required,
+            retained,
+            purpose,
+            constraint_field_id: self.id().map(ToOwned::to_owned),
+            raw_fields,
+        }
     }
 
     /// Returns the Credential Type(s) found in the constraints field.
@@ -833,4 +814,25 @@ impl ConstraintsField {
 pub enum ConstraintsLimitDisclosure {
     Required,
     Preferred,
+}
+
+/// The [RequestedField] type is non-normative and is not part of the
+/// core OID4VP specification. However, it is provided as a helper function
+/// for returning requested fields parsed from a given credential that
+/// correspond to the input descriptor constraint fields that are requested.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RequestedField {
+    /// A unique ID for the requested field
+    pub id: Uuid,
+    // The name property is optional, since it is also
+    // optional on the constraint field.
+    pub name: Option<String>,
+    pub required: bool,
+    pub retained: bool,
+    pub purpose: Option<String>,
+    pub constraint_field_id: Option<String>,
+    // the `raw_field` represents the actual field(s)
+    // being selected by the input descriptor JSON path
+    // selector.
+    pub raw_fields: Vec<serde_json::Value>,
 }
