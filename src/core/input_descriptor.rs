@@ -126,7 +126,7 @@ impl InputDescriptor {
         self.constraints
             .fields
             .iter()
-            .map(|field| field.requested_fields_cred(value))
+            .map(|field| field.requested_fields(self.id.clone(), value))
             .collect()
     }
 
@@ -512,7 +512,11 @@ impl ConstraintsField {
     /// to the what is defined in the presentation definition. This ensures the
     /// holder of the credential may verify what information is shared versus
     /// requested.
-    pub fn requested_fields_cred<'a>(&self, value: &'a serde_json::Value) -> RequestedField<'a> {
+    pub fn requested_fields<'a>(
+        &self,
+        input_descriptor_id: String,
+        value: &'a serde_json::Value,
+    ) -> RequestedField<'a> {
         let raw_fields = self
             .path
             .iter()
@@ -525,7 +529,7 @@ impl ConstraintsField {
             required: self.is_required(),
             retained: self.intent_to_retain,
             purpose: self.purpose.clone(),
-            constraint_field_id: self.id.clone(),
+            input_descriptor_id,
             raw_fields,
         }
     }
@@ -643,13 +647,14 @@ pub enum FieldQueryResult<'a> {
 pub struct RequestedField<'a> {
     /// A unique ID for the requested field
     pub id: Uuid,
+    /// The input descriptor ID the requested field belongs to.
+    pub input_descriptor_id: String,
     // The name property is optional, since it is also
     // optional on the constraint field.
     pub name: Option<String>,
     pub required: bool,
     pub retained: bool,
     pub purpose: Option<String>,
-    pub constraint_field_id: Option<String>,
     // the `raw_field` represents the actual field(s)
     // being selected by the input descriptor JSON path
     // selector.
