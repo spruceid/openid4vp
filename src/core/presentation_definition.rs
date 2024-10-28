@@ -9,15 +9,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 
-/// A non-normative mappings of credential type(s) to requested fields.
-///
-/// This is used for parsing human-readable requested fields and their associated credential types,
-/// if any are provided.
-///
-/// This type is not part of the OID4VP specification, but is provided as a part of helper method for presenting
-/// information about the presentation definition to the holder.
-pub type CredentialTypesRequestedMap = HashMap<String, CredentialTypesRequestedFields>;
-
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
 /// > Presentation Definitions are objects that articulate what proofs a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires.
@@ -195,18 +186,16 @@ impl PresentationDefinition {
         self.format().contains_key(&format)
     }
 
-    /// Return the human-readable string representation of the fields requested
-    /// in the presentation definition's input descriptors.
-    ///
-    /// For example, the following paths would be coverted as follows:
-    ///
-    /// `$.verifiableCredential[0].credentialSubject.id` -> Id
-    /// `$.credentialSubject.givenName` -> Given Name
-    /// `$.credentialSubject.familyName` -> Family Name
-    pub fn requested_fields(&self) -> Vec<String> {
+    /// Returns the requested fields of a given JSON-encoded credential
+    /// that match the constraint fields of the input descriptors of the
+    /// presentation definition.
+    pub fn requested_fields<'a>(
+        &self,
+        credential: &'a serde_json::Value,
+    ) -> Vec<RequestedField<'a>> {
         self.input_descriptors
             .iter()
-            .flat_map(|descriptor| descriptor.requested_fields())
+            .flat_map(|descriptor| descriptor.requested_fields(credential))
             .collect()
     }
 
@@ -219,18 +208,42 @@ impl PresentationDefinition {
             .collect()
     }
 
-    /// Returns a map of the input descriptor ID to the credential type(s)
-    /// and their requested fields.
-    pub fn requested_credential_types_map(&self) -> CredentialTypesRequestedMap {
-        self.input_descriptors
+    /// Match a JSON-encoded credential against the presentation definition.
+    ///
+    /// Returns true if the credential satisfies the presentation definition.
+    ///
+    /// NOTE: this method accepts a generic serde_json::Value argument and checks whether
+    /// the JSON value conforms to the presentation definition's input descriptor constraint
+    /// fields.
+    pub fn is_credential_match(&self, credential: &serde_json::Value) -> bool {
+        self.input_descriptors()
             .iter()
-            .map(|descriptor| {
-                (
-                    descriptor.id.clone(),
-                    descriptor.requested_fields_with_credential_types(),
-                )
+            .flat_map(|descriptor| descriptor.constraints.fields())
+            // skip optional fields
+            .filter(|field| field.is_required())
+            .all(|field| {
+                match field.filter.as_ref().map(|f| f.validator()) {
+                    Some(validator) => {
+                        let is_valid = field
+                            .path
+                            .iter()
+                            // NOTE: Errors are ignored to allow other paths to
+                            // be checked. Interested in whether there is at least
+                            // one valid path.
+                            //
+                            // An empty iterator will return false on an any() call.
+                            .flat_map(|path| path.query(credential))
+                            // NOTE: This is currently assuming that if any of the paths are a match
+                            // to the credential, then the validation is, at least partially, successful,
+                            // and the credential may satisfy the presentation definition.
+                            .any(|value| validator.validate(value).is_ok());
+
+                        is_valid
+                    }
+                    // Allow for fields without validators to pass through.
+                    _ => true,
+                }
             })
-            .collect()
     }
 }
 
@@ -413,62 +426,6 @@ mod tests {
 
         assert!(credentials.contains(&"IdentityCredential".into()));
         assert!(credentials.contains(&"EducationalCredential".into()));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_input_descriptor_multi_input_credential_types_enum() -> Result<()> {
-        let definition: PresentationDefinition = serde_json::from_str(include_str!(
-            "../../tests/presentation-definition/multi-input-credential-enum.json"
-        ))?;
-
-        let input_descriptor_id_1 = "identity_credential";
-        let input_descriptor_id_2 = "educational_credential";
-        let input_descriptor_id_3 = "professional_credential";
-
-        let requested_credentials = definition.requested_credential_types_map();
-
-        assert_eq!(requested_credentials.len(), 3);
-
-        let request_1 = requested_credentials
-            .get(input_descriptor_id_1)
-            .expect("failed to find input descriptor id");
-
-        assert!(request_1
-            .credential_type_hint()
-            .contains(&"PassportCredential".into()));
-        assert!(request_1
-            .credential_type_hint()
-            .contains(&"DriversLicenseCredential".into()));
-        assert!(request_1
-            .credential_type_hint()
-            .contains(&"NationalIDCredential".into()));
-
-        let request_2 = requested_credentials
-            .get(input_descriptor_id_2)
-            .expect("failed to find input descriptor id");
-
-        assert!(request_2
-            .credential_type_hint()
-            .contains(&"BachelorDegreeCredential".into()));
-        assert!(request_2
-            .credential_type_hint()
-            .contains(&"MasterDegreeCredential".into()));
-        assert!(request_2
-            .credential_type_hint()
-            .contains(&"DoctoralDegreeCredential".into()));
-
-        let request_3 = requested_credentials
-            .get(input_descriptor_id_3)
-            .expect("failed to find input descriptor id");
-
-        assert!(request_3
-            .credential_type_hint()
-            .contains(&"ProfessionalLicenseCredential".into()));
-        assert!(request_3
-            .credential_type_hint()
-            .contains(&"CertificationCredential".into()));
 
         Ok(())
     }
