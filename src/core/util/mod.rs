@@ -18,6 +18,12 @@ pub(crate) fn base_request() -> http::request::Builder {
 #[derive(Debug)]
 pub struct ReqwestClient(reqwest::Client);
 
+impl AsRef<reqwest::Client> for ReqwestClient {
+    fn as_ref(&self) -> &reqwest::Client {
+        &self.0
+    }
+}
+
 impl ReqwestClient {
     pub fn new() -> Result<Self> {
         reqwest::Client::builder()
