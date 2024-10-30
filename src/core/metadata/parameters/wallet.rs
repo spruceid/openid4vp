@@ -113,7 +113,7 @@ impl Default for ClientIdSchemesSupported {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RequestObjectSigningAlgValuesSupported(pub Vec<String>);
 
 impl TypedParameter for RequestObjectSigningAlgValuesSupported {
