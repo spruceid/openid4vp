@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use super::{object::UntypedObject, presentation_submission::PresentationSubmission};
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -22,30 +20,29 @@ impl AuthorizationResponse {
             return Ok(Self::Jwt(jwt));
         }
 
-        let unencoded = serde_urlencoded::from_bytes::<HashMap<String, String>>(bytes)
+        let unencoded = serde_urlencoded::from_bytes::<JsonEncodedAuthorizationResponse>(bytes)
             .context("failed to construct flat map")?;
 
-        let Some(vp_token) = unencoded
-            .get("vp_token")
-            .map(|v| serde_json::from_str(&v))
-            .transpose()?
-        else {
-            bail!("failed to find vp token");
-        };
+        let vp_token: VpToken =
+            serde_json::from_str(&unencoded.vp_token).context("failed to decode vp token")?;
 
-        let Some(presentation_submission) = unencoded
-            .get("presentation_submission")
-            .map(|v| serde_json::from_str(&v))
-            .transpose()?
-        else {
-            bail!("failed to find presentation submission");
-        };
+        let presentation_submission: PresentationSubmission =
+            serde_json::from_str(&unencoded.presentation_submission)
+                .context("failed to decode presentation submission")?;
 
         Ok(Self::Unencoded(UnencodedAuthorizationResponse {
             vp_token,
             presentation_submission,
         }))
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct JsonEncodedAuthorizationResponse {
+    /// `vp_token` is JSON string encoded.
+    pub(crate) vp_token: String,
+    /// `presentation_submission` is JSON string encoded.
+    pub(crate) presentation_submission: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -57,18 +54,10 @@ pub struct UnencodedAuthorizationResponse {
 impl UnencodedAuthorizationResponse {
     /// Encode the Authorization Response as 'application/x-www-form-urlencoded'.
     pub fn into_x_www_form_urlencoded(self) -> Result<String> {
-        let mut map = HashMap::<&str, String>::new();
-        let vp_token =
-            serde_json::to_string(&self.vp_token).context("failed to parse JSON vp token")?;
-        let presentation_submission = serde_json::to_string(&self.presentation_submission)
-            .context("failed to encode presentation_submission as JSON")?;
-
-        map.insert("presentation_submission", presentation_submission);
-        map.insert("vp_token", vp_token);
-
-        let encoded = serde_urlencoded::to_string(&map).context(
-            "failed to encode presentation_submission as 'application/x-www-form-urlencoded'",
-        )?;
+        let encoded = serde_urlencoded::to_string(JsonEncodedAuthorizationResponse::from(self))
+            .context(
+                "failed to encode presentation_submission as 'application/x-www-form-urlencoded'",
+            )?;
 
         Ok(encoded)
     }
@@ -81,6 +70,22 @@ impl UnencodedAuthorizationResponse {
     /// Return the Presentation Submission.
     pub fn presentation_submission(&self) -> &PresentationSubmission {
         &self.presentation_submission
+    }
+}
+
+impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
+    fn from(value: UnencodedAuthorizationResponse) -> Self {
+        let vp_token = serde_json::to_string(&value.vp_token)
+            // SAFTEY: VP Token will always be a valid JSON object.
+            .unwrap();
+        let presentation_submission = serde_json::to_string(&value.presentation_submission)
+            // SAFETY: presentation submission will always be a valid JSON object.
+            .unwrap();
+
+        Self {
+            vp_token,
+            presentation_submission,
+        }
     }
 }
 
