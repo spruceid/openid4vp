@@ -1,13 +1,7 @@
-use super::{
-    object::{ParsingErrorContext, UntypedObject},
-    presentation_submission::PresentationSubmission,
-};
-
-use std::collections::BTreeMap;
+use super::{object::UntypedObject, presentation_submission::PresentationSubmission};
 
 use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use url::Url;
 
 use self::parameters::VpToken;
@@ -26,45 +20,34 @@ impl AuthorizationResponse {
             return Ok(Self::Jwt(jwt));
         }
 
-        let flattened = serde_urlencoded::from_bytes::<BTreeMap<String, String>>(bytes)
+        let unencoded = serde_urlencoded::from_bytes::<UnencodedAuthorizationResponse>(bytes)
             .context("failed to construct flat map")?;
-        let map = flattened
-            .into_iter()
-            .map(|(k, v)| {
-                let v = serde_json::from_str::<Value>(&v).unwrap_or(Value::String(v));
-                (k, v)
-            })
-            .collect();
 
-        Ok(Self::Unencoded(UntypedObject(map).try_into()?))
+        Ok(Self::Unencoded(unencoded))
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct UnencodedAuthorizationResponse(
-    pub UntypedObject,
-    pub VpToken,
-    pub PresentationSubmission,
-);
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UnencodedAuthorizationResponse {
+    pub vp_token: VpToken,
+    pub presentation_submission: PresentationSubmission,
+}
 
 impl UnencodedAuthorizationResponse {
     /// Encode the Authorization Response as 'application/x-www-form-urlencoded'.
     pub fn into_x_www_form_urlencoded(self) -> Result<String> {
-        let mut inner = self.0;
-        inner.insert(self.1);
-        inner.insert(self.2);
-        serde_urlencoded::to_string(inner.flatten_for_form()?)
+        serde_urlencoded::to_string(&self)
             .context("failed to encode response as 'application/x-www-form-urlencoded'")
     }
 
     /// Return the Verifiable Presentation Token.
     pub fn vp_token(&self) -> &VpToken {
-        &self.1
+        &self.vp_token
     }
 
     /// Return the Presentation Submission.
     pub fn presentation_submission(&self) -> &PresentationSubmission {
-        &self.2
+        &self.presentation_submission
     }
 }
 
@@ -91,9 +74,7 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
     type Error = Error;
 
     fn try_from(value: UntypedObject) -> Result<Self, Self::Error> {
-        let vp_token = value.get().parsing_error()?;
-        let presentation_submission = value.get().parsing_error()?;
-        Ok(Self(value, vp_token, presentation_submission))
+        Ok(serde_json::from_value(serde_json::Value::Object(value.0))?)
     }
 }
 
