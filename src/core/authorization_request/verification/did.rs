@@ -43,7 +43,6 @@ pub async fn verify_with_resolver(
     // This bypass is for unencoded JWT requests, but we will need to change this later
     // so that trust is preserved when receiving unencoded requests
     if alg.contains("none") {
-        // bail!("UNSIGNED JWT")
         return Ok(());
     }
 
