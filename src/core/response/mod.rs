@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{object::UntypedObject, presentation_submission::PresentationSubmission};
 
-use anyhow::{Context, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -22,10 +22,29 @@ impl AuthorizationResponse {
             return Ok(Self::Jwt(jwt));
         }
 
-        let unencoded = serde_urlencoded::from_bytes::<UnencodedAuthorizationResponse>(bytes)
+        let unencoded = serde_urlencoded::from_bytes::<HashMap<String, String>>(bytes)
             .context("failed to construct flat map")?;
 
-        Ok(Self::Unencoded(unencoded))
+        let Some(vp_token) = unencoded
+            .get("vp_token")
+            .map(|v| serde_json::from_str(&v))
+            .transpose()?
+        else {
+            bail!("failed to find vp token");
+        };
+
+        let Some(presentation_submission) = unencoded
+            .get("presentation_submission")
+            .map(|v| serde_json::from_str(&v))
+            .transpose()?
+        else {
+            bail!("failed to find presentation submission");
+        };
+
+        Ok(Self::Unencoded(UnencodedAuthorizationResponse {
+            vp_token,
+            presentation_submission,
+        }))
     }
 }
 
@@ -125,9 +144,9 @@ mod test {
         ))
         .unwrap();
         let response = UnencodedAuthorizationResponse::try_from(object).unwrap();
-        assert_eq!(
-            response.into_x_www_form_urlencoded().unwrap(),
-            "presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D&vp_token=%22string%22",
-        )
+        let url_encoded = response.into_x_www_form_urlencoded().unwrap();
+
+        assert!(url_encoded.contains("presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D"));
+        assert!(url_encoded.contains("vp_token=%22string%22"));
     }
 }
