@@ -140,11 +140,10 @@ async fn w3c_vc_did_client_direct_post() {
         .await
         .expect("failed to create verifiable presentation");
 
-    let response = AuthorizationResponse::Unencoded(UnencodedAuthorizationResponse(
-        Default::default(),
-        vp.into(),
-        presentation_submission.try_into().unwrap(),
-    ));
+    let response = AuthorizationResponse::Unencoded(UnencodedAuthorizationResponse {
+        vp_token: vp.into(),
+        presentation_submission: presentation_submission.try_into().unwrap(),
+    });
 
     let status = verifier.poll_status(id).await.unwrap();
     assert_eq!(Status::SentRequest, status);
