@@ -4,7 +4,13 @@ use crate::core::object::TypedParameter;
 use anyhow::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use ssi::{claims::vc, one_or_many::OneOrManyRef, prelude::AnyJsonPresentation, OneOrMany};
+use ssi::{
+    claims::vc::{self, v2::SpecializedJsonCredential},
+    json_ld::syntax::Object,
+    one_or_many::OneOrManyRef,
+    prelude::AnyJsonPresentation,
+    OneOrMany,
+};
 
 #[derive(Debug, Clone)]
 pub struct IdToken(pub String);
@@ -175,6 +181,20 @@ impl From<vc::v1::syntax::JsonPresentation> for VpTokenItem {
 
 impl From<vc::v2::syntax::JsonPresentation> for VpTokenItem {
     fn from(value: vc::v2::syntax::JsonPresentation) -> Self {
+        let serde_json::Value::Object(obj) = serde_json::to_value(value)
+            // SAFETY: by definition a VCDM2.0 presentation is a JSON object.
+            .unwrap()
+        else {
+            // SAFETY: by definition a VCDM2.0 presentation is a JSON object.
+            unreachable!()
+        };
+
+        Self::JsonObject(obj)
+    }
+}
+
+impl From<vc::v2::syntax::JsonPresentation<SpecializedJsonCredential<Object>>> for VpTokenItem {
+    fn from(value: vc::v2::syntax::JsonPresentation<SpecializedJsonCredential<Object>>) -> Self {
         let serde_json::Value::Object(obj) = serde_json::to_value(value)
             // SAFETY: by definition a VCDM2.0 presentation is a JSON object.
             .unwrap()
