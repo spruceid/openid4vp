@@ -8,7 +8,7 @@ use ssi::{
     claims::vc::{self, v2::SpecializedJsonCredential},
     json_ld::syntax::Object,
     one_or_many::OneOrManyRef,
-    prelude::AnyJsonPresentation,
+    prelude::{AnyDataIntegrity, AnyJsonPresentation},
     OneOrMany,
 };
 
@@ -112,6 +112,12 @@ impl From<vc::v2::syntax::JsonPresentation> for VpToken {
     }
 }
 
+impl From<vc::v2::syntax::JsonPresentation<SpecializedJsonCredential<Object>>> for VpToken {
+    fn from(value: vc::v2::syntax::JsonPresentation<SpecializedJsonCredential<Object>>) -> Self {
+        Self(vec![value.into()])
+    }
+}
+
 impl From<AnyJsonPresentation> for VpToken {
     fn from(value: AnyJsonPresentation) -> Self {
         Self(vec![value.into()])
@@ -162,6 +168,20 @@ pub enum VpTokenItem {
 impl From<String> for VpTokenItem {
     fn from(value: String) -> Self {
         Self::String(value)
+    }
+}
+
+impl From<AnyDataIntegrity> for VpTokenItem {
+    fn from(value: AnyDataIntegrity) -> Self {
+        let serde_json::Value::Object(obj) = serde_json::to_value(&value)
+            // SAFETY: by definition a Data Integrity Object is a Json LD Node and is a JSON object.
+            .unwrap()
+        else {
+            // SAFETY: by definition a Data Integrity Object is a Json LD Node and is a JSON object.
+            unreachable!()
+        };
+
+        Self::JsonObject(obj)
     }
 }
 

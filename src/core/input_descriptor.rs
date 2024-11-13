@@ -209,6 +209,11 @@ impl Constraints {
         self.fields.as_ref()
     }
 
+    /// Returns the fields of the constraints object as a mutable reference.
+    pub fn fields_mut(&mut self) -> &mut Vec<ConstraintsField> {
+        self.fields.as_mut()
+    }
+
     /// Set the limit disclosure value.
     ///
     /// For all [Claims](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claims) submitted in relation to [InputDescriptor] Objects that include a `constraints`
