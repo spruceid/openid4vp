@@ -137,6 +137,7 @@ pub enum ClaimFormatPayload {
     /// claim presentation algorithm types supported by a wallet.
     #[serde(rename = "alg_values_supported")]
     AlgValuesSupported(Vec<String>),
+    /// This variant is primarily used for `ldp`, `ldp_vc`, `ldp_vp`, `ac_vc`, and `ac_vp`
     #[serde(rename = "proof_type")]
     ProofType(Vec<String>),
     #[serde(untagged)]
