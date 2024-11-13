@@ -40,12 +40,6 @@ pub async fn verify_with_resolver(
         bail!("request was signed with unsupported algorithm: {alg}")
     }
 
-    // This bypass is for unencoded JWT requests, but we will need to change this later
-    // so that trust is preserved when receiving unencoded requests
-    if alg.contains("none") {
-        return Ok(());
-    }
-
     let Json::String(kid) = headers
         .remove("kid")
         .context("'kid' was missing from jwt headers")?
