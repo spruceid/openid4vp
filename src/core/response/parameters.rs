@@ -4,7 +4,13 @@ use crate::core::object::TypedParameter;
 use anyhow::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use ssi::{claims::vc, one_or_many::OneOrManyRef, prelude::AnyJsonPresentation, OneOrMany};
+use ssi::{
+    claims::vc::{self, v2::SpecializedJsonCredential},
+    json_ld::syntax::Object,
+    one_or_many::OneOrManyRef,
+    prelude::{AnyDataIntegrity, AnyJsonPresentation, AnySuite, DataIntegrity},
+    OneOrMany,
+};
 
 #[derive(Debug, Clone)]
 pub struct IdToken(pub String);
@@ -106,6 +112,12 @@ impl From<vc::v2::syntax::JsonPresentation> for VpToken {
     }
 }
 
+impl From<vc::v2::syntax::JsonPresentation<SpecializedJsonCredential<Object>>> for VpToken {
+    fn from(value: vc::v2::syntax::JsonPresentation<SpecializedJsonCredential<Object>>) -> Self {
+        Self(vec![value.into()])
+    }
+}
+
 impl From<AnyJsonPresentation> for VpToken {
     fn from(value: AnyJsonPresentation) -> Self {
         Self(vec![value.into()])
@@ -159,6 +171,20 @@ impl From<String> for VpTokenItem {
     }
 }
 
+impl From<AnyDataIntegrity> for VpTokenItem {
+    fn from(value: AnyDataIntegrity) -> Self {
+        let serde_json::Value::Object(obj) = serde_json::to_value(&value)
+            // SAFETY: by definition a Data Integrity Object is a Json LD Node and is a JSON object.
+            .unwrap()
+        else {
+            // SAFETY: by definition a Data Integrity Object is a Json LD Node and is a JSON object.
+            unreachable!()
+        };
+
+        Self::JsonObject(obj)
+    }
+}
+
 impl From<vc::v1::syntax::JsonPresentation> for VpTokenItem {
     fn from(value: vc::v1::syntax::JsonPresentation) -> Self {
         let serde_json::Value::Object(obj) = serde_json::to_value(value)
@@ -187,6 +213,20 @@ impl From<vc::v2::syntax::JsonPresentation> for VpTokenItem {
     }
 }
 
+impl From<vc::v2::syntax::JsonPresentation<SpecializedJsonCredential<Object>>> for VpTokenItem {
+    fn from(value: vc::v2::syntax::JsonPresentation<SpecializedJsonCredential<Object>>) -> Self {
+        let serde_json::Value::Object(obj) = serde_json::to_value(value)
+            // SAFETY: by definition a VCDM2.0 presentation is a JSON object.
+            .unwrap()
+        else {
+            // SAFETY: by definition a VCDM2.0 presentation is a JSON object.
+            unreachable!()
+        };
+
+        Self::JsonObject(obj)
+    }
+}
+
 impl From<AnyJsonPresentation> for VpTokenItem {
     fn from(value: AnyJsonPresentation) -> Self {
         let serde_json::Value::Object(obj) = serde_json::to_value(value)
@@ -194,6 +234,20 @@ impl From<AnyJsonPresentation> for VpTokenItem {
             .unwrap()
         else {
             // SAFETY: by definition a VCDM presentation is a JSON object.
+            unreachable!()
+        };
+
+        Self::JsonObject(obj)
+    }
+}
+
+impl From<DataIntegrity<AnyJsonPresentation, AnySuite>> for VpTokenItem {
+    fn from(value: DataIntegrity<AnyJsonPresentation, AnySuite>) -> Self {
+        let serde_json::Value::Object(obj) = serde_json::to_value(value)
+            // SAFETY: by definition a VCDM2.0 presentation is a JSON object.
+            .unwrap()
+        else {
+            // SAFETY: by definition a VCDM2.0 presentation is a JSON object.
             unreachable!()
         };
 

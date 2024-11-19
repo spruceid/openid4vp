@@ -42,6 +42,8 @@ pub async fn verify_with_resolver(
 
     // This bypass is for unencoded JWT requests, but we will need to change this later
     // so that trust is preserved when receiving unencoded requests
+    // NOTE: This requires that `Algorithm::None` is permitted in the wallet metadata
+    // Otherwise, this function will error in the previous assertion.
     if alg.contains("none") {
         return Ok(());
     }
