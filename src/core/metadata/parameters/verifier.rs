@@ -10,25 +10,28 @@ use serde_json::{Map, Value as Json};
 pub struct VpFormats(pub ClaimFormatMap);
 
 impl VpFormats {
-    /// Returns a boolean to denote whether the format and cryptosuite provided
-    /// are supported in the VP formats.
+    /// Returns a boolean to denote whether a particular pair of format and security method
+    /// are supported in the VP formats. A security method could be a JOSE algorithm, a COSE
+    /// algorithm, a Cryptosuite, etc.
     ///
-    /// NOTE: This method is interested in the cryptosuite of the claim format
+    /// NOTE: This method is interested in the security method of the claim format
     /// payload and not the claim format designation.
     ///
-    /// For example, the cryptosuite would need to match one of the `alg`
+    /// For example, the security method would need to match one of the `alg`
     /// values in the claim format payload.
-    pub fn supports_cryptosuite(
+    pub fn supports_security_method(
         &self,
         format: &ClaimFormatDesignation,
-        cryptosuite: &String,
+        security_method: &String,
     ) -> bool {
         match self.0.get(format) {
             Some(ClaimFormatPayload::Alg(alg_values))
             | Some(ClaimFormatPayload::AlgValuesSupported(alg_values)) => {
-                alg_values.contains(cryptosuite)
+                alg_values.contains(security_method)
             }
-            Some(ClaimFormatPayload::ProofType(proof_types)) => proof_types.contains(cryptosuite),
+            Some(ClaimFormatPayload::ProofType(proof_types)) => {
+                proof_types.contains(security_method)
+            }
             _ => false,
         }
     }
