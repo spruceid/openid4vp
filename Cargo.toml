@@ -21,7 +21,7 @@ http = "1.1.0"
 # There may be a better way to handle this that doesn't require the `json-syntax` crate directly.
 json-syntax = { version = "0.12.5", features = ["serde_json"] }
 # jsonpath_lib = "0.3.0"
-serde_json_path = "0.6.7"
+serde_json_path = "0.7.1"
 jsonschema = "0.18.0"
 openid4vp-frontend = { version = "0.1.0", path = "openid4vp-frontend" }
 p256 = { version = "0.13.2", features = ["jwk"] }

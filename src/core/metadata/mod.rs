@@ -49,6 +49,25 @@ impl WalletMetadata {
         &mut self.2
     }
 
+    /// Add a request object signing algorithm to the list of the request object
+    /// signing algorithms supported.
+    pub fn add_request_object_signing_alg_values_supported(
+        &mut self,
+        alg: Algorithm,
+    ) -> Result<()> {
+        let mut supported = self
+            .0
+            .get_or_default::<RequestObjectSigningAlgValuesSupported>()?;
+
+        // Insert the algorithm.
+        supported.0.push(alg.to_string());
+
+        // Insert the updated request object signing algorithms supported.
+        self.0.insert(supported);
+
+        Ok(())
+    }
+
     /// Add a client ID scheme to the list of the client ID schemes supported.
     ///
     /// This method will construct a `client_id_schemes_supported` proprety in the

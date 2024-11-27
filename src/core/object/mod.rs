@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
@@ -60,21 +58,6 @@ impl UntypedObject {
                     .map_err(Into::into),
             ),
         }
-    }
-
-    /// Flatten the structure for posting as a form.
-    pub(crate) fn flatten_for_form(self) -> Result<BTreeMap<String, String>> {
-        self.0
-            .into_iter()
-            .map(|(k, v)| {
-                if let Json::String(s) = v {
-                    return Ok((k, s));
-                }
-                serde_json::to_string(&v)
-                    .map(|v| (k, v))
-                    .map_err(Error::from)
-            })
-            .collect()
     }
 }
 
