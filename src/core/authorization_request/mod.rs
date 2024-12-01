@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{anyhow, bail, Context, Error, Result};
+use parameters::ClientMetadata;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use url::Url;
@@ -16,6 +17,7 @@ use self::{
 };
 
 use super::{
+    metadata::parameters::verifier::VpFormats,
     object::{ParsingErrorContext, UntypedObject},
     util::{base_request, AsyncHttpClient},
 };
@@ -262,6 +264,21 @@ impl AuthorizationRequestObject {
 
     pub fn nonce(&self) -> &Nonce {
         &self.7
+    }
+
+    /// Return the `client_metadata` field from the authorization request.
+    pub fn client_metadata(&self) -> Result<ClientMetadata> {
+        self.0
+            .get()
+            .ok_or(anyhow!("missing `client_metadata` object"))?
+    }
+
+    /// Return the `VpFormats` from the `client_metadata` field.
+    pub fn vp_formats(&self) -> Result<VpFormats> {
+        self.client_metadata()?
+            .0
+            .get()
+            .ok_or(anyhow!("missing vp_formats"))?
     }
 }
 

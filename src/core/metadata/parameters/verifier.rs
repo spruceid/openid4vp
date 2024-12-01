@@ -1,5 +1,6 @@
-use crate::core::credential_format::ClaimFormatMap;
+use crate::core::metadata::ClaimFormatPayload;
 use crate::core::object::TypedParameter;
+use crate::core::{credential_format::ClaimFormatMap, metadata::ClaimFormatDesignation};
 
 use anyhow::{Context, Error};
 use serde::{Deserialize, Serialize};
@@ -7,6 +8,34 @@ use serde_json::{Map, Value as Json};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VpFormats(pub ClaimFormatMap);
+
+impl VpFormats {
+    /// Returns a boolean to denote whether a particular pair of format and security method
+    /// are supported in the VP formats. A security method could be a JOSE algorithm, a COSE
+    /// algorithm, a Cryptosuite, etc.
+    ///
+    /// NOTE: This method is interested in the security method of the claim format
+    /// payload and not the claim format designation.
+    ///
+    /// For example, the security method would need to match one of the `alg`
+    /// values in the claim format payload.
+    pub fn supports_security_method(
+        &self,
+        format: &ClaimFormatDesignation,
+        security_method: &String,
+    ) -> bool {
+        match self.0.get(format) {
+            Some(ClaimFormatPayload::Alg(alg_values))
+            | Some(ClaimFormatPayload::AlgValuesSupported(alg_values)) => {
+                alg_values.contains(security_method)
+            }
+            Some(ClaimFormatPayload::ProofType(proof_types)) => {
+                proof_types.contains(security_method)
+            }
+            _ => false,
+        }
+    }
+}
 
 impl TypedParameter for VpFormats {
     const KEY: &'static str = "vp_formats";
