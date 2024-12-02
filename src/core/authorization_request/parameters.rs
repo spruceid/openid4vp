@@ -1,12 +1,9 @@
 use std::{fmt, ops::Deref};
 
 use crate::core::{
-    metadata::parameters::{
-        verifier::{JWKs, VpFormats},
-        wallet::{
-            AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
-            AuthorizationSignedResponseAlg,
-        },
+    metadata::parameters::verifier::{
+        AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
+        AuthorizationSignedResponseAlg, JWKs, VpFormats,
     },
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
     presentation_definition::PresentationDefinition as PresentationDefinitionParsed,

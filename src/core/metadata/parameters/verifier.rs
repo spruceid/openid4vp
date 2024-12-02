@@ -146,6 +146,27 @@ impl From<AuthorizationEncryptedResponseEnc> for Json {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AuthorizationSignedResponseAlg(pub ssi::crypto::Algorithm);
+
+impl TypedParameter for AuthorizationSignedResponseAlg {
+    const KEY: &'static str = "authorization_signed_response_alg";
+}
+
+impl TryFrom<Json> for AuthorizationSignedResponseAlg {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(Self(serde_json::from_value(value)?))
+    }
+}
+
+impl From<AuthorizationSignedResponseAlg> for Json {
+    fn from(value: AuthorizationSignedResponseAlg) -> Json {
+        Json::String(value.0.to_string())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use serde_json::json;
