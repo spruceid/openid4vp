@@ -1,11 +1,15 @@
 use std::{fmt, ops::Deref};
 
 use crate::core::{
+    metadata::parameters::verifier::{
+        AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
+        AuthorizationSignedResponseAlg, JWKs, VpFormats,
+    },
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
     presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
     util::{base_request, AsyncHttpClient},
 };
-use anyhow::{bail, Context, Error, Ok};
+use anyhow::{anyhow, bail, Context, Error, Ok};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use url::Url;
@@ -105,6 +109,23 @@ impl fmt::Display for ClientIdScheme {
 }
 
 /// `client_metadata` field in the Authorization Request.
+///
+/// client_metadata: OPTIONAL. A JSON object containing the Verifier metadata values.
+/// It MUST be UTF-8 encoded. The following metadata parameters MAY be used:
+///
+/// jwks: OPTIONAL. A JWKS as defined in [RFC7591]. It MAY contain one or more public keys, such as those used by the Wallet as an input to a key agreement that may be used for encryption of the Authorization Response (see Section 7.3), or where the Wallet will require the public key of the Verifier to generate the Verifiable Presentation. This allows the Verifier to pass ephemeral keys specific to this Authorization Request. Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
+/// vp_formats: REQUIRED when not available to the Wallet via another mechanism. As defined in Section 10.1.
+/// authorization_signed_response_alg: OPTIONAL. As defined in [JARM].
+/// authorization_encrypted_response_alg: OPTIONAL. As defined in [JARM].
+/// authorization_encrypted_response_enc: OPTIONAL. As defined in [JARM].
+/// Authoritative data the Wallet is able to obtain about the Client from other sources,
+/// for example those from an OpenID Federation Entity Statement, take precedence over the
+/// values passed in client_metadata. Other metadata parameters MUST be ignored unless a
+/// profile of this specification explicitly defines them as usable in the client_metadata parameter.
+///
+///
+/// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.4
+///
 #[derive(Debug, Clone)]
 pub struct ClientMetadata(pub UntypedObject);
 
@@ -168,6 +189,117 @@ impl ClientMetadata {
 
         tracing::warn!("the client metadata was not passed by reference or value");
         Ok(ClientMetadata(UntypedObject::default()))
+    }
+
+    /// OPTIONAL. A JWKS as defined in
+    /// [RFC7591](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#RFC7591).
+    ///
+    /// It MAY contain one or more public keys, such as those used by the Wallet as an input to a
+    /// key agreement that may be used for encryption of the Authorization Response
+    /// (see [Section 7.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#jarm)),
+    /// or where the Wallet will require the public key of the Verifier to generate the Verifiable Presentation.
+    ///
+    /// This allows the Verifier to pass ephemeral keys specific to this Authorization Request.
+    /// Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
+    ///
+    ///
+    /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.1
+    ///
+    /// The jwks_uri or jwks metadata parameters can be used by clients to register their public encryption keys.
+    ///
+    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-4
+    ///
+    pub fn jwks(&self) -> Option<Result<JWKs, Error>> {
+        self.0.get()
+    }
+
+    /// Return the `VpFormats` from the `client_metadata` field.
+    ///
+    /// vp_formats: REQUIRED when not available to the Wallet via another mechanism.
+    ///
+    /// As defined in [Section 10.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#client_metadata_parameters).
+    ///
+    /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.2
+    pub fn vp_formats(&self) -> Result<VpFormats, Error> {
+        self.0.get().ok_or(anyhow!("missing vp_formats"))?
+    }
+
+    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
+    ///
+    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
+    ///
+    /// The JWS [RFC7515](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7515)
+    /// `alg` algorithm REQUIRED for signing authorization responses.
+    ///
+    /// If this is specified, the response will be signed using JWS and the configured algorithm.
+    ///
+    /// If unspecified, the default algorithm to use for signing authorization responses is RS256.
+    ///
+    /// The algorithm none is not allowed.
+    ///
+    ///  A list of defined ["alg" values](https://datatracker.ietf.org/doc/html/rfc7518#section-3.1)
+    /// for this use can be found in the IANA "JSON Web Signature and Encryption Algorithms" registry established
+    /// by [JWA](https://www.rfc-editor.org/rfc/rfc7515.html#ref-JWA); the initial contents of this registry are the values
+    /// defined in Section 3.1 of [JWA](https://www.rfc-editor.org/rfc/rfc7515.html#ref-JWA).
+    ///
+    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.3
+    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.2.1
+    /// See: https://datatracker.ietf.org/doc/html/rfc7518#section-3.1
+    ///
+    pub fn authorization_signed_response_alg(
+        &self,
+    ) -> Result<AuthorizationSignedResponseAlg, Error> {
+        self.0.get().unwrap_or(Ok(AuthorizationSignedResponseAlg(
+            ssi::crypto::Algorithm::RS256,
+        )))
+    }
+
+    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
+    ///
+    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
+    ///
+    /// The JWE [RFC7516](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7516)
+    /// `alg` algorithm REQUIRED for encrypting authorization responses.
+    ///
+    /// If both signing and encryption are requested, the response will be signed then encrypted,
+    /// with the result being a Nested JWT, as defined in JWT
+    /// [RFC7519](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7519).
+    ///
+    /// The default, if omitted, is that no encryption is performed.
+    ///
+    ///
+    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.4
+    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.4.1
+    ///
+    pub fn authorization_encrypted_response_alg(
+        &self,
+    ) -> Option<Result<AuthorizationEncryptedResponseAlg, Error>> {
+        self.0.get()
+    }
+
+    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
+    ///
+    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
+    ///
+    /// The JWE [RFC7516](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7516) `enc` algorithm
+    /// REQUIRED for encrypting authorization responses.
+    ///
+    /// If `authorization_encrypted_response_alg` is specified, the default for this value is `A128CBC-HS256`.
+    ///
+    /// When `authorization_encrypted_response_enc` is included, authorization_encrypted_response_alg MUST also be provided.
+    ///
+    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.5
+    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.6.1
+    ///
+    pub fn authorization_encrypted_response_enc(
+        &self,
+    ) -> Option<Result<AuthorizationEncryptedResponseEnc, Error>> {
+        match self.0.get() {
+            Some(enc) => Some(enc),
+            None => self
+                .authorization_encrypted_response_alg()
+                .map(|_| Ok(AuthorizationEncryptedResponseEnc("A128CBC-HS256".into()))),
+        }
     }
 }
 

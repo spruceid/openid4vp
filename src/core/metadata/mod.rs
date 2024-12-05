@@ -70,17 +70,17 @@ impl WalletMetadata {
 
     /// Add a client ID scheme to the list of the client ID schemes supported.
     ///
-    /// This method will construct a `client_id_schemes_supported` proprety in the
-    /// wallet metadata if none exists previously, otherwise, this method will add
-    /// the client ID scheme to the existing list of the client ID schemes supported.
+    /// This method will construct a `client_id_schemes_supported` property in the
+    /// wallet metadata if none exists previously, otherwise, this method will append
+    /// the client ID schemes to the existing list of the client ID schemes supported.
     pub fn add_client_id_schemes_supported(
         &mut self,
-        client_id_scheme: ClientIdScheme,
+        client_id_schemes: &[ClientIdScheme],
     ) -> Result<()> {
         let mut supported = self.0.get_or_default::<ClientIdSchemesSupported>()?;
 
         // Insert the scheme.
-        supported.0.push(client_id_scheme);
+        supported.0.extend_from_slice(client_id_schemes);
 
         // Insert the updated client IDs schemes supported.
         self.0.insert(supported);
