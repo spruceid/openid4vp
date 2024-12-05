@@ -136,7 +136,7 @@ pub struct MatchingInputs<'a, T> {
     pub by_descriptor: HashMap<&'a str, Vec<usize>>,
 }
 
-impl<'a, T> MatchingInputs<'a, T> {
+impl<T> MatchingInputs<'_, T> {
     /// Validate the inputs against the presentation definition requirements.
     pub fn validate(
         &self,
@@ -152,10 +152,9 @@ impl<'a, T> MatchingInputs<'a, T> {
                 // By default each input descriptor must have at least one
                 // associated input.
                 for d in definition.input_descriptors() {
-                    if !self
+                    if self
                         .by_descriptor
-                        .get(d.id.as_str())
-                        .is_some_and(|i| !i.is_empty())
+                        .get(d.id.as_str()).is_none_or(|i| i.is_empty())
                     {
                         return Err(SubmissionValidationError::MissingRequiredInput(
                             d.id.clone(),

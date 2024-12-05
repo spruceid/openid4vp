@@ -54,14 +54,14 @@ async fn w3c_vc_did_client_direct_post() {
         )
         .set_name("DID Key Identity Verification".into())
         .set_purpose("Check whether your identity key has been verified.".into())
-        .set_format((|| {
+        .set_format({
             let mut map = ClaimFormatMap::new();
             map.insert(
                 ClaimFormatDesignation::JwtVcJson,
                 ClaimFormatPayload::Alg(vec![Algorithm::ES256.to_string()]),
             );
             map
-        })()),
+        }),
     );
 
     let client_metadata = UntypedObject::default();
