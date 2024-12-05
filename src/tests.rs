@@ -184,11 +184,10 @@ fn test_input_descriptor_validation() -> Result<()> {
 
     let presentation_definition: PresentationDefinition = value
         .as_object_mut()
-        .map(|obj| {
+        .and_then(|obj| {
             obj.remove("presentation_definition")
                 .map(serde_json::from_value)
         })
-        .flatten()
         .expect("failed to parse presentation definition")?;
 
     let presentation_submission = include_str!(
@@ -199,11 +198,10 @@ fn test_input_descriptor_validation() -> Result<()> {
 
     let presentation_submission: PresentationSubmission = value
         .as_object()
-        .map(|obj| {
+        .and_then(|obj| {
             obj.get("presentation_submission")
                 .map(|v| serde_json::from_value(v.clone()))
         })
-        .flatten()
         .expect("failed to parse presentation submission")?;
 
     // let descriptor_map = presentation_submission.descriptor_map();

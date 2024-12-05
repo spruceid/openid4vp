@@ -53,12 +53,7 @@ pub async fn create_test_verifiable_presentation() -> Result<AnyJsonPresentation
     vp.verifiable_credentials
         .push(serde_json::from_value(json_credential)?);
     vp.holder = Some(holder_did.into());
-    vp.id = UriBuf::new(
-        format!("urn:uuid:{}", Uuid::new_v4().to_string())
-            .as_bytes()
-            .to_vec(),
-    )
-    .ok();
+    vp.id = UriBuf::new(format!("urn:uuid:{}", Uuid::new_v4()).as_bytes().to_vec()).ok();
 
     Ok(AnyJsonPresentation::V1(vp))
 }
