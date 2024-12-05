@@ -154,7 +154,8 @@ impl<T> MatchingInputs<'_, T> {
                 for d in definition.input_descriptors() {
                     if self
                         .by_descriptor
-                        .get(d.id.as_str()).is_none_or(|i| i.is_empty())
+                        .get(d.id.as_str())
+                        .is_none_or(|i| i.is_empty())
                     {
                         return Err(SubmissionValidationError::MissingRequiredInput(
                             d.id.clone(),
