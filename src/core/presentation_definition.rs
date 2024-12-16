@@ -227,11 +227,17 @@ impl PresentationDefinition {
                         .path
                         .iter()
                         .flat_map(|path| path.query(credential))
-                        .any(|value| match value {
-                            serde_json::Value::Array(vals) => {
-                                vals.iter().any(|val| validator.validate(val).is_ok())
+                        .any(|value| {
+                            match value {
+                                // If the value is an array, test the constraint against each array element.
+                                serde_json::Value::Array(vals) => {
+                                    if vals.iter().any(|val| validator.validate(val).is_ok()) {
+                                        return true;
+                                    }
+                                },
+                                _ => (),
                             }
-                            _ => validator.validate(value).is_ok(),
+                            validator.validate(value).is_ok()
                         }),
                     // Allow for fields without validators to pass through.
                     _ => true,
