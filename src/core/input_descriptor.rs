@@ -126,7 +126,9 @@ impl InputDescriptor {
         self.constraints
             .fields
             .iter()
-            .map(|field| field.requested_fields(self.id.clone(), value))
+            .map(|field| {
+                field.requested_fields(self.id.clone(), self.constraints.limit_disclosure(), value)
+            })
             .map(|mut requested_field| {
                 // Set the purpose of the requested field to the input descriptor `purpose`,
                 // if it is no value is set from the constraint field's `purpose`.
@@ -242,6 +244,13 @@ impl Constraints {
     /// Returns the limit disclosure value.
     pub fn limit_disclosure(&self) -> Option<&ConstraintsLimitDisclosure> {
         self.limit_disclosure.as_ref()
+    }
+
+    /// Returns if the fields are selective disclosable
+    pub fn selective_disclosable(&self) -> bool {
+        self.fields
+            .iter()
+            .any(|field| field.is_selective_disclosable(self.limit_disclosure()))
     }
 
     /// Returns if the constraints fields contain non-optional
@@ -492,6 +501,17 @@ impl ConstraintsField {
         !self.is_optional()
     }
 
+    /// Given limit_disclosure returns wether the property is selective disclosable
+    fn is_selective_disclosable(
+        &self,
+        limit_disclosure: Option<&ConstraintsLimitDisclosure>,
+    ) -> bool {
+        match limit_disclosure {
+            Some(_) => self.is_optional(),
+            None => false,
+        }
+    }
+
     /// Field query.
     ///
     /// See: <https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation>
@@ -529,6 +549,7 @@ impl ConstraintsField {
     pub fn requested_fields<'a>(
         &self,
         input_descriptor_id: String,
+        limit_disclosure: Option<&ConstraintsLimitDisclosure>,
         value: &'a serde_json::Value,
     ) -> RequestedField<'a> {
         let raw_fields = self
@@ -542,6 +563,7 @@ impl ConstraintsField {
             name: self.name.clone(),
             required: self.is_required(),
             retained: self.intent_to_retain,
+            selective_disclosable: self.is_selective_disclosable(limit_disclosure),
             purpose: self.purpose.clone(),
             input_descriptor_id,
             raw_fields,
@@ -668,6 +690,7 @@ pub struct RequestedField<'a> {
     pub name: Option<String>,
     pub required: bool,
     pub retained: bool,
+    pub selective_disclosable: bool,
     pub purpose: Option<String>,
     // the `raw_field` represents the actual field(s)
     // being selected by the input descriptor JSON path
