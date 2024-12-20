@@ -127,6 +127,15 @@ impl InputDescriptor {
             .fields
             .iter()
             .map(|field| field.requested_fields(self.id.clone(), value))
+            .map(|mut requested_field| {
+                // Set the purpose of the requested field to the input descriptor `purpose`,
+                // if it is no value is set from the constraint field's `purpose`.
+                if requested_field.purpose.is_none() {
+                    requested_field.purpose = self.purpose.clone();
+                }
+
+                requested_field
+            })
             .collect()
     }
 
