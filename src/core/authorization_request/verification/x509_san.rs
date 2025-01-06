@@ -69,6 +69,8 @@ pub fn validate<V: Verifier>(
     let leaf_cert = Certificate::from_der(&leaf_cert_der)
         .context("leaf certificate in 'x5c' was not valid DER")?;
 
+    debug!("Leaf certificate: {leaf_cert:?}");
+
     if !leaf_cert
         .tbs_certificate
         .filter::<SubjectAltName>()
@@ -82,19 +84,30 @@ pub fn validate<V: Verifier>(
         .flatten()
         .filter_map(|gn| match (gn, x509_san_variant) {
             (GeneralName::DnsName(uri), X509SanVariant::Dns) => Some(uri.to_string()),
+            (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Uri) => {
+                Some(uri.to_string())
+            }
+            #[cfg(feature = "maximize_interoperability")]
+            (GeneralName::DnsName(uri), X509SanVariant::Uri) => Some(uri.to_string()),
+            #[cfg(feature = "maximize_interoperability")]
+            (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Dns) => Some(
+                Url::parse(uri.as_str())
+                    .map(|u| u.authority().to_string())
+                    .unwrap_or(uri.to_string()),
+            ),
             (gn, X509SanVariant::Dns) => {
                 debug!("found non-DNS SAN: {gn:?}");
                 None
-            }
-            (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Uri) => {
-                Some(uri.to_string())
             }
             (gn, X509SanVariant::Uri) => {
                 debug!("found non-URI SAN: {gn:?}");
                 None
             }
         })
-        .any(|uri| uri == client_id)
+        .any(|uri| {
+            debug!("comparing SAN '{uri}' to client_id '{client_id}'");
+            uri == client_id
+        })
     {
         bail!("client_id does not match any Subject Alternative Name")
     }

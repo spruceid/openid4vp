@@ -7,7 +7,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use serde_json::Map;
+use serde_json::{Map, Value as Json};
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
@@ -189,10 +189,7 @@ impl PresentationDefinition {
     /// Returns the requested fields of a given JSON-encoded credential
     /// that match the constraint fields of the input descriptors of the
     /// presentation definition.
-    pub fn requested_fields<'a>(
-        &self,
-        credential: &'a serde_json::Value,
-    ) -> Vec<RequestedField<'a>> {
+    pub fn requested_fields<'a>(&self, credential: &'a Json) -> Vec<RequestedField<'a>> {
         self.input_descriptors
             .iter()
             .flat_map(|descriptor| descriptor.requested_fields(credential))
@@ -215,7 +212,7 @@ impl PresentationDefinition {
     /// NOTE: this method accepts a generic serde_json::Value argument and checks whether
     /// the JSON value conforms to the presentation definition's input descriptor constraint
     /// fields.
-    pub fn is_credential_match(&self, credential: &serde_json::Value) -> bool {
+    pub fn is_credential_match(&self, credential: &Json) -> bool {
         self.input_descriptors()
             .iter()
             .flat_map(|descriptor| descriptor.constraints.fields())
@@ -228,7 +225,7 @@ impl PresentationDefinition {
                         .iter()
                         .flat_map(|path| path.query(credential))
                         .any(|value| {
-                            if let serde_json::Value::Array(vals) = value {
+                            if let Json::Array(vals) = value {
                                 if vals.iter().any(|val| validator.validate(val).is_ok()) {
                                     return true;
                                 }
@@ -248,7 +245,7 @@ pub struct SubmissionRequirementObject {
     pub name: Option<String>,
     pub purpose: Option<String>,
     #[serde(flatten)]
-    pub property_set: Option<Map<String, serde_json::Value>>,
+    pub property_set: Option<Map<String, Json>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
