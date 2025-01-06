@@ -91,7 +91,7 @@ pub fn validate<V: Verifier>(
             (GeneralName::DnsName(uri), X509SanVariant::Uri) => Some(uri.to_string()),
             #[cfg(feature = "maximize_interoperability")]
             (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Dns) => Some(
-                Url::parse(uri.as_str())
+                url::Url::parse(uri.as_str())
                     .map(|u| u.authority().to_string())
                     .unwrap_or(uri.to_string()),
             ),
