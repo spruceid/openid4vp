@@ -16,7 +16,7 @@ jobs:
     - name: Build
       run: cargo build
     - name: Test
-      run: cargo test
+      run: cargo test --all-features
     - name: Fmt
       run: cargo fmt -- --check
     - name: Clippy
