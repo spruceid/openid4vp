@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use http::header::CONTENT_TYPE;
