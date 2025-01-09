@@ -1,7 +1,6 @@
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use http::header::CONTENT_TYPE;
-use tracing::warn;
 use url::Url;
 
 use crate::core::{
@@ -81,7 +80,6 @@ pub trait Wallet: RequestVerifier + Sync {
         }
 
         Ok(serde_json::from_str(&body)
-            .map_err(|e| warn!("response did not contain a redirect: {e}"))
             .ok()
             .map(|PostRedirection { redirect_uri }| redirect_uri))
     }
