@@ -15,7 +15,7 @@ pub(crate) fn base_request() -> http::request::Builder {
     Request::builder().header("Prefer", "OID4VP-0.0.20")
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ReqwestClient(reqwest::Client);
 
 impl AsRef<reqwest::Client> for ReqwestClient {
