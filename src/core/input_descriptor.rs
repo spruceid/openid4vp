@@ -537,9 +537,17 @@ impl ConstraintsField {
             .flat_map(|path| path.query(value).all())
             .collect::<Vec<&'a serde_json::Value>>();
 
+        let raw_path = self
+            .path
+            .iter()
+            .flat_map(|p| p.query_located(value).all())
+            .map(|e| e.location().to_string())
+            .collect::<Vec<_>>();
+
         RequestedField {
             id: uuid::Uuid::new_v4(),
             name: self.name.clone(),
+            path: raw_path,
             required: self.is_required(),
             retained: self.intent_to_retain,
             purpose: self.purpose.clone(),
@@ -666,6 +674,7 @@ pub struct RequestedField<'a> {
     // The name property is optional, since it is also
     // optional on the constraint field.
     pub name: Option<String>,
+    pub path: Vec<String>,
     pub required: bool,
     pub retained: bool,
     pub purpose: Option<String>,
