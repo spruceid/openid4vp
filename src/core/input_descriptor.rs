@@ -537,10 +537,17 @@ impl ConstraintsField {
             .flat_map(|path| path.query(value).all())
             .collect::<Vec<&'a serde_json::Value>>();
 
+        let raw_path = self
+            .path
+            .iter()
+            .flat_map(|p| p.query_located(value).all())
+            .map(|e| e.location().to_string())
+            .collect::<Vec<_>>();
+
         RequestedField {
             id: uuid::Uuid::new_v4(),
             name: self.name.clone(),
-            path: self.path.iter().map(|j| j.to_string()).collect(),
+            path: raw_path,
             required: self.is_required(),
             retained: self.intent_to_retain,
             purpose: self.purpose.clone(),
