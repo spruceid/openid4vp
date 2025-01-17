@@ -540,13 +540,7 @@ impl ConstraintsField {
         RequestedField {
             id: uuid::Uuid::new_v4(),
             name: self.name.clone(),
-            // TODO: Figure out path
-            path: self
-                .path
-                .clone()
-                .into_iter()
-                .map(|e| format!("{}|", e.to_string()))
-                .collect(),
+            path: self.path.iter().map(|j| j.to_string()).collect(),
             required: self.is_required(),
             retained: self.intent_to_retain,
             purpose: self.purpose.clone(),
@@ -673,7 +667,7 @@ pub struct RequestedField<'a> {
     // The name property is optional, since it is also
     // optional on the constraint field.
     pub name: Option<String>,
-    pub path: String,
+    pub path: Vec<String>,
     pub required: bool,
     pub retained: bool,
     pub purpose: Option<String>,
