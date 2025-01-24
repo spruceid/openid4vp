@@ -1,6 +1,7 @@
 use super::{object::UntypedObject, presentation_submission::PresentationSubmission};
 
 use anyhow::{Context, Error, Result};
+use parameters::State;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -8,7 +9,8 @@ use self::parameters::VpToken;
 
 pub mod parameters;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum AuthorizationResponse {
     Unencoded(UnencodedAuthorizationResponse),
     Jwt(JwtAuthorizationResponse),
@@ -30,25 +32,37 @@ impl AuthorizationResponse {
             serde_json::from_str(&unencoded.presentation_submission)
                 .context("failed to decode presentation submission")?;
 
+        let state: Option<State> = unencoded
+            .state
+            .map(|s| serde_json::from_str(&s))
+            .transpose()
+            .context("failed to decode state")?;
+
         Ok(Self::Unencoded(UnencodedAuthorizationResponse {
             vp_token,
             presentation_submission,
+            state,
         }))
     }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 struct JsonEncodedAuthorizationResponse {
-    /// `vp_token` is JSON string encoded.
-    pub(crate) vp_token: String,
     /// `presentation_submission` is JSON string encoded.
     pub(crate) presentation_submission: String,
+    /// `vp_token` is JSON string encoded.
+    pub(crate) vp_token: String,
+    /// `state` is a regular string.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) state: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UnencodedAuthorizationResponse {
-    pub vp_token: VpToken,
     pub presentation_submission: PresentationSubmission,
+    pub vp_token: VpToken,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<State>,
 }
 
 impl UnencodedAuthorizationResponse {
@@ -73,18 +87,37 @@ impl UnencodedAuthorizationResponse {
     }
 }
 
+// Helper method for cleaning up quoted strings.
+// urlencoding a JSON string adds quotes around the string,
+// which causes issues when decoding.
+fn clean_quoted_string(s: &str) -> String {
+    s.trim_matches(|c| c == '"' || c == '\'').to_string()
+}
+
 impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
     fn from(value: UnencodedAuthorizationResponse) -> Self {
         let vp_token = serde_json::to_string(&value.vp_token)
+            .ok()
+            // Need to strip quotes from the string.
+            .map(|s| clean_quoted_string(&s))
             // SAFTEY: VP Token will always be a valid JSON object.
             .unwrap();
+
         let presentation_submission = serde_json::to_string(&value.presentation_submission)
             // SAFETY: presentation submission will always be a valid JSON object.
+            .unwrap();
+
+        let state = value
+            .state
+            .map(|s| serde_json::to_string(&s))
+            .transpose()
+            // SAFETY: State will always be a valid JSON object.
             .unwrap();
 
         Self {
             vp_token,
             presentation_submission,
+            state,
         }
     }
 }
@@ -152,6 +185,6 @@ mod test {
         let url_encoded = response.into_x_www_form_urlencoded().unwrap();
 
         assert!(url_encoded.contains("presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D"));
-        assert!(url_encoded.contains("vp_token=%22string%22"));
+        assert!(url_encoded.contains("vp_token=string"));
     }
 }

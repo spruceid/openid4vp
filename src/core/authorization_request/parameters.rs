@@ -576,7 +576,7 @@ impl From<ResponseType> for Json {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct State(pub String);
 
 impl TypedParameter for State {

@@ -194,6 +194,7 @@ pub struct DescriptorMap {
     pub id: DescriptorMapId,
     pub format: ClaimFormatDesignation,
     pub path: JsonPath,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub path_nested: Option<Box<DescriptorMap>>,
 }
 
