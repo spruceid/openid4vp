@@ -143,6 +143,7 @@ async fn w3c_vc_did_client_direct_post() {
     let response = AuthorizationResponse::Unencoded(UnencodedAuthorizationResponse {
         vp_token: vp.into(),
         presentation_submission: presentation_submission.try_into().unwrap(),
+        state: None,
     });
 
     let status = verifier.poll_status(id).await.unwrap();
