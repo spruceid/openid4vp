@@ -17,7 +17,7 @@ pub enum AuthorizationResponse {
 }
 
 impl AuthorizationResponse {
-    pub fn from_x_www_form_urlencoded(bytes: &[u8]) -> Result<Self> {
+    pub fn from_x_www_form_urlencoded(bytes: &[u8], should_strip_quotes: bool) -> Result<Self> {
         if let Ok(jwt) = serde_urlencoded::from_bytes(bytes) {
             return Ok(Self::Jwt(jwt));
         }
@@ -42,6 +42,7 @@ impl AuthorizationResponse {
             vp_token,
             presentation_submission,
             state,
+            should_strip_quotes,
         }))
     }
 }
@@ -63,6 +64,11 @@ pub struct UnencodedAuthorizationResponse {
     pub vp_token: VpToken,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<State>,
+    /// This is an internal non-normative setting to determine
+    /// the behavior of removing extra quotations around a JSON
+    /// string encoded vp_token, e.g. "'[{ @context: [...] }]'" -> '[{ @context: [...] }]'
+    #[serde(skip)]
+    pub should_strip_quotes: bool,
 }
 
 impl UnencodedAuthorizationResponse {
@@ -85,21 +91,26 @@ impl UnencodedAuthorizationResponse {
     pub fn presentation_submission(&self) -> &PresentationSubmission {
         &self.presentation_submission
     }
-}
 
-// Helper method for cleaning up quoted strings.
-// urlencoding a JSON string adds quotes around the string,
-// which causes issues when decoding.
-fn clean_quoted_string(s: &str) -> String {
-    s.trim_matches(|c| c == '"' || c == '\'').to_string()
+    // Internal helper method for cleaning up quoted strings.
+    // urlencoding a JSON string adds quotes around the string,
+    // which causes issues when decoding for some verifiers.
+    fn sanitize_string(&self, s: String) -> String {
+        // NOTE: Depending on whether `should_strip_quotes` option is set,
+        // this will remove any extra quotations around a JSON string.
+        match self.should_strip_quotes {
+            true => s.trim_matches(|c| c == '"' || c == '\'').to_string(),
+            false => s,
+        }
+    }
 }
 
 impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
     fn from(value: UnencodedAuthorizationResponse) -> Self {
         let vp_token = serde_json::to_string(&value.vp_token)
             .ok()
-            // Need to strip quotes from the string.
-            .map(|s| clean_quoted_string(&s))
+            // Perform any optional string sanitizations
+            .map(|s| value.sanitize_string(s))
             // SAFTEY: VP Token will always be a valid JSON object.
             .unwrap();
 
@@ -181,10 +192,17 @@ mod test {
             }
         ))
         .unwrap();
-        let response = UnencodedAuthorizationResponse::try_from(object).unwrap();
-        let url_encoded = response.into_x_www_form_urlencoded().unwrap();
+        let mut response = UnencodedAuthorizationResponse::try_from(object).unwrap();
 
+        let url_encoded = response.clone().into_x_www_form_urlencoded().unwrap();
         assert!(url_encoded.contains("presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D"));
+        assert!(url_encoded.contains("vp_token=%22string%22"));
+
+        // NOTE: when `should_strip_quotes` is true, the `%22`
+        // quote encodings enclosing the `vp_token` parameter are stripped
+        response.should_strip_quotes = true;
+
+        let url_encoded = response.into_x_www_form_urlencoded().unwrap();
         assert!(url_encoded.contains("vp_token=string"));
     }
 }

@@ -144,6 +144,7 @@ async fn w3c_vc_did_client_direct_post() {
         vp_token: vp.into(),
         presentation_submission: presentation_submission.try_into().unwrap(),
         state: None,
+        should_strip_quotes: false,
     });
 
     let status = verifier.poll_status(id).await.unwrap();
