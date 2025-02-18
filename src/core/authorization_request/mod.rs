@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{anyhow, bail, Context, Error, Result};
-use parameters::ClientMetadata;
+use parameters::{ClientMetadata, State};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use url::Url;
@@ -279,6 +279,12 @@ impl AuthorizationRequestObject {
             .0
             .get()
             .ok_or(anyhow!("missing vp_formats"))?
+    }
+
+    /// Return the `state` of the authorization request,
+    /// if it was provided.
+    pub fn state(&self) -> Option<Result<State>> {
+        self.0.get()
     }
 }
 

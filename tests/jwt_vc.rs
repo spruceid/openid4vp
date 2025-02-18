@@ -157,7 +157,7 @@ impl AsyncHttpClient for MockHttpClient {
         self.verifier
             .verify_response(
                 id.parse().context("failed to parse id")?,
-                AuthorizationResponse::from_x_www_form_urlencoded(body)
+                AuthorizationResponse::from_x_www_form_urlencoded(body, false)
                     .context("failed to parse authorization response request")?,
                 |_, _| {
                     Box::pin(async move {
