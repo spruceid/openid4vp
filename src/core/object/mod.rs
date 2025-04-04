@@ -34,12 +34,12 @@ impl UntypedObject {
     ///
     /// Note that this method clones the underlying data.
     pub fn get<T: TypedParameter>(&self) -> Option<Result<T>> {
-        Some(self.0.get(T::KEY)?.clone().try_into().map_err(Into::into))
+        Some(self.0.get(T::KEY)?.clone().try_into())
     }
 
     /// Remove a [TypedParameter] from the Object.
     pub fn remove<T: TypedParameter>(&mut self) -> Option<Result<T>> {
-        Some(self.0.remove(T::KEY)?.try_into().map_err(Into::into))
+        Some(self.0.remove(T::KEY)?.try_into())
     }
 
     /// Insert a [TypedParameter].
@@ -51,12 +51,7 @@ impl UntypedObject {
     pub fn insert<T: TypedParameter>(&mut self, t: T) -> Option<Result<T>> {
         match t.try_into() {
             Err(_) => Some(Err(Error::msg("failed to parse typed parameter"))),
-            Ok(value) => Some(
-                self.0
-                    .insert(T::KEY.to_owned(), value)?
-                    .try_into()
-                    .map_err(Into::into),
-            ),
+            Ok(value) => Some(self.0.insert(T::KEY.to_owned(), value)?.try_into()),
         }
     }
 }

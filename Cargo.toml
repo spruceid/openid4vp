@@ -15,7 +15,7 @@ default = []
 maximize_interoperability = []
 
 [dependencies]
-anyhow = "1.0.75"
+anyhow = "1.0.97"
 async-trait = "0.1.73"
 base64 = "0.21.4"
 http = "1.1.0"
@@ -50,3 +50,6 @@ uuid = { version = "1.2", features = ["v4", "serde", "js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 uuid = { version = "1.2", features = ["v4", "serde"] }
+
+[patch.crates-io]
+ssi = { git = "https://github.com/spruceid/ssi", rev = "82b0bf3" }
