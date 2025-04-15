@@ -174,7 +174,7 @@ impl<'a> RequestBuilder<'a> {
         Ok((uuid, authorization_request_url))
     }
 
-    pub async fn build_dc_api(mut self) -> Result<(Uuid, AuthorizationRequestObject)> {
+    pub async fn build_dc_api(mut self) -> Result<(Uuid, String)> {
         let uuid = Uuid::new_v4();
 
         let client_id = self.verifier.client.id();
@@ -231,7 +231,7 @@ impl<'a> RequestBuilder<'a> {
         let session = Session {
             uuid,
             status: initial_status,
-            authorization_request_jwt,
+            authorization_request_jwt: authorization_request_jwt.clone(),
             authorization_request_object: authorization_request_object.clone(),
             presentation_definition: None,
             dcql_query: Some(dcql_query),
@@ -243,6 +243,6 @@ impl<'a> RequestBuilder<'a> {
             .await
             .context("failed to store the session in the session store")?;
 
-        Ok((uuid, authorization_request_object))
+        Ok((uuid, authorization_request_jwt))
     }
 }
