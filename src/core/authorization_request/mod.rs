@@ -17,6 +17,7 @@ use self::{
 };
 
 use super::{
+    dcql_query::DcqlQuery,
     metadata::parameters::verifier::VpFormats,
     object::{ParsingErrorContext, UntypedObject},
     util::{base_request, AsyncHttpClient},
@@ -33,7 +34,8 @@ pub struct AuthorizationRequestObject(
     ClientIdScheme,
     ResponseMode,
     ResponseType,
-    PresentationDefinitionIndirection,
+    Option<PresentationDefinitionIndirection>,
+    Option<DcqlQuery>,
     Url,
     Nonce,
 );
@@ -211,8 +213,8 @@ impl AuthorizationRequestObject {
         http_client: &H,
     ) -> Result<PresentationDefinition> {
         match &self.5 {
-            PresentationDefinitionIndirection::ByValue(by_value) => Ok(by_value.clone()),
-            PresentationDefinitionIndirection::ByReference(by_reference) => {
+            Some(PresentationDefinitionIndirection::ByValue(by_value)) => Ok(by_value.clone()),
+            Some(PresentationDefinitionIndirection::ByReference(by_reference)) => {
                 let request = base_request()
                     .method("GET")
                     .uri(by_reference.to_string())
@@ -236,6 +238,7 @@ impl AuthorizationRequestObject {
                 .try_into()
                 .context("failed to parse presentation definition from JSON")
             }
+            None => bail!("No presentation definition in JSON"),
         }
     }
 
@@ -255,15 +258,19 @@ impl AuthorizationRequestObject {
         &self.4
     }
 
+    pub fn dcql_query(&self) -> Result<DcqlQuery> {
+        self.6.clone().context("No dcql_query in JSON")
+    }
+
     /// Uri to submit the response at.
     ///
     /// AKA [ResponseUri] or [RedirectUri] depending on [ResponseMode].
     pub fn return_uri(&self) -> &Url {
-        &self.6
+        &self.7
     }
 
     pub fn nonce(&self) -> &Nonce {
-        &self.7
+        &self.8
     }
 
     /// Return the `client_metadata` field from the authorization request.
@@ -329,25 +336,41 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             | (_, Some(uri), response_mode @ ResponseMode::DirectPostJwt) => {
                 (uri.parsing_error()?.0, response_mode)
             }
+            (_, Some(_), response_mode @ ResponseMode::DcApi)
+            | (_, Some(_), response_mode @ ResponseMode::DcApiJwt) => {
+                bail!("'response_uri' cannot be present for this 'response_mode' ({response_mode})")
+            }
+            (Some(_), _, response_mode @ ResponseMode::DcApi)
+            | (Some(_), _, response_mode @ ResponseMode::DcApiJwt) => {
+                bail!("'redirect_uri' cannot be present for this 'response_mode' ({response_mode})")
+            }
+            (None, None, response_mode @ ResponseMode::DcApi)
+            | (None, None, response_mode @ ResponseMode::DcApiJwt) => {
+                ("https://example.com".parse()?, response_mode)
+            }
         };
 
         let response_type: ResponseType = value.get().parsing_error()?;
 
-        let pd_indirection = match (
+        let (pd_indirection, dcql_query) = match (
             value.get::<PresentationDefinition>(),
             value.get::<PresentationDefinitionUri>(),
+            value.get::<DcqlQuery>(),
         ) {
-            (None, None) => bail!(
-                "one of 'presentation_definition' and 'presentation_definition_uri' are required"
+            (None, None, None) => bail!(
+                "one of 'presentation_definition', 'presentation_definition_uri' and 'dcql_query' are required"
             ),
-            (Some(_), Some(_)) => {
-                bail!("'presentation_definition' and 'presentation_definition_uri' are mutually exclusive")
+            (Some(_), Some(_), _) | (Some(_), _, Some(_)) | (_, Some(_), Some(_)) => {
+                bail!("'presentation_definition', 'presentation_definition_uri' and 'dcql_query' are mutually exclusive")
             }
-            (Some(by_value), None) => {
-                PresentationDefinitionIndirection::ByValue(by_value.parsing_error()?)
+            (Some(by_value), None, None) => {
+                (Some(PresentationDefinitionIndirection::ByValue(by_value.parsing_error()?)), None)
             }
-            (None, Some(by_reference)) => {
-                PresentationDefinitionIndirection::ByReference(by_reference.parsing_error()?.0)
+            (None, Some(by_reference), None) => {
+                (Some(PresentationDefinitionIndirection::ByReference(by_reference.parsing_error()?.0)), None)
+            }
+            (None, None, Some(dcql_query)) => {
+                (None, Some(dcql_query.parsing_error()?))
             }
         };
 
@@ -360,6 +383,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             response_mode,
             response_type,
             pd_indirection,
+            dcql_query,
             return_uri,
             nonce,
         ))

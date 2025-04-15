@@ -1,14 +1,11 @@
 use std::{fmt, ops::Deref};
 
-use crate::core::{
+use crate::{core::{
     metadata::parameters::verifier::{
         AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
         AuthorizationSignedResponseAlg, JWKs, VpFormats,
-    },
-    object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
-    util::{base_request, AsyncHttpClient},
-};
+    }, object::{ParsingErrorContext, TypedParameter, UntypedObject}, presentation_definition::PresentationDefinition as PresentationDefinitionParsed, util::{base_request, AsyncHttpClient}
+}};
 use anyhow::{anyhow, bail, Context, Error, Ok};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -448,6 +445,8 @@ impl TryFrom<Json> for ResponseUri {
 
 const DIRECT_POST: &str = "direct_post";
 const DIRECT_POST_JWT: &str = "direct_post.jwt";
+const DC_API: &str = "dc_api";
+const DC_API_JWT: &str = "dc_api.jwt";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(into = "String", from = "String")]
@@ -456,6 +455,10 @@ pub enum ResponseMode {
     DirectPost,
     /// The `direct_post.jwt` response mode as defined in OID4VP.
     DirectPostJwt,
+    /// The `dc_api` response mode as defined in OID4VP.
+    DcApi,
+    /// The `dc_api.jwt` response mode as defined in OID4VP.
+    DcApiJwt,
     /// A ResponseMode that is unsupported by this library.
     Unsupported(String),
 }
@@ -469,6 +472,8 @@ impl From<String> for ResponseMode {
         match s.as_str() {
             DIRECT_POST => ResponseMode::DirectPost,
             DIRECT_POST_JWT => ResponseMode::DirectPostJwt,
+            DC_API => ResponseMode::DcApi,
+            DC_API_JWT => ResponseMode::DcApiJwt,
             _ => ResponseMode::Unsupported(s),
         }
     }
@@ -479,6 +484,8 @@ impl From<ResponseMode> for String {
         match s {
             ResponseMode::DirectPost => DIRECT_POST.into(),
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT.into(),
+            ResponseMode::DcApi => DC_API.into(),
+            ResponseMode::DcApiJwt => DC_API_JWT.into(),
             ResponseMode::Unsupported(u) => u,
         }
     }
@@ -504,6 +511,8 @@ impl fmt::Display for ResponseMode {
         match self {
             ResponseMode::DirectPost => DIRECT_POST,
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT,
+            ResponseMode::DcApi => DC_API,
+            ResponseMode::DcApiJwt => DC_API_JWT,
             ResponseMode::Unsupported(u) => u,
         }
         .fmt(f)
@@ -521,6 +530,8 @@ impl ResponseMode {
         match self {
             ResponseMode::DirectPost => Ok(false),
             ResponseMode::DirectPostJwt => Ok(true),
+            ResponseMode::DcApi => Ok(false),
+            ResponseMode::DcApiJwt => Ok(true),
             ResponseMode::Unsupported(rm) => bail!("unsupported response_mode: {rm}"),
         }
     }

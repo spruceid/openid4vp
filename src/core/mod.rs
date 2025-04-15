@@ -7,3 +7,4 @@ pub mod presentation_definition;
 pub mod presentation_submission;
 pub mod response;
 pub mod util;
+pub mod dcql_query;
