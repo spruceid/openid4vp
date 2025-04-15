@@ -1,14 +1,17 @@
 use std::{fmt, ops::Deref};
 
-use crate::{core::{
+use crate::core::{
     metadata::parameters::verifier::{
         AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
         AuthorizationSignedResponseAlg, JWKs, VpFormats,
-    }, object::{ParsingErrorContext, TypedParameter, UntypedObject}, presentation_definition::PresentationDefinition as PresentationDefinitionParsed, util::{base_request, AsyncHttpClient}
-}};
+    },
+    object::{ParsingErrorContext, TypedParameter, UntypedObject},
+    presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
+    util::{base_request, AsyncHttpClient},
+};
 use anyhow::{anyhow, bail, Context, Error, Ok};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use url::Url;
 
 use super::AuthorizationRequestObject;
@@ -670,5 +673,26 @@ impl TryFrom<Json> for PresentationDefinitionUri {
 impl From<PresentationDefinitionUri> for Json {
     fn from(value: PresentationDefinitionUri) -> Self {
         value.0.to_string().into()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ExpectedOrigins(Vec<String>);
+
+impl TypedParameter for ExpectedOrigins {
+    const KEY: &'static str = "expected_origins";
+}
+
+impl TryFrom<Json> for ExpectedOrigins {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(serde_json::from_value(value).map(Self)?)
+    }
+}
+
+impl From<ExpectedOrigins> for Json {
+    fn from(value: ExpectedOrigins) -> Self {
+        json!(value.0)
     }
 }
