@@ -21,6 +21,7 @@ const ENTITY_ID: &str = "entity_id";
 const PREREGISTERED: &str = "pre-registered";
 const REDIRECT_URI: &str = "redirect_uri";
 const VERIFIER_ATTESTATION: &str = "verifier_attestation";
+const WEB_ORIGIN: &str = "web-origin";
 const X509_SAN_DNS: &str = "x509_san_dns";
 const X509_SAN_URI: &str = "x509_san_uri";
 
@@ -34,9 +35,9 @@ pub enum ClientIdScheme {
     PreRegistered,
     RedirectUri,
     VerifierAttestation,
+    WebOrigin,
     X509SanDns,
     X509SanUri,
-    Other(String),
 }
 
 impl TypedParameter for ClientId {
@@ -59,7 +60,25 @@ impl From<ClientId> for Json {
 
 impl ClientId {
     pub fn scheme(&self) -> Option<ClientIdScheme> {
-        self.0.split(':').next().map(ClientIdScheme::from)
+        self.0
+            .split(':')
+            .next()
+            .and_then(|s| ClientIdScheme::try_from(s).ok())
+    }
+
+    pub fn without_scheme(&self) -> &str {
+        let Some((scheme, id)) = self.0.split_once(':') else {
+            return &self.0;
+        };
+
+        match scheme {
+            DID | ENTITY_ID | PREREGISTERED | REDIRECT_URI | VERIFIER_ATTESTATION | WEB_ORIGIN
+            | X509_SAN_DNS | X509_SAN_URI => id,
+            _ => {
+                tracing::warn!("possible unrecognized client_id_scheme: {scheme}");
+                &self.0
+            }
+        }
     }
 }
 
@@ -67,24 +86,31 @@ impl TypedParameter for ClientIdScheme {
     const KEY: &'static str = "client_id_scheme";
 }
 
-impl<'s> From<&'s str> for ClientIdScheme {
-    fn from(s: &'s str) -> Self {
+impl<'s> TryFrom<&'s str> for ClientIdScheme {
+    type Error = Error;
+
+    fn try_from(s: &'s str) -> Result<Self, Self::Error> {
         match s {
-            DID => ClientIdScheme::Did,
-            ENTITY_ID => ClientIdScheme::EntityId,
-            PREREGISTERED => ClientIdScheme::PreRegistered,
-            REDIRECT_URI => ClientIdScheme::RedirectUri,
-            VERIFIER_ATTESTATION => ClientIdScheme::VerifierAttestation,
-            X509_SAN_DNS => ClientIdScheme::X509SanDns,
-            X509_SAN_URI => ClientIdScheme::X509SanUri,
-            _ => ClientIdScheme::Other(s.to_string()),
+            DID => Ok(ClientIdScheme::Did),
+            ENTITY_ID => Ok(ClientIdScheme::EntityId),
+            PREREGISTERED => Ok(ClientIdScheme::PreRegistered),
+            REDIRECT_URI => Ok(ClientIdScheme::RedirectUri),
+            VERIFIER_ATTESTATION => Ok(ClientIdScheme::VerifierAttestation),
+            WEB_ORIGIN => Ok(ClientIdScheme::WebOrigin),
+            X509_SAN_DNS => Ok(ClientIdScheme::X509SanDns),
+            X509_SAN_URI => Ok(ClientIdScheme::X509SanUri),
+            _ => {
+                bail!("unrecognized client_id_scheme: {s}")
+            }
         }
     }
 }
 
-impl From<String> for ClientIdScheme {
-    fn from(s: String) -> Self {
-        s.as_str().into()
+impl TryFrom<String> for ClientIdScheme {
+    type Error = Error;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.as_str().try_into()
     }
 }
 
@@ -93,8 +119,8 @@ impl TryFrom<Json> for ClientIdScheme {
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         serde_json::from_value(value)
-            .map(String::into)
             .map_err(Error::from)
+            .and_then(String::try_into)
     }
 }
 
@@ -112,9 +138,9 @@ impl fmt::Display for ClientIdScheme {
             ClientIdScheme::PreRegistered => PREREGISTERED,
             ClientIdScheme::RedirectUri => REDIRECT_URI,
             ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION,
+            ClientIdScheme::WebOrigin => WEB_ORIGIN,
             ClientIdScheme::X509SanDns => X509_SAN_DNS,
             ClientIdScheme::X509SanUri => X509_SAN_URI,
-            ClientIdScheme::Other(o) => o,
         }
         .fmt(f)
     }

@@ -72,6 +72,15 @@ pub trait RequestVerifier {
         bail!("'verifier_attestation' client verification not implemented")
     }
 
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `web_origin`.
+    async fn web_origin(
+        &self,
+        decoded_request: &AuthorizationRequestObject,
+        request_jwt: String,
+    ) -> Result<(), Error> {
+        bail!("'web_origin' client verification not implemented")
+    }
+
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
     async fn x509_san_dns(
         &self,
@@ -88,16 +97,6 @@ pub trait RequestVerifier {
         request_jwt: String,
     ) -> Result<(), Error> {
         bail!("'x509_san_uri' client verification not implemented")
-    }
-
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is any other value.
-    async fn other(
-        &self,
-        client_id_scheme: &str,
-        decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
-    ) -> Result<(), Error> {
-        bail!("'{client_id_scheme}' client verification not implemented")
     }
 
     /// Performs verification on Authorization Request Objects when there is no `client_id_scheme`.
@@ -131,9 +130,9 @@ pub(crate) async fn verify_request<W: Wallet + ?Sized>(
         Some(ClientIdScheme::VerifierAttestation) => {
             wallet.verifier_attestation(&request, jwt).await?
         }
+        Some(ClientIdScheme::WebOrigin) => wallet.web_origin(&request, jwt).await?,
         Some(ClientIdScheme::X509SanDns) => wallet.x509_san_dns(&request, jwt).await?,
         Some(ClientIdScheme::X509SanUri) => wallet.x509_san_uri(&request, jwt).await?,
-        Some(ClientIdScheme::Other(scheme)) => wallet.other(&scheme, &request, jwt).await?,
         None => wallet.none(&request, jwt).await?,
     };
 
