@@ -36,13 +36,13 @@ pub trait RequestVerifier {
         bail!("'did' client verification not implemented")
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `entity_id`.
-    async fn entity_id(
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `entity_id` or `https`.
+    async fn openid_federation(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'entity' client verification not implemented")
+        bail!("openid federation client verification not implemented")
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `pre-registered`.
@@ -70,6 +70,15 @@ pub trait RequestVerifier {
         request_jwt: String,
     ) -> Result<(), Error> {
         bail!("'verifier_attestation' client verification not implemented")
+    }
+
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `web-origin`.
+    async fn web_origin(
+        &self,
+        decoded_request: &AuthorizationRequestObject,
+        request_jwt: String,
+    ) -> Result<(), Error> {
+        bail!("'web-origin' client verification not implemented")
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
@@ -121,19 +130,21 @@ pub(crate) async fn verify_request<W: Wallet + ?Sized>(
 
     validate_request_against_metadata(wallet, &request).await?;
 
-    let client_id_scheme = request.client_id_scheme()?;
+    let client_id_scheme = request.client_id_scheme();
 
-    match client_id_scheme {
-        Some(ClientIdScheme::Did) => wallet.did(&request, jwt).await?,
-        Some(ClientIdScheme::EntityId) => wallet.entity_id(&request, jwt).await?,
-        Some(ClientIdScheme::PreRegistered) => wallet.preregistered(&request, jwt).await?,
-        Some(ClientIdScheme::RedirectUri) => wallet.redirect_uri(&request, jwt).await?,
-        Some(ClientIdScheme::VerifierAttestation) => {
+    match client_id_scheme.map(|scheme| scheme.0.as_str()) {
+        Some(ClientIdScheme::DID) => wallet.did(&request, jwt).await?,
+        Some(ClientIdScheme::ENTITY_ID) => wallet.openid_federation(&request, jwt).await?,
+        Some(ClientIdScheme::HTTPS) => wallet.openid_federation(&request, jwt).await?,
+        Some(ClientIdScheme::PREREGISTERED) => wallet.preregistered(&request, jwt).await?,
+        Some(ClientIdScheme::REDIRECT_URI) => wallet.redirect_uri(&request, jwt).await?,
+        Some(ClientIdScheme::VERIFIER_ATTESTATION) => {
             wallet.verifier_attestation(&request, jwt).await?
         }
-        Some(ClientIdScheme::X509SanDns) => wallet.x509_san_dns(&request, jwt).await?,
-        Some(ClientIdScheme::X509SanUri) => wallet.x509_san_uri(&request, jwt).await?,
-        Some(ClientIdScheme::Other(scheme)) => wallet.other(&scheme, &request, jwt).await?,
+        Some(ClientIdScheme::WEB_ORIGIN) => wallet.web_origin(&request, jwt).await?,
+        Some(ClientIdScheme::X509_SAN_DNS) => wallet.x509_san_dns(&request, jwt).await?,
+        Some(ClientIdScheme::X509_SAN_URI) => wallet.x509_san_uri(&request, jwt).await?,
+        Some(scheme) => wallet.other(scheme, &request, jwt).await?,
         None => wallet.none(&request, jwt).await?,
     };
 
@@ -146,7 +157,7 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
 ) -> Result<(), Error> {
     let wallet_metadata = wallet.metadata();
 
-    if let Some(client_id_scheme) = request.client_id_scheme()? {
+    if let Some(client_id_scheme) = request.client_id_scheme() {
         if !wallet_metadata
             .get_or_default::<ClientIdSchemesSupported>()?
             .0
@@ -154,7 +165,7 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
         {
             bail!(
                 "wallet does not support client_id_scheme '{}'",
-                client_id_scheme
+                client_id_scheme.0
             )
         }
     }

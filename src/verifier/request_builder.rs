@@ -8,10 +8,14 @@ use crate::{
             self,
             parameters::{ResponseMode, ResponseType, ResponseUri},
             AuthorizationRequest, AuthorizationRequestObject, RequestIndirection,
-        }, dcql_query::DcqlQuery, metadata::{
+        },
+        dcql_query::DcqlQuery,
+        metadata::{
             parameters::wallet::{AuthorizationEndpoint, ClientIdSchemesSupported},
             WalletMetadata,
-        }, object::{ParsingErrorContext, TypedParameter, UntypedObject}, presentation_definition::PresentationDefinition
+        },
+        object::{ParsingErrorContext, TypedParameter, UntypedObject},
+        presentation_definition::PresentationDefinition,
     },
     verifier::{by_reference::ByReference, session::Status},
 };
@@ -112,9 +116,12 @@ impl<'a> RequestBuilder<'a> {
         if !wallet_metadata
             .get_or_default::<ClientIdSchemesSupported>()?
             .0
-            .contains(client_id_scheme)
+            .contains(&client_id_scheme)
         {
-            bail!("the wallet does not support the client_id_scheme '{client_id_scheme}'")
+            bail!(
+                "the wallet does not support the client_id_scheme '{}'",
+                client_id_scheme.0
+            )
         }
 
         let authorization_request_object: AuthorizationRequestObject =

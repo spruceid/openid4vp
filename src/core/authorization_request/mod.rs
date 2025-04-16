@@ -26,14 +26,15 @@ pub mod verification;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "UntypedObject", into = "UntypedObject")]
-pub struct AuthorizationRequestObject(
-    UntypedObject,
-    ClientId,
-    ResponseMode,
-    ResponseType,
-    Url,
-    Nonce,
-);
+pub struct AuthorizationRequestObject {
+    inner: UntypedObject,
+    client_id: ClientId,
+    client_id_scheme: Option<ClientIdScheme>,
+    response_mode: ResponseMode,
+    response_type: ResponseType,
+    return_uri: Url,
+    nonce: Nonce,
+}
 
 /// An Authorization Request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,11 +103,12 @@ impl AuthorizationRequest {
         let aro = verify_request(wallet, jwt)
             .await
             .context("unable to validate Authorization Request")?;
-        if self.client_id.as_str() != aro.client_id().0.as_str() {
+        let aro_client_id_raw = aro.get::<ClientId>().parsing_error()?;
+        if self.client_id.as_str() != aro_client_id_raw.0.as_str() {
             bail!(
                 "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
                 self.client_id,
-                aro.client_id().0
+                aro_client_id_raw.0
             );
         }
         Ok(aro)
@@ -196,16 +198,11 @@ impl AuthorizationRequest {
 
 impl AuthorizationRequestObject {
     pub fn client_id(&self) -> &ClientId {
-        &self.1
+        &self.client_id
     }
 
-    pub fn client_id_scheme(&self) -> Result<Option<ClientIdScheme>> {
-        Ok(self
-            .0
-            .get()
-            .transpose()
-            .context("client_id_scheme could not be parsed")?
-            .or_else(|| self.client_id().scheme()))
+    pub fn client_id_scheme(&self) -> Option<&ClientIdScheme> {
+        self.client_id_scheme.as_ref()
     }
 
     pub async fn resolve_presentation_definition<H: AsyncHttpClient>(
@@ -232,7 +229,7 @@ impl AuthorizationRequestObject {
     }
 
     pub fn is_id_token_requested(&self) -> Option<bool> {
-        match self.3 {
+        match self.response_type {
             ResponseType::VpToken => Some(false),
             ResponseType::VpTokenIdToken => Some(true),
             ResponseType::Unsupported(_) => None,
@@ -240,28 +237,27 @@ impl AuthorizationRequestObject {
     }
 
     pub fn response_mode(&self) -> &ResponseMode {
-        &self.2
+        &self.response_mode
     }
 
     pub fn response_type(&self) -> &ResponseType {
-        &self.3
+        &self.response_type
     }
 
     /// Uri to submit the response at.
     ///
     /// AKA [ResponseUri] or [RedirectUri] depending on [ResponseMode].
     pub fn return_uri(&self) -> &Url {
-        &self.4
+        &self.return_uri
     }
 
     pub fn nonce(&self) -> &Nonce {
-        &self.5
+        &self.nonce
     }
 
     /// Return the `client_metadata` field from the authorization request.
     pub fn client_metadata(&self) -> Result<ClientMetadata> {
-        self.0
-            .get()
+        self.get()
             .ok_or(anyhow!("missing `client_metadata` object"))?
     }
 
@@ -276,16 +272,13 @@ impl AuthorizationRequestObject {
     /// Return the `state` of the authorization request,
     /// if it was provided.
     pub fn state(&self) -> Option<Result<State>> {
-        self.0.get()
+        self.get()
     }
 }
 
 impl From<AuthorizationRequestObject> for UntypedObject {
     fn from(value: AuthorizationRequestObject) -> Self {
-        let mut inner = value.0;
-        inner.insert(value.1);
-        inner.insert(value.2);
-        inner
+        value.inner
     }
 }
 
@@ -293,7 +286,8 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
     type Error = Error;
 
     fn try_from(value: UntypedObject) -> std::result::Result<Self, Self::Error> {
-        let client_id = value.get().parsing_error()?;
+        let client_id = value.get::<ClientId>().parsing_error()?;
+        let client_id_scheme = client_id.resolve_scheme(&value)?;
 
         let redirect_uri = value.get::<RedirectUri>();
         let response_uri = value.get::<ResponseUri>();
@@ -335,14 +329,15 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
 
         let nonce = value.get().parsing_error()?;
 
-        Ok(Self(
-            value,
+        Ok(Self {
+            inner: value,
             client_id,
+            client_id_scheme,
             response_mode,
             response_type,
             return_uri,
             nonce,
-        ))
+        })
     }
 }
 
@@ -350,12 +345,12 @@ impl Deref for AuthorizationRequestObject {
     type Target = UntypedObject;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
 impl DerefMut for AuthorizationRequestObject {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.inner
     }
 }

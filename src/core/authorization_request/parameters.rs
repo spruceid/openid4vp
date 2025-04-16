@@ -16,29 +16,26 @@ use url::Url;
 
 use super::AuthorizationRequestObject;
 
-const DID: &str = "did";
-const ENTITY_ID: &str = "entity_id";
-const PREREGISTERED: &str = "pre-registered";
-const REDIRECT_URI: &str = "redirect_uri";
-const VERIFIER_ATTESTATION: &str = "verifier_attestation";
-const X509_SAN_DNS: &str = "x509_san_dns";
-const X509_SAN_URI: &str = "x509_san_uri";
-
 #[derive(Debug, Clone)]
 pub struct ClientId(pub String);
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ClientIdScheme {
-    Did,
-    EntityId,
-    PreRegistered,
-    RedirectUri,
-    VerifierAttestation,
-    X509SanDns,
-    X509SanUri,
-    Other(String),
-}
+impl ClientId {
+    /// Retrieves the `client_id_scheme` from the authorization request object.
+    ///
+    /// If the `client_id_scheme` is not present, it will be inferred from the `client_id`.
+    pub fn resolve_scheme(&self, value: &UntypedObject) -> Result<Option<ClientIdScheme>, Error> {
+        let client_id_scheme = value.get::<ClientIdScheme>();
+        if client_id_scheme.is_some() {
+            return client_id_scheme.transpose();
+        }
 
+        Ok(self
+            .0
+            .split(':')
+            .next()
+            .map(|s| ClientIdScheme(s.to_string())))
+    }
+}
 impl TypedParameter for ClientId {
     const KEY: &'static str = "client_id";
 }
@@ -57,66 +54,45 @@ impl From<ClientId> for Json {
     }
 }
 
-impl ClientId {
-    pub fn scheme(&self) -> Option<ClientIdScheme> {
-        self.0.split(':').next().map(ClientIdScheme::from)
-    }
-}
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClientIdScheme(pub String);
 
 impl TypedParameter for ClientIdScheme {
     const KEY: &'static str = "client_id_scheme";
-}
-
-impl<'s> From<&'s str> for ClientIdScheme {
-    fn from(s: &'s str) -> Self {
-        match s {
-            DID => ClientIdScheme::Did,
-            ENTITY_ID => ClientIdScheme::EntityId,
-            PREREGISTERED => ClientIdScheme::PreRegistered,
-            REDIRECT_URI => ClientIdScheme::RedirectUri,
-            VERIFIER_ATTESTATION => ClientIdScheme::VerifierAttestation,
-            X509_SAN_DNS => ClientIdScheme::X509SanDns,
-            X509_SAN_URI => ClientIdScheme::X509SanUri,
-            _ => ClientIdScheme::Other(s.to_string()),
-        }
-    }
-}
-
-impl From<String> for ClientIdScheme {
-    fn from(s: String) -> Self {
-        s.as_str().into()
-    }
 }
 
 impl TryFrom<Json> for ClientIdScheme {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        serde_json::from_value(value)
-            .map(String::into)
-            .map_err(Error::from)
+        Ok(ClientIdScheme(serde_json::from_value(value)?))
     }
 }
 
 impl From<ClientIdScheme> for Json {
     fn from(value: ClientIdScheme) -> Self {
-        Json::String(value.to_string())
+        Json::String(value.0)
     }
 }
 
-impl fmt::Display for ClientIdScheme {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ClientIdScheme::Did => DID,
-            ClientIdScheme::EntityId => ENTITY_ID,
-            ClientIdScheme::PreRegistered => PREREGISTERED,
-            ClientIdScheme::RedirectUri => REDIRECT_URI,
-            ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION,
-            ClientIdScheme::X509SanDns => X509_SAN_DNS,
-            ClientIdScheme::X509SanUri => X509_SAN_URI,
-            ClientIdScheme::Other(o) => o,
-        }
-        .fmt(f)
+impl ClientIdScheme {
+    pub const DID: &str = "did";
+    /// Deprecated, use `https` instead.
+    pub const ENTITY_ID: &str = "entity_id";
+    pub const HTTPS: &str = "https";
+    pub const PREREGISTERED: &str = "pre-registered";
+    pub const REDIRECT_URI: &str = "redirect_uri";
+    pub const VERIFIER_ATTESTATION: &str = "verifier_attestation";
+    pub const WEB_ORIGIN: &str = "web-origin";
+    pub const X509_SAN_DNS: &str = "x509_san_dns";
+    pub const X509_SAN_URI: &str = "x509_san_uri";
+}
+
+impl Deref for ClientIdScheme {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
