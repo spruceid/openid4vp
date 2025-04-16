@@ -1,23 +1,21 @@
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{anyhow, bail, Context, Error, Result};
-use parameters::{ClientMetadata, State};
+use parameters::{ClientMetadata, PresentationDefinitionUri, State};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
 use url::Url;
 
 use crate::wallet::Wallet;
 
 use self::{
     parameters::{
-        ClientId, ClientIdScheme, Nonce, PresentationDefinition, PresentationDefinitionUri,
-        RedirectUri, ResponseMode, ResponseType, ResponseUri,
+        ClientId, ClientIdScheme, Nonce, PresentationDefinition, RedirectUri, ResponseMode,
+        ResponseType, ResponseUri,
     },
     verification::verify_request,
 };
 
 use super::{
-    dcql_query::DcqlQuery,
     metadata::parameters::verifier::VpFormats,
     object::{ParsingErrorContext, UntypedObject},
     util::{base_request, AsyncHttpClient},
@@ -31,11 +29,8 @@ pub mod verification;
 pub struct AuthorizationRequestObject(
     UntypedObject,
     ClientId,
-    ClientIdScheme,
     ResponseMode,
     ResponseType,
-    Option<PresentationDefinitionIndirection>,
-    Option<DcqlQuery>,
     Url,
     Nonce,
 );
@@ -204,46 +199,40 @@ impl AuthorizationRequestObject {
         &self.1
     }
 
-    pub fn client_id_scheme(&self) -> &ClientIdScheme {
-        &self.2
+    pub fn client_id_scheme(&self) -> Result<Option<ClientIdScheme>> {
+        Ok(self
+            .0
+            .get()
+            .transpose()
+            .context("client_id_scheme could not be parsed")?
+            .or_else(|| self.client_id().scheme()))
     }
 
     pub async fn resolve_presentation_definition<H: AsyncHttpClient>(
         &self,
         http_client: &H,
-    ) -> Result<PresentationDefinition> {
-        match &self.5 {
-            Some(PresentationDefinitionIndirection::ByValue(by_value)) => Ok(by_value.clone()),
-            Some(PresentationDefinitionIndirection::ByReference(by_reference)) => {
-                let request = base_request()
-                    .method("GET")
-                    .uri(by_reference.to_string())
-                    .body(vec![])
-                    .context("failed to build presentation definition request")?;
+    ) -> Result<Option<PresentationDefinition>> {
+        let pd = self.get::<PresentationDefinition>().transpose()?;
 
-                let response = http_client.execute(request).await.context(format!(
-                    "failed to make presentation definition request at {by_reference}"
-                ))?;
+        let pd_uri = self.get::<PresentationDefinitionUri>().transpose()?;
 
-                let status = response.status();
-
-                if !status.is_success() {
-                    bail!("presentation definition request was unsuccessful (status: {status})")
-                }
-
-                serde_json::from_slice::<Json>(response.body())
-                    .context(format!(
-                    "failed to parse presentation definition response as JSON from {by_reference} (status: {status})"
-                ))?
-                .try_into()
-                .context("failed to parse presentation definition from JSON")
+        match (pd, pd_uri) {
+            (Some(presentation_definition), None) => Ok(Some(presentation_definition)),
+            (None, Some(presentation_definition_uri)) => Ok(Some(
+                presentation_definition_uri
+                    .resolve(http_client)
+                    .await
+                    .unwrap(),
+            )),
+            (Some(_), Some(_)) => {
+                bail!("only one of presentation_definition or presentation_definition_uri should be provided");
             }
-            None => bail!("No presentation definition in JSON"),
+            (None, None) => Ok(None),
         }
     }
 
     pub fn is_id_token_requested(&self) -> Option<bool> {
-        match self.4 {
+        match self.3 {
             ResponseType::VpToken => Some(false),
             ResponseType::VpTokenIdToken => Some(true),
             ResponseType::Unsupported(_) => None,
@@ -251,26 +240,22 @@ impl AuthorizationRequestObject {
     }
 
     pub fn response_mode(&self) -> &ResponseMode {
-        &self.3
+        &self.2
     }
 
     pub fn response_type(&self) -> &ResponseType {
-        &self.4
-    }
-
-    pub fn dcql_query(&self) -> Result<DcqlQuery> {
-        self.6.clone().context("No dcql_query in JSON")
+        &self.3
     }
 
     /// Uri to submit the response at.
     ///
     /// AKA [ResponseUri] or [RedirectUri] depending on [ResponseMode].
     pub fn return_uri(&self) -> &Url {
-        &self.7
+        &self.4
     }
 
     pub fn nonce(&self) -> &Nonce {
-        &self.8
+        &self.5
     }
 
     /// Return the `client_metadata` field from the authorization request.
@@ -309,10 +294,6 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
 
     fn try_from(value: UntypedObject) -> std::result::Result<Self, Self::Error> {
         let client_id = value.get().parsing_error()?;
-        let client_id_scheme = value
-            .get()
-            .parsing_error()
-            .context("this library cannot handle requests that omit client_id_scheme")?;
 
         let redirect_uri = value.get::<RedirectUri>();
         let response_uri = value.get::<ResponseUri>();
@@ -352,38 +333,13 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
 
         let response_type: ResponseType = value.get().parsing_error()?;
 
-        let (pd_indirection, dcql_query) = match (
-            value.get::<PresentationDefinition>(),
-            value.get::<PresentationDefinitionUri>(),
-            value.get::<DcqlQuery>(),
-        ) {
-            (None, None, None) => bail!(
-                "one of 'presentation_definition', 'presentation_definition_uri' and 'dcql_query' are required"
-            ),
-            (Some(_), Some(_), _) | (Some(_), _, Some(_)) | (_, Some(_), Some(_)) => {
-                bail!("'presentation_definition', 'presentation_definition_uri' and 'dcql_query' are mutually exclusive")
-            }
-            (Some(by_value), None, None) => {
-                (Some(PresentationDefinitionIndirection::ByValue(by_value.parsing_error()?)), None)
-            }
-            (None, Some(by_reference), None) => {
-                (Some(PresentationDefinitionIndirection::ByReference(by_reference.parsing_error()?.0)), None)
-            }
-            (None, None, Some(dcql_query)) => {
-                (None, Some(dcql_query.parsing_error()?))
-            }
-        };
-
         let nonce = value.get().parsing_error()?;
 
         Ok(Self(
             value,
             client_id,
-            client_id_scheme,
             response_mode,
             response_type,
-            pd_indirection,
-            dcql_query,
             return_uri,
             nonce,
         ))

@@ -99,6 +99,15 @@ pub trait RequestVerifier {
     ) -> Result<(), Error> {
         bail!("'{client_id_scheme}' client verification not implemented")
     }
+
+    /// Performs verification on Authorization Request Objects when there is no `client_id_scheme`.
+    async fn none(
+        &self,
+        decoded_request: &AuthorizationRequestObject,
+        request_jwt: String,
+    ) -> Result<(), Error> {
+        bail!("client_id_scheme is required")
+    }
 }
 
 pub(crate) async fn verify_request<W: Wallet + ?Sized>(
@@ -112,17 +121,20 @@ pub(crate) async fn verify_request<W: Wallet + ?Sized>(
 
     validate_request_against_metadata(wallet, &request).await?;
 
-    let client_id_scheme = request.client_id_scheme();
+    let client_id_scheme = request.client_id_scheme()?;
 
     match client_id_scheme {
-        ClientIdScheme::Did => wallet.did(&request, jwt).await?,
-        ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
-        ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
-        ClientIdScheme::RedirectUri => wallet.redirect_uri(&request, jwt).await?,
-        ClientIdScheme::VerifierAttestation => wallet.verifier_attestation(&request, jwt).await?,
-        ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
-        ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
-        ClientIdScheme::Other(scheme) => wallet.other(scheme, &request, jwt).await?,
+        Some(ClientIdScheme::Did) => wallet.did(&request, jwt).await?,
+        Some(ClientIdScheme::EntityId) => wallet.entity_id(&request, jwt).await?,
+        Some(ClientIdScheme::PreRegistered) => wallet.preregistered(&request, jwt).await?,
+        Some(ClientIdScheme::RedirectUri) => wallet.redirect_uri(&request, jwt).await?,
+        Some(ClientIdScheme::VerifierAttestation) => {
+            wallet.verifier_attestation(&request, jwt).await?
+        }
+        Some(ClientIdScheme::X509SanDns) => wallet.x509_san_dns(&request, jwt).await?,
+        Some(ClientIdScheme::X509SanUri) => wallet.x509_san_uri(&request, jwt).await?,
+        Some(ClientIdScheme::Other(scheme)) => wallet.other(&scheme, &request, jwt).await?,
+        None => wallet.none(&request, jwt).await?,
     };
 
     Ok(request)
@@ -134,16 +146,17 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
 ) -> Result<(), Error> {
     let wallet_metadata = wallet.metadata();
 
-    let client_id_scheme = request.client_id_scheme();
-    if !wallet_metadata
-        .get_or_default::<ClientIdSchemesSupported>()?
-        .0
-        .contains(client_id_scheme)
-    {
-        bail!(
-            "wallet does not support client_id_scheme '{}'",
-            client_id_scheme
-        )
+    if let Some(client_id_scheme) = request.client_id_scheme()? {
+        if !wallet_metadata
+            .get_or_default::<ClientIdSchemesSupported>()?
+            .0
+            .contains(&client_id_scheme)
+        {
+            bail!(
+                "wallet does not support client_id_scheme '{}'",
+                client_id_scheme
+            )
+        }
     }
 
     let client_metadata = ClientMetadata::resolve(request, wallet.http_client())

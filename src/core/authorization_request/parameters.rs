@@ -57,13 +57,19 @@ impl From<ClientId> for Json {
     }
 }
 
+impl ClientId {
+    pub fn scheme(&self) -> Option<ClientIdScheme> {
+        self.0.split(':').next().map(ClientIdScheme::from)
+    }
+}
+
 impl TypedParameter for ClientIdScheme {
     const KEY: &'static str = "client_id_scheme";
 }
 
-impl From<String> for ClientIdScheme {
-    fn from(s: String) -> Self {
-        match s.as_str() {
+impl<'s> From<&'s str> for ClientIdScheme {
+    fn from(s: &'s str) -> Self {
+        match s {
             DID => ClientIdScheme::Did,
             ENTITY_ID => ClientIdScheme::EntityId,
             PREREGISTERED => ClientIdScheme::PreRegistered,
@@ -71,8 +77,14 @@ impl From<String> for ClientIdScheme {
             VERIFIER_ATTESTATION => ClientIdScheme::VerifierAttestation,
             X509_SAN_DNS => ClientIdScheme::X509SanDns,
             X509_SAN_URI => ClientIdScheme::X509SanUri,
-            _ => ClientIdScheme::Other(s),
+            _ => ClientIdScheme::Other(s.to_string()),
         }
+    }
+}
+
+impl From<String> for ClientIdScheme {
+    fn from(s: String) -> Self {
+        s.as_str().into()
     }
 }
 
@@ -673,6 +685,38 @@ impl TryFrom<Json> for PresentationDefinitionUri {
 impl From<PresentationDefinitionUri> for Json {
     fn from(value: PresentationDefinitionUri) -> Self {
         value.0.to_string().into()
+    }
+}
+
+impl PresentationDefinitionUri {
+    pub async fn resolve<H: AsyncHttpClient>(
+        &self,
+        http_client: &H,
+    ) -> Result<PresentationDefinition, Error> {
+        let url = self.0.to_string();
+
+        let request = base_request()
+            .method("GET")
+            .uri(&url)
+            .body(vec![])
+            .context("failed to build presentation definition request")?;
+
+        let response = http_client.execute(request).await.context(format!(
+            "failed to make presentation definition request at {url}"
+        ))?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            bail!("presentation definition request was unsuccessful (status: {status})")
+        }
+
+        serde_json::from_slice::<Json>(response.body())
+            .context(format!(
+            "failed to parse presentation definition response as JSON from {url} (status: {status})"
+        ))?
+            .try_into()
+            .context("failed to parse presentation definition from JSON")
     }
 }
 
