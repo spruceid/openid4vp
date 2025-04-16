@@ -697,7 +697,7 @@ impl PresentationDefinitionUri {
 }
 
 #[derive(Debug, Clone)]
-struct ExpectedOrigins(Vec<String>);
+pub struct ExpectedOrigins(Vec<String>);
 
 impl TypedParameter for ExpectedOrigins {
     const KEY: &'static str = "expected_origins";
