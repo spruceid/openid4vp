@@ -27,7 +27,9 @@ pub fn validate<V: Verifier>(
     request_jwt: String,
     trusted_roots: Option<&[Certificate]>,
 ) -> Result<()> {
-    let client_id = request_object.client_id();
+    let client_id = request_object
+        .client_id()
+        .context("client_id is required")?;
     let client_id_source = client_id
         .0
         .strip_prefix(&format!("{}:", x509_san_variant.to_scheme().0))

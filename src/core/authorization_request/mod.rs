@@ -28,7 +28,7 @@ pub mod verification;
 #[serde(try_from = "UntypedObject", into = "UntypedObject")]
 pub struct AuthorizationRequestObject {
     inner: UntypedObject,
-    client_id: ClientId,
+    client_id: Option<ClientId>,
     client_id_scheme: Option<ClientIdScheme>,
     response_mode: ResponseMode,
     response_type: ResponseType,
@@ -39,7 +39,8 @@ pub struct AuthorizationRequestObject {
 /// An Authorization Request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthorizationRequest {
-    pub client_id: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub client_id: Option<String>,
     #[serde(flatten)]
     pub request_indirection: RequestIndirection,
 }
@@ -104,12 +105,14 @@ impl AuthorizationRequest {
             .await
             .context("unable to validate Authorization Request")?;
         let aro_client_id_raw = aro.get::<ClientId>().parsing_error()?;
-        if self.client_id.as_str() != aro_client_id_raw.0.as_str() {
-            bail!(
-                "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
-                self.client_id,
-                aro_client_id_raw.0
-            );
+        if let Some(client_id) = self.client_id {
+            if client_id != aro_client_id_raw.0 {
+                bail!(
+                    "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
+                    client_id,
+                    aro_client_id_raw.0
+                );
+            }
         }
         Ok(aro)
     }
@@ -197,8 +200,8 @@ impl AuthorizationRequest {
 }
 
 impl AuthorizationRequestObject {
-    pub fn client_id(&self) -> &ClientId {
-        &self.client_id
+    pub fn client_id(&self) -> Option<&ClientId> {
+        self.client_id.as_ref()
     }
 
     pub fn client_id_scheme(&self) -> Option<&ClientIdScheme> {
@@ -286,8 +289,14 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
     type Error = Error;
 
     fn try_from(value: UntypedObject) -> std::result::Result<Self, Self::Error> {
-        let client_id = value.get::<ClientId>().parsing_error()?;
-        let client_id_scheme = client_id.resolve_scheme(&value)?;
+        let client_id = value
+            .get::<ClientId>()
+            .map(|c| c.parsing_error())
+            .transpose()?;
+        let client_id_scheme = client_id
+            .as_ref()
+            .and_then(|c| c.resolve_scheme(&value).transpose())
+            .transpose()?;
 
         let redirect_uri = value.get::<RedirectUri>();
         let response_uri = value.get::<ResponseUri>();
