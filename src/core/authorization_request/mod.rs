@@ -52,6 +52,8 @@ pub enum RequestIndirection {
     ByValue(String),
     #[serde(rename = "request_uri")]
     ByReference(Url),
+    #[serde(untagged)]
+    Direct(UntypedObject),
 }
 
 /// A PresentationDefinition, passed by value or by reference
@@ -70,8 +72,42 @@ impl AuthorizationRequest {
         self,
         wallet: &W,
     ) -> Result<AuthorizationRequestObject> {
-        let jwt = match self.request_indirection {
-            RequestIndirection::ByValue(jwt) => jwt,
+        let (aro, jwt) = self.resolve_request(wallet.http_client()).await?;
+        verify_request(wallet, &aro, jwt)
+            .await
+            .context("unable to validate Authorization Request")?;
+        let aro_client_id_raw = aro
+            .get::<ClientId>()
+            .map(|c| c.parsing_error().map(|c| c.0))
+            .transpose()?;
+        match (self.client_id, aro_client_id_raw) {
+            (Some(x), Some(y)) => {
+                if x != y {
+                    bail!(
+                        "Authorization Request and Request Object have different client ids: '{:?}' vs. '{:?}'",
+                        x,
+                        y
+                    );
+                }
+            }
+            _ => (),
+        }
+        Ok(aro)
+    }
+
+    /// Returns the authorization request object and the JWT if it exists.
+    pub async fn resolve_request<H: AsyncHttpClient>(
+        &self,
+        http_client: &H,
+    ) -> Result<(AuthorizationRequestObject, Option<String>)> {
+        match &self.request_indirection {
+            RequestIndirection::ByValue(jwt) => {
+                let aro: AuthorizationRequestObject =
+                    ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+                        .context("unable to decode Authorization Request Object JWT")?
+                        .try_into()?;
+                Ok((aro, Some(jwt.clone())))
+            }
             RequestIndirection::ByReference(url) => {
                 let request = base_request()
                     .method("GET")
@@ -79,13 +115,9 @@ impl AuthorizationRequest {
                     .body(vec![])
                     .context("failed to build authorization request request")?;
 
-                let response = wallet
-                    .http_client()
-                    .execute(request)
-                    .await
-                    .context(format!(
-                        "failed to make authorization request request at {url}"
-                    ))?;
+                let response = http_client.execute(request).await.context(format!(
+                    "failed to make authorization request request at {url}"
+                ))?;
 
                 let status = response.status();
                 let Ok(body) = String::from_utf8(response.into_body()) else {
@@ -98,23 +130,22 @@ impl AuthorizationRequest {
                     )
                 }
 
-                body
+                let aro: AuthorizationRequestObject =
+                    ssi::claims::jwt::decode_unverified::<UntypedObject>(&body)
+                        .context("unable to decode Authorization Request Object JWT")?
+                        .try_into()?;
+
+                Ok((aro, Some(body)))
             }
-        };
-        let aro = verify_request(wallet, jwt)
-            .await
-            .context("unable to validate Authorization Request")?;
-        let aro_client_id_raw = aro.get::<ClientId>().parsing_error()?;
-        if let Some(client_id) = self.client_id {
-            if client_id != aro_client_id_raw.0 {
-                bail!(
-                    "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
-                    client_id,
-                    aro_client_id_raw.0
-                );
+            RequestIndirection::Direct(untyped_object) => {
+                let mut untyped_object = untyped_object.clone();
+                if let Some(client_id) = self.client_id.clone() {
+                    untyped_object.insert(ClientId(client_id));
+                }
+                let aro: AuthorizationRequestObject = untyped_object.try_into()?;
+                Ok((aro, None))
             }
         }
-        Ok(aro)
     }
 
     /// Encode as [Url], using the `authorization_endpoint` as a base.
