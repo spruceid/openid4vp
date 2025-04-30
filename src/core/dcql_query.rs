@@ -1,7 +1,7 @@
-use crate::{core::{
-    credential_format::ClaimFormatDesignation,
-     object::TypedParameter,
-}, utils::NonEmptyVec};
+use crate::{
+    core::{credential_format::ClaimFormatDesignation, object::TypedParameter},
+    utils::NonEmptyVec,
+};
 use anyhow::{Error, Ok};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -15,10 +15,16 @@ pub struct DcqlQuery {
 
 impl DcqlQuery {
     pub fn new(credentials: NonEmptyVec<DcqlCredentialQuery>) -> Self {
-        Self { credentials, credential_sets: None }
+        Self {
+            credentials,
+            credential_sets: None,
+        }
     }
 
-    pub fn set_credential_sets(&mut self, credential_sets: Option<NonEmptyVec<DcqlCredentialSetQuery>>) {
+    pub fn set_credential_sets(
+        &mut self,
+        credential_sets: Option<NonEmptyVec<DcqlCredentialSetQuery>>,
+    ) {
         self.credential_sets = credential_sets;
     }
 
@@ -75,7 +81,13 @@ pub struct DcqlCredentialQuery {
 
 impl DcqlCredentialQuery {
     pub fn new(id: String, format: ClaimFormatDesignation) -> Self {
-        Self { id, format, meta: None, claims: None, claim_sets: None }
+        Self {
+            id,
+            format,
+            meta: None,
+            claims: None,
+            claim_sets: None,
+        }
     }
 
     pub fn id(&self) -> &str {
@@ -142,15 +154,19 @@ impl DcqlCredentialQuery {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialSetQuery {
     options: NonEmptyVec<Vec<String>>,
-#[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>,
-#[serde(skip_serializing_if = "Option::is_none")]
-    purpose: Option<Json>
+    #[serde(skip_serializing_if = "Option::is_none")]
+    purpose: Option<Json>,
 }
 
 impl DcqlCredentialSetQuery {
     pub fn new(options: NonEmptyVec<Vec<String>>) -> Self {
-        Self { options, required: None, purpose: None }
+        Self {
+            options,
+            required: None,
+            purpose: None,
+        }
     }
 
     pub fn options(&self) -> &NonEmptyVec<Vec<String>> {
@@ -192,19 +208,24 @@ impl DcqlCredentialSetQuery {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialClaimsQuery {
-#[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<String>,
     path: NonEmptyVec<DcqlCredentialClaimsQueryPath>,
-#[serde(skip_serializing_if = "Option::is_none")]
-    values: Option<Vec<DcqlCredentialClaimsQueryValue >>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    values: Option<Vec<DcqlCredentialClaimsQueryValue>>,
     /// Only applicable for ClaimFormatDesignation::MsoMdoc
     #[serde(skip_serializing_if = "Option::is_none")]
     intent_to_retain: Option<bool>,
 }
 
 impl DcqlCredentialClaimsQuery {
-    pub fn new( path: NonEmptyVec<DcqlCredentialClaimsQueryPath>) -> Self {
-        Self { id: None, path, values: None, intent_to_retain: None }
+    pub fn new(path: NonEmptyVec<DcqlCredentialClaimsQueryPath>) -> Self {
+        Self {
+            id: None,
+            path,
+            values: None,
+            intent_to_retain: None,
+        }
     }
 
     pub fn id(&self) -> Option<&String> {
@@ -235,11 +256,11 @@ impl DcqlCredentialClaimsQuery {
         self.values.as_ref()
     }
 
-    pub fn values_mut(&mut self) -> &mut Option<Vec<DcqlCredentialClaimsQueryValue >> {
+    pub fn values_mut(&mut self) -> &mut Option<Vec<DcqlCredentialClaimsQueryValue>> {
         &mut self.values
     }
 
-    pub fn set_values(&mut self, values: Option<Vec<DcqlCredentialClaimsQueryValue >>) {
+    pub fn set_values(&mut self, values: Option<Vec<DcqlCredentialClaimsQueryValue>>) {
         self.values = values;
     }
 
@@ -280,61 +301,72 @@ mod tests {
 
     #[test]
     fn de_serialize_dcql_query() {
-let dcql_query_json = json!({
-  "credentials": [
-    {
-      "id": "0",
-      "format": "mso_mdoc",
-      "meta": {
-        "doctype_value": "org.iso.18013.5.1.mDL"
-      },
-      "claims": [
-        {
-          "path": [
-            "org.iso.18013.5.1",
-            "given_name"
+        let dcql_query_json = json!({
+          "credentials": [
+            {
+              "id": "0",
+              "format": "mso_mdoc",
+              "meta": {
+                "doctype_value": "org.iso.18013.5.1.mDL"
+              },
+              "claims": [
+                {
+                  "path": [
+                    "org.iso.18013.5.1",
+                    "given_name"
+                  ],
+                  "intent_to_retain": false
+                },
+              ]
+            }
           ],
-          "intent_to_retain": false
-        },
-      ]
-    }
-  ],
-  "credential_sets": [
-    {
-      "options": [["0"]],
-      "purpose": "Authorize to the government using your mobile drivers license"
-    }
-  ]
-});
-let dcql_query_object = DcqlQuery {
-    credentials: NonEmptyVec::new(DcqlCredentialQuery {
-        id: "0".into(),
-        format: ClaimFormatDesignation::MsoMDoc,
-        meta: Some(
-            [("doctype_value".to_string(), serde_json::Value::String("org.iso.18013.5.1.mDL".to_string()))]
-                .into_iter()
-                .collect(),
-        ),
-        claims: Some(NonEmptyVec::new(DcqlCredentialClaimsQuery {
-            id: None,
-            path: vec![
-                DcqlCredentialClaimsQueryPath::String("org.iso.18013.5.1".into()),
-                DcqlCredentialClaimsQueryPath::String("given_name".into()),
-            ]
-            .try_into()
-            .unwrap(),
-            values: None,
-            intent_to_retain: Some(false),
-        })),
-        claim_sets: None,
-    }),
-    credential_sets: Some(NonEmptyVec::new(DcqlCredentialSetQuery {
-        options: NonEmptyVec::new(vec!["0".into()]),
-        required: None,
-        purpose: Some(serde_json::Value::String("Authorize to the government using your mobile drivers license".into())),
-    })),
-};
-        assert_eq!(dcql_query_json, serde_json::to_value(&dcql_query_object).unwrap());
-assert_eq!(dcql_query_object, serde_json::from_value(dcql_query_json).unwrap());
+          "credential_sets": [
+            {
+              "options": [["0"]],
+              "purpose": "Authorize to the government using your mobile drivers license"
+            }
+          ]
+        });
+        let dcql_query_object = DcqlQuery {
+            credentials: NonEmptyVec::new(DcqlCredentialQuery {
+                id: "0".into(),
+                format: ClaimFormatDesignation::MsoMDoc,
+                meta: Some(
+                    [(
+                        "doctype_value".to_string(),
+                        serde_json::Value::String("org.iso.18013.5.1.mDL".to_string()),
+                    )]
+                    .into_iter()
+                    .collect(),
+                ),
+                claims: Some(NonEmptyVec::new(DcqlCredentialClaimsQuery {
+                    id: None,
+                    path: vec![
+                        DcqlCredentialClaimsQueryPath::String("org.iso.18013.5.1".into()),
+                        DcqlCredentialClaimsQueryPath::String("given_name".into()),
+                    ]
+                    .try_into()
+                    .unwrap(),
+                    values: None,
+                    intent_to_retain: Some(false),
+                })),
+                claim_sets: None,
+            }),
+            credential_sets: Some(NonEmptyVec::new(DcqlCredentialSetQuery {
+                options: NonEmptyVec::new(vec!["0".into()]),
+                required: None,
+                purpose: Some(serde_json::Value::String(
+                    "Authorize to the government using your mobile drivers license".into(),
+                )),
+            })),
+        };
+        assert_eq!(
+            dcql_query_json,
+            serde_json::to_value(&dcql_query_object).unwrap()
+        );
+        assert_eq!(
+            dcql_query_object,
+            serde_json::from_value(dcql_query_json).unwrap()
+        );
     }
 }

@@ -80,17 +80,10 @@ impl AuthorizationRequest {
             .get::<ClientId>()
             .map(|c| c.parsing_error().map(|c| c.0))
             .transpose()?;
-        match (self.client_id, aro_client_id_raw) {
-            (Some(x), Some(y)) => {
-                if x != y {
-                    bail!(
-                        "Authorization Request and Request Object have different client ids: '{:?}' vs. '{:?}'",
-                        x,
-                        y
-                    );
-                }
+        if let (Some(x), Some(y)) = (self.client_id, aro_client_id_raw) {
+            if x != y {
+                bail!("Authorization Request and Request Object have different client ids: '{x}' vs. '{y}'");
             }
-            _ => (),
         }
         Ok(aro)
     }
@@ -103,7 +96,7 @@ impl AuthorizationRequest {
         match &self.request_indirection {
             RequestIndirection::ByValue(jwt) => {
                 let aro: AuthorizationRequestObject =
-                    ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+                    ssi::claims::jwt::decode_unverified::<UntypedObject>(jwt)
                         .context("unable to decode Authorization Request Object JWT")?
                         .try_into()?;
                 Ok((aro, Some(jwt.clone())))
@@ -155,7 +148,7 @@ impl AuthorizationRequest {
     /// # use url::Url;
     /// let authorization_endpoint: Url = "example://".parse().unwrap();
     /// let authorization_request = AuthorizationRequest {
-    ///     client_id: "xyz".to_string(),
+    ///     client_id: Some("xyz".to_string()),
     ///     request_indirection: RequestIndirection::ByValue("test".to_string()),
     /// };
     ///
@@ -182,7 +175,7 @@ impl AuthorizationRequest {
     ///     &authorization_endpoint
     /// ).unwrap();
     ///
-    /// assert_eq!(authorization_request.client_id, "xyz");
+    /// assert_eq!(authorization_request.client_id.unwrap(), "xyz");
     ///
     /// let RequestIndirection::ByValue(request_object) =
     ///     authorization_request.request_indirection
@@ -218,7 +211,7 @@ impl AuthorizationRequest {
     ///
     /// let authorization_request = AuthorizationRequest::from_query_params(query).unwrap();
     ///
-    /// assert_eq!(authorization_request.client_id, "xyz");
+    /// assert_eq!(authorization_request.client_id.unwrap(), "xyz");
     ///
     /// let RequestIndirection::ByValue(request_object) = authorization_request.request_indirection
     /// else { panic!("expected request-by-value") };

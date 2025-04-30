@@ -157,7 +157,7 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
         if !wallet_metadata
             .get_or_default::<ClientIdSchemesSupported>()?
             .0
-            .contains(&client_id_scheme)
+            .contains(client_id_scheme)
         {
             bail!(
                 "wallet does not support client_id_scheme '{}'",

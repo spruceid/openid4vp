@@ -7,7 +7,8 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::core::{
-    authorization_request::AuthorizationRequestObject, dcql_query::DcqlQuery, presentation_definition::PresentationDefinition
+    authorization_request::AuthorizationRequestObject, dcql_query::DcqlQuery,
+    presentation_definition::PresentationDefinition,
 };
 
 #[derive(Debug, Clone)]
