@@ -303,7 +303,8 @@ impl DescriptorMap {
             let (decoded_item, decoded_json) =
                 decoder.decode(encoded_item, &self.format, format_constraint)?;
 
-            if !input_desc.constraints.is_empty() {
+            // match constraints only against the most nested path
+            if !input_desc.constraints.is_empty() && self.path_nested.is_none() {
                 let decoded_json = decoded_json
                     .as_deref()
                     .ok_or_else(|| SubmissionError::NestingUnsupported(self.format.clone()))?;
