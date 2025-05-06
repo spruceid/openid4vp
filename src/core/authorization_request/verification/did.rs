@@ -55,7 +55,9 @@ pub async fn verify_with_resolver(
         bail!("'kid' header was not a string")
     };
 
-    let client_id = request_object.client_id();
+    let client_id = request_object
+        .client_id()
+        .context("client_id is required")?;
     let (did, _f) = kid.split_once('#').context(format!(
         "expected a DID verification method in 'kid' header, received '{kid}'"
     ))?;

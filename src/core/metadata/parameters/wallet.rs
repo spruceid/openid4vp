@@ -109,7 +109,9 @@ impl From<ClientIdSchemesSupported> for Json {
 
 impl Default for ClientIdSchemesSupported {
     fn default() -> Self {
-        Self(vec![ClientIdScheme::PreRegistered])
+        Self(vec![ClientIdScheme(
+            ClientIdScheme::PREREGISTERED.to_string(),
+        )])
     }
 }
 
@@ -270,7 +272,10 @@ mod test {
 
     #[test]
     fn client_id_schemes_supported() {
-        let exp = [ClientIdScheme::RedirectUri, ClientIdScheme::X509SanUri];
+        let exp = [
+            ClientIdScheme(ClientIdScheme::REDIRECT_URI.to_string()),
+            ClientIdScheme(ClientIdScheme::X509_SAN_URI.to_string()),
+        ];
         let ClientIdSchemesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));
         assert!(v.iter().all(|x| exp.contains(x)));

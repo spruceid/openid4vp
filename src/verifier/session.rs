@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::core::{
-    authorization_request::AuthorizationRequestObject,
+    authorization_request::AuthorizationRequestObject, dcql_query::DcqlQuery,
     presentation_definition::PresentationDefinition,
 };
 
@@ -17,7 +17,8 @@ pub struct Session {
     pub status: Status,
     pub authorization_request_jwt: String,
     pub authorization_request_object: AuthorizationRequestObject,
-    pub presentation_definition: PresentationDefinition,
+    pub presentation_definition: Option<PresentationDefinition>,
+    pub dcql_query: Option<DcqlQuery>,
 }
 
 /// Storage interface for session information.

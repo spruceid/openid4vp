@@ -1,17 +1,16 @@
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{anyhow, bail, Context, Error, Result};
-use parameters::{ClientMetadata, State};
+use parameters::{ClientMetadata, PresentationDefinitionUri, State};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
 use url::Url;
 
 use crate::wallet::Wallet;
 
 use self::{
     parameters::{
-        ClientId, ClientIdScheme, Nonce, PresentationDefinition, PresentationDefinitionUri,
-        RedirectUri, ResponseMode, ResponseType, ResponseUri,
+        ClientId, ClientIdScheme, Nonce, PresentationDefinition, RedirectUri, ResponseMode,
+        ResponseType, ResponseUri,
     },
     verification::verify_request,
 };
@@ -27,21 +26,21 @@ pub mod verification;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "UntypedObject", into = "UntypedObject")]
-pub struct AuthorizationRequestObject(
-    UntypedObject,
-    ClientId,
-    ClientIdScheme,
-    ResponseMode,
-    ResponseType,
-    PresentationDefinitionIndirection,
-    Url,
-    Nonce,
-);
+pub struct AuthorizationRequestObject {
+    inner: UntypedObject,
+    client_id: Option<ClientId>,
+    client_id_scheme: Option<ClientIdScheme>,
+    response_mode: ResponseMode,
+    response_type: ResponseType,
+    return_uri: Url,
+    nonce: Nonce,
+}
 
 /// An Authorization Request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthorizationRequest {
-    pub client_id: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub client_id: Option<String>,
     #[serde(flatten)]
     pub request_indirection: RequestIndirection,
 }
@@ -53,6 +52,8 @@ pub enum RequestIndirection {
     ByValue(String),
     #[serde(rename = "request_uri")]
     ByReference(Url),
+    #[serde(untagged)]
+    Direct(UntypedObject),
 }
 
 /// A PresentationDefinition, passed by value or by reference
@@ -71,8 +72,35 @@ impl AuthorizationRequest {
         self,
         wallet: &W,
     ) -> Result<AuthorizationRequestObject> {
-        let jwt = match self.request_indirection {
-            RequestIndirection::ByValue(jwt) => jwt,
+        let (aro, jwt) = self.resolve_request(wallet.http_client()).await?;
+        verify_request(wallet, &aro, jwt)
+            .await
+            .context("unable to validate Authorization Request")?;
+        let aro_client_id_raw = aro
+            .get::<ClientId>()
+            .map(|c| c.parsing_error().map(|c| c.0))
+            .transpose()?;
+        if let (Some(x), Some(y)) = (self.client_id, aro_client_id_raw) {
+            if x != y {
+                bail!("Authorization Request and Request Object have different client ids: '{x}' vs. '{y}'");
+            }
+        }
+        Ok(aro)
+    }
+
+    /// Returns the authorization request object and the JWT if it exists.
+    pub async fn resolve_request<H: AsyncHttpClient>(
+        &self,
+        http_client: &H,
+    ) -> Result<(AuthorizationRequestObject, Option<String>)> {
+        match &self.request_indirection {
+            RequestIndirection::ByValue(jwt) => {
+                let aro: AuthorizationRequestObject =
+                    ssi::claims::jwt::decode_unverified::<UntypedObject>(jwt)
+                        .context("unable to decode Authorization Request Object JWT")?
+                        .try_into()?;
+                Ok((aro, Some(jwt.clone())))
+            }
             RequestIndirection::ByReference(url) => {
                 let request = base_request()
                     .method("GET")
@@ -80,13 +108,9 @@ impl AuthorizationRequest {
                     .body(vec![])
                     .context("failed to build authorization request request")?;
 
-                let response = wallet
-                    .http_client()
-                    .execute(request)
-                    .await
-                    .context(format!(
-                        "failed to make authorization request request at {url}"
-                    ))?;
+                let response = http_client.execute(request).await.context(format!(
+                    "failed to make authorization request request at {url}"
+                ))?;
 
                 let status = response.status();
                 let Ok(body) = String::from_utf8(response.into_body()) else {
@@ -99,20 +123,22 @@ impl AuthorizationRequest {
                     )
                 }
 
-                body
+                let aro: AuthorizationRequestObject =
+                    ssi::claims::jwt::decode_unverified::<UntypedObject>(&body)
+                        .context("unable to decode Authorization Request Object JWT")?
+                        .try_into()?;
+
+                Ok((aro, Some(body)))
             }
-        };
-        let aro = verify_request(wallet, jwt)
-            .await
-            .context("unable to validate Authorization Request")?;
-        if self.client_id.as_str() != aro.client_id().0.as_str() {
-            bail!(
-                "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
-                self.client_id,
-                aro.client_id().0
-            );
+            RequestIndirection::Direct(untyped_object) => {
+                let mut untyped_object = untyped_object.clone();
+                if let Some(client_id) = self.client_id.clone() {
+                    untyped_object.insert(ClientId(client_id));
+                }
+                let aro: AuthorizationRequestObject = untyped_object.try_into()?;
+                Ok((aro, None))
+            }
         }
-        Ok(aro)
     }
 
     /// Encode as [Url], using the `authorization_endpoint` as a base.
@@ -122,7 +148,7 @@ impl AuthorizationRequest {
     /// # use url::Url;
     /// let authorization_endpoint: Url = "example://".parse().unwrap();
     /// let authorization_request = AuthorizationRequest {
-    ///     client_id: "xyz".to_string(),
+    ///     client_id: Some("xyz".to_string()),
     ///     request_indirection: RequestIndirection::ByValue("test".to_string()),
     /// };
     ///
@@ -149,7 +175,7 @@ impl AuthorizationRequest {
     ///     &authorization_endpoint
     /// ).unwrap();
     ///
-    /// assert_eq!(authorization_request.client_id, "xyz");
+    /// assert_eq!(authorization_request.client_id.unwrap(), "xyz");
     ///
     /// let RequestIndirection::ByValue(request_object) =
     ///     authorization_request.request_indirection
@@ -185,7 +211,7 @@ impl AuthorizationRequest {
     ///
     /// let authorization_request = AuthorizationRequest::from_query_params(query).unwrap();
     ///
-    /// assert_eq!(authorization_request.client_id, "xyz");
+    /// assert_eq!(authorization_request.client_id.unwrap(), "xyz");
     ///
     /// let RequestIndirection::ByValue(request_object) = authorization_request.request_indirection
     /// else { panic!("expected request-by-value") };
@@ -198,49 +224,39 @@ impl AuthorizationRequest {
 }
 
 impl AuthorizationRequestObject {
-    pub fn client_id(&self) -> &ClientId {
-        &self.1
+    pub fn client_id(&self) -> Option<&ClientId> {
+        self.client_id.as_ref()
     }
 
-    pub fn client_id_scheme(&self) -> &ClientIdScheme {
-        &self.2
+    pub fn client_id_scheme(&self) -> Option<&ClientIdScheme> {
+        self.client_id_scheme.as_ref()
     }
 
     pub async fn resolve_presentation_definition<H: AsyncHttpClient>(
         &self,
         http_client: &H,
-    ) -> Result<PresentationDefinition> {
-        match &self.5 {
-            PresentationDefinitionIndirection::ByValue(by_value) => Ok(by_value.clone()),
-            PresentationDefinitionIndirection::ByReference(by_reference) => {
-                let request = base_request()
-                    .method("GET")
-                    .uri(by_reference.to_string())
-                    .body(vec![])
-                    .context("failed to build presentation definition request")?;
+    ) -> Result<Option<PresentationDefinition>> {
+        let pd = self.get::<PresentationDefinition>().transpose()?;
 
-                let response = http_client.execute(request).await.context(format!(
-                    "failed to make presentation definition request at {by_reference}"
-                ))?;
+        let pd_uri = self.get::<PresentationDefinitionUri>().transpose()?;
 
-                let status = response.status();
-
-                if !status.is_success() {
-                    bail!("presentation definition request was unsuccessful (status: {status})")
-                }
-
-                serde_json::from_slice::<Json>(response.body())
-                    .context(format!(
-                    "failed to parse presentation definition response as JSON from {by_reference} (status: {status})"
-                ))?
-                .try_into()
-                .context("failed to parse presentation definition from JSON")
+        match (pd, pd_uri) {
+            (Some(presentation_definition), None) => Ok(Some(presentation_definition)),
+            (None, Some(presentation_definition_uri)) => Ok(Some(
+                presentation_definition_uri
+                    .resolve(http_client)
+                    .await
+                    .unwrap(),
+            )),
+            (Some(_), Some(_)) => {
+                bail!("only one of presentation_definition or presentation_definition_uri should be provided");
             }
+            (None, None) => Ok(None),
         }
     }
 
     pub fn is_id_token_requested(&self) -> Option<bool> {
-        match self.4 {
+        match self.response_type {
             ResponseType::VpToken => Some(false),
             ResponseType::VpTokenIdToken => Some(true),
             ResponseType::Unsupported(_) => None,
@@ -248,28 +264,27 @@ impl AuthorizationRequestObject {
     }
 
     pub fn response_mode(&self) -> &ResponseMode {
-        &self.3
+        &self.response_mode
     }
 
     pub fn response_type(&self) -> &ResponseType {
-        &self.4
+        &self.response_type
     }
 
     /// Uri to submit the response at.
     ///
     /// AKA [ResponseUri] or [RedirectUri] depending on [ResponseMode].
     pub fn return_uri(&self) -> &Url {
-        &self.6
+        &self.return_uri
     }
 
     pub fn nonce(&self) -> &Nonce {
-        &self.7
+        &self.nonce
     }
 
     /// Return the `client_metadata` field from the authorization request.
     pub fn client_metadata(&self) -> Result<ClientMetadata> {
-        self.0
-            .get()
+        self.get()
             .ok_or(anyhow!("missing `client_metadata` object"))?
     }
 
@@ -284,16 +299,13 @@ impl AuthorizationRequestObject {
     /// Return the `state` of the authorization request,
     /// if it was provided.
     pub fn state(&self) -> Option<Result<State>> {
-        self.0.get()
+        self.get()
     }
 }
 
 impl From<AuthorizationRequestObject> for UntypedObject {
     fn from(value: AuthorizationRequestObject) -> Self {
-        let mut inner = value.0;
-        inner.insert(value.1);
-        inner.insert(value.2);
-        inner
+        value.inner
     }
 }
 
@@ -301,11 +313,14 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
     type Error = Error;
 
     fn try_from(value: UntypedObject) -> std::result::Result<Self, Self::Error> {
-        let client_id = value.get().parsing_error()?;
-        let client_id_scheme = value
-            .get()
-            .parsing_error()
-            .context("this library cannot handle requests that omit client_id_scheme")?;
+        let client_id = value
+            .get::<ClientId>()
+            .map(|c| c.parsing_error())
+            .transpose()?;
+        let client_id_scheme = client_id
+            .as_ref()
+            .and_then(|c| c.resolve_scheme(&value).transpose())
+            .transpose()?;
 
         let redirect_uri = value.get::<RedirectUri>();
         let response_uri = value.get::<ResponseUri>();
@@ -329,40 +344,33 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             | (_, Some(uri), response_mode @ ResponseMode::DirectPostJwt) => {
                 (uri.parsing_error()?.0, response_mode)
             }
+            (_, Some(_), response_mode @ ResponseMode::DcApi)
+            | (_, Some(_), response_mode @ ResponseMode::DcApiJwt) => {
+                bail!("'response_uri' cannot be present for this 'response_mode' ({response_mode})")
+            }
+            (Some(_), _, response_mode @ ResponseMode::DcApi)
+            | (Some(_), _, response_mode @ ResponseMode::DcApiJwt) => {
+                bail!("'redirect_uri' cannot be present for this 'response_mode' ({response_mode})")
+            }
+            (None, None, response_mode @ ResponseMode::DcApi)
+            | (None, None, response_mode @ ResponseMode::DcApiJwt) => {
+                ("https://example.com".parse()?, response_mode)
+            }
         };
 
         let response_type: ResponseType = value.get().parsing_error()?;
 
-        let pd_indirection = match (
-            value.get::<PresentationDefinition>(),
-            value.get::<PresentationDefinitionUri>(),
-        ) {
-            (None, None) => bail!(
-                "one of 'presentation_definition' and 'presentation_definition_uri' are required"
-            ),
-            (Some(_), Some(_)) => {
-                bail!("'presentation_definition' and 'presentation_definition_uri' are mutually exclusive")
-            }
-            (Some(by_value), None) => {
-                PresentationDefinitionIndirection::ByValue(by_value.parsing_error()?)
-            }
-            (None, Some(by_reference)) => {
-                PresentationDefinitionIndirection::ByReference(by_reference.parsing_error()?.0)
-            }
-        };
-
         let nonce = value.get().parsing_error()?;
 
-        Ok(Self(
-            value,
+        Ok(Self {
+            inner: value,
             client_id,
             client_id_scheme,
             response_mode,
             response_type,
-            pd_indirection,
             return_uri,
             nonce,
-        ))
+        })
     }
 }
 
@@ -370,12 +378,12 @@ impl Deref for AuthorizationRequestObject {
     type Target = UntypedObject;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
 impl DerefMut for AuthorizationRequestObject {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.inner
     }
 }

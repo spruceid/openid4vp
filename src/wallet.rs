@@ -58,6 +58,12 @@ pub trait Wallet: RequestVerifier + Sync {
 
                 jwt.into_x_www_form_urlencoded()?.into_bytes()
             }
+            ResponseMode::DcApi => {
+                return Ok(None);
+            }
+            ResponseMode::DcApiJwt => {
+                return Ok(None);
+            }
             ResponseMode::Unsupported(rm) => bail!("unsupported response_mode {rm}"),
         };
 

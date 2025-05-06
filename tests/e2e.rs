@@ -84,6 +84,7 @@ async fn w3c_vc_did_client_direct_post() {
     let parsed_presentation_definition = request
         .resolve_presentation_definition(wallet.http_client())
         .await
+        .unwrap()
         .unwrap();
 
     assert_eq!(

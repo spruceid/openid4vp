@@ -11,34 +11,31 @@ use crate::core::{
 };
 use anyhow::{anyhow, bail, Context, Error, Ok};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use url::Url;
 
 use super::AuthorizationRequestObject;
 
-const DID: &str = "did";
-const ENTITY_ID: &str = "entity_id";
-const PREREGISTERED: &str = "pre-registered";
-const REDIRECT_URI: &str = "redirect_uri";
-const VERIFIER_ATTESTATION: &str = "verifier_attestation";
-const X509_SAN_DNS: &str = "x509_san_dns";
-const X509_SAN_URI: &str = "x509_san_uri";
-
 #[derive(Debug, Clone)]
 pub struct ClientId(pub String);
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ClientIdScheme {
-    Did,
-    EntityId,
-    PreRegistered,
-    RedirectUri,
-    VerifierAttestation,
-    X509SanDns,
-    X509SanUri,
-    Other(String),
-}
+impl ClientId {
+    /// Retrieves the `client_id_scheme` from the authorization request object.
+    ///
+    /// If the `client_id_scheme` is not present, it will be inferred from the `client_id`.
+    pub fn resolve_scheme(&self, value: &UntypedObject) -> Result<Option<ClientIdScheme>, Error> {
+        let client_id_scheme = value.get::<ClientIdScheme>();
+        if client_id_scheme.is_some() {
+            return client_id_scheme.transpose();
+        }
 
+        Ok(self
+            .0
+            .split(':')
+            .next()
+            .map(|s| ClientIdScheme(s.to_string())))
+    }
+}
 impl TypedParameter for ClientId {
     const KEY: &'static str = "client_id";
 }
@@ -57,54 +54,45 @@ impl From<ClientId> for Json {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClientIdScheme(pub String);
+
 impl TypedParameter for ClientIdScheme {
     const KEY: &'static str = "client_id_scheme";
-}
-
-impl From<String> for ClientIdScheme {
-    fn from(s: String) -> Self {
-        match s.as_str() {
-            DID => ClientIdScheme::Did,
-            ENTITY_ID => ClientIdScheme::EntityId,
-            PREREGISTERED => ClientIdScheme::PreRegistered,
-            REDIRECT_URI => ClientIdScheme::RedirectUri,
-            VERIFIER_ATTESTATION => ClientIdScheme::VerifierAttestation,
-            X509_SAN_DNS => ClientIdScheme::X509SanDns,
-            X509_SAN_URI => ClientIdScheme::X509SanUri,
-            _ => ClientIdScheme::Other(s),
-        }
-    }
 }
 
 impl TryFrom<Json> for ClientIdScheme {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        serde_json::from_value(value)
-            .map(String::into)
-            .map_err(Error::from)
+        Ok(ClientIdScheme(serde_json::from_value(value)?))
     }
 }
 
 impl From<ClientIdScheme> for Json {
     fn from(value: ClientIdScheme) -> Self {
-        Json::String(value.to_string())
+        Json::String(value.0)
     }
 }
 
-impl fmt::Display for ClientIdScheme {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ClientIdScheme::Did => DID,
-            ClientIdScheme::EntityId => ENTITY_ID,
-            ClientIdScheme::PreRegistered => PREREGISTERED,
-            ClientIdScheme::RedirectUri => REDIRECT_URI,
-            ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION,
-            ClientIdScheme::X509SanDns => X509_SAN_DNS,
-            ClientIdScheme::X509SanUri => X509_SAN_URI,
-            ClientIdScheme::Other(o) => o,
-        }
-        .fmt(f)
+impl ClientIdScheme {
+    pub const DID: &str = "did";
+    /// Deprecated, use `https` instead.
+    pub const ENTITY_ID: &str = "entity_id";
+    pub const HTTPS: &str = "https";
+    pub const PREREGISTERED: &str = "pre-registered";
+    pub const REDIRECT_URI: &str = "redirect_uri";
+    pub const VERIFIER_ATTESTATION: &str = "verifier_attestation";
+    pub const WEB_ORIGIN: &str = "web-origin";
+    pub const X509_SAN_DNS: &str = "x509_san_dns";
+    pub const X509_SAN_URI: &str = "x509_san_uri";
+}
+
+impl Deref for ClientIdScheme {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -448,6 +436,8 @@ impl TryFrom<Json> for ResponseUri {
 
 const DIRECT_POST: &str = "direct_post";
 const DIRECT_POST_JWT: &str = "direct_post.jwt";
+const DC_API: &str = "dc_api";
+const DC_API_JWT: &str = "dc_api.jwt";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(into = "String", from = "String")]
@@ -456,6 +446,10 @@ pub enum ResponseMode {
     DirectPost,
     /// The `direct_post.jwt` response mode as defined in OID4VP.
     DirectPostJwt,
+    /// The `dc_api` response mode as defined in OID4VP.
+    DcApi,
+    /// The `dc_api.jwt` response mode as defined in OID4VP.
+    DcApiJwt,
     /// A ResponseMode that is unsupported by this library.
     Unsupported(String),
 }
@@ -469,6 +463,8 @@ impl From<String> for ResponseMode {
         match s.as_str() {
             DIRECT_POST => ResponseMode::DirectPost,
             DIRECT_POST_JWT => ResponseMode::DirectPostJwt,
+            DC_API => ResponseMode::DcApi,
+            DC_API_JWT => ResponseMode::DcApiJwt,
             _ => ResponseMode::Unsupported(s),
         }
     }
@@ -479,6 +475,8 @@ impl From<ResponseMode> for String {
         match s {
             ResponseMode::DirectPost => DIRECT_POST.into(),
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT.into(),
+            ResponseMode::DcApi => DC_API.into(),
+            ResponseMode::DcApiJwt => DC_API_JWT.into(),
             ResponseMode::Unsupported(u) => u,
         }
     }
@@ -504,6 +502,8 @@ impl fmt::Display for ResponseMode {
         match self {
             ResponseMode::DirectPost => DIRECT_POST,
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT,
+            ResponseMode::DcApi => DC_API,
+            ResponseMode::DcApiJwt => DC_API_JWT,
             ResponseMode::Unsupported(u) => u,
         }
         .fmt(f)
@@ -521,6 +521,8 @@ impl ResponseMode {
         match self {
             ResponseMode::DirectPost => Ok(false),
             ResponseMode::DirectPostJwt => Ok(true),
+            ResponseMode::DcApi => Ok(false),
+            ResponseMode::DcApiJwt => Ok(true),
             ResponseMode::Unsupported(rm) => bail!("unsupported response_mode: {rm}"),
         }
     }
@@ -659,5 +661,58 @@ impl TryFrom<Json> for PresentationDefinitionUri {
 impl From<PresentationDefinitionUri> for Json {
     fn from(value: PresentationDefinitionUri) -> Self {
         value.0.to_string().into()
+    }
+}
+
+impl PresentationDefinitionUri {
+    pub async fn resolve<H: AsyncHttpClient>(
+        &self,
+        http_client: &H,
+    ) -> Result<PresentationDefinition, Error> {
+        let url = self.0.to_string();
+
+        let request = base_request()
+            .method("GET")
+            .uri(&url)
+            .body(vec![])
+            .context("failed to build presentation definition request")?;
+
+        let response = http_client.execute(request).await.context(format!(
+            "failed to make presentation definition request at {url}"
+        ))?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            bail!("presentation definition request was unsuccessful (status: {status})")
+        }
+
+        serde_json::from_slice::<Json>(response.body())
+            .context(format!(
+            "failed to parse presentation definition response as JSON from {url} (status: {status})"
+        ))?
+            .try_into()
+            .context("failed to parse presentation definition from JSON")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExpectedOrigins(pub Vec<String>);
+
+impl TypedParameter for ExpectedOrigins {
+    const KEY: &'static str = "expected_origins";
+}
+
+impl TryFrom<Json> for ExpectedOrigins {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(serde_json::from_value(value).map(Self)?)
+    }
+}
+
+impl From<ExpectedOrigins> for Json {
+    fn from(value: ExpectedOrigins) -> Self {
+        json!(value.0)
     }
 }

@@ -27,7 +27,13 @@ pub fn validate<V: Verifier>(
     request_jwt: String,
     trusted_roots: Option<&[Certificate]>,
 ) -> Result<()> {
-    let client_id = request_object.client_id().0.as_str();
+    let client_id = request_object
+        .client_id()
+        .context("client_id is required")?;
+    let client_id_source = client_id
+        .0
+        .strip_prefix(&format!("{}:", x509_san_variant.to_scheme().0))
+        .unwrap_or(&client_id.0);
     let (headers_b64, body_b64, sig_b64) = ssi::claims::jws::split_jws(&request_jwt)?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
@@ -105,8 +111,8 @@ pub fn validate<V: Verifier>(
             }
         })
         .any(|uri| {
-            debug!("comparing SAN '{uri}' to client_id '{client_id}'");
-            uri == client_id
+            debug!("comparing SAN '{uri}' to client_id '{client_id_source}'");
+            uri == client_id_source
         })
     {
         bail!("client_id does not match any Subject Alternative Name")

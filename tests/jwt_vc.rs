@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use http::{Request, Response};
 use openid4vp::{
@@ -127,10 +127,14 @@ impl RequestVerifier for JwtVcWallet {
     async fn did(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
+        request_jwt: Option<String>,
     ) -> Result<()> {
         let resolver: VerificationMethodDIDResolver<DIDKey, AnyJwkMethod> =
             VerificationMethodDIDResolver::new(DIDKey);
+
+        let Some(request_jwt) = request_jwt else {
+            bail!("request_jwt is required");
+        };
 
         did::verify_with_resolver(
             self.metadata(),

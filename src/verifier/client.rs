@@ -24,7 +24,7 @@ use super::request_signer::RequestSigner;
 pub trait Client: Debug {
     fn id(&self) -> &ClientId;
 
-    fn scheme(&self) -> &ClientIdScheme;
+    fn scheme(&self) -> ClientIdScheme;
 
     async fn generate_request_object_jwt(
         &self,
@@ -131,14 +131,23 @@ pub enum X509SanVariant {
     Dns,
 }
 
+impl X509SanVariant {
+    pub fn to_scheme(&self) -> ClientIdScheme {
+        match self {
+            X509SanVariant::Uri => ClientIdScheme(ClientIdScheme::X509_SAN_URI.to_string()),
+            X509SanVariant::Dns => ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string()),
+        }
+    }
+}
+
 #[async_trait]
 impl Client for DIDClient {
     fn id(&self) -> &ClientId {
         &self.id
     }
 
-    fn scheme(&self) -> &ClientIdScheme {
-        &ClientIdScheme::Did
+    fn scheme(&self) -> ClientIdScheme {
+        ClientIdScheme(ClientIdScheme::DID.to_string())
     }
 
     async fn generate_request_object_jwt(
@@ -164,11 +173,8 @@ impl Client for X509SanClient {
         &self.id
     }
 
-    fn scheme(&self) -> &ClientIdScheme {
-        match self.variant {
-            X509SanVariant::Dns => &ClientIdScheme::X509SanDns,
-            X509SanVariant::Uri => &ClientIdScheme::X509SanUri,
-        }
+    fn scheme(&self) -> ClientIdScheme {
+        self.variant.to_scheme()
     }
 
     async fn generate_request_object_jwt(
