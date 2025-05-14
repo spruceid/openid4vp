@@ -238,7 +238,7 @@ impl ClientMetadata {
         &self,
     ) -> Result<AuthorizationSignedResponseAlg, Error> {
         self.0.get().unwrap_or(Ok(AuthorizationSignedResponseAlg(
-            ssi::crypto::Algorithm::Rs256,
+            ssi::crypto::Algorithm::RS256,
         )))
     }
 
