@@ -67,9 +67,19 @@ impl<'a> RequestBuilder<'a> {
     /// ## Returns
     /// - UUID that can be used by the application frontend to poll for the status of this request.
     /// - URL that the application frontend should use to drive the user to their wallet application.
-    pub async fn build(mut self, wallet_metadata: WalletMetadata) -> Result<(Uuid, Url)> {
+    pub async fn build(self, wallet_metadata: WalletMetadata) -> Result<(Uuid, Url)> {
         let uuid = Uuid::new_v4();
 
+        let authorization_request_url = self.build_with_session_id(uuid, wallet_metadata).await?;
+
+        Ok((uuid, authorization_request_url))
+    }
+
+    pub async fn build_with_session_id(
+        mut self,
+        uuid: Uuid,
+        wallet_metadata: WalletMetadata,
+    ) -> Result<Url> {
         let client_id = self.verifier.client.id();
         let client_id_scheme = self.verifier.client.scheme();
 
@@ -178,7 +188,7 @@ impl<'a> RequestBuilder<'a> {
             .await
             .context("failed to store the session in the session store")?;
 
-        Ok((uuid, authorization_request_url))
+        Ok(authorization_request_url)
     }
 
     pub async fn build_dc_api(mut self) -> Result<(Uuid, String)> {
