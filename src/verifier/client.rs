@@ -161,7 +161,7 @@ impl Client for DIDClient {
         let header = json!({
             "alg": algorithm,
             "kid": self.vm,
-            "typ": "JWT"
+            "typ": "oauth-authz-req+jwt"
         });
         make_jwt(header, body, self.signer.as_ref()).await
     }
@@ -194,7 +194,7 @@ impl Client for X509SanClient {
         let header = json!({
             "alg": algorithm,
             "x5c": x5c,
-            "typ": "JWT"
+            "typ": "oauth-authz-req+jwt"
         });
         make_jwt(header, body, self.signer.as_ref()).await
     }
