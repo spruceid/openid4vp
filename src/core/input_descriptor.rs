@@ -446,6 +446,7 @@ impl ConstraintsField {
     ///
     /// If present its value MUST be a JSON Schema descriptor used to filter against
     /// the values returned from evaluation of the JSONPath string expressions in the path array.
+    #[allow(clippy::result_large_err)]
     pub fn set_filter(mut self, filter: &serde_json::Value) -> Result<Self, ValidationError> {
         self.filter = Some(CompiledJsonSchema::try_from(filter)?);
         Ok(self)
