@@ -158,6 +158,7 @@ impl<'a> RequestBuilder<'a> {
 
         let authorization_request_url = AuthorizationRequest {
             client_id: Some(client_id.0.clone()),
+            client_id_scheme: None,
             request_indirection,
         }
         .to_url(authorization_endpoint)
