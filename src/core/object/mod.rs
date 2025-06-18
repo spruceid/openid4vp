@@ -5,7 +5,7 @@ use serde_json::{Map, Value as Json};
 /// An untyped (JSON) Object from which [TypedParameters](TypedParameter) can be parsed.
 ///
 /// Can represent metadata or request objects.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct UntypedObject(pub(crate) Map<String, Json>);
 
 // TODO: Replace anyhow error type.
