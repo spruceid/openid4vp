@@ -138,7 +138,9 @@ impl<'a> RequestBuilder<'a> {
         let mut initial_status = Status::SentRequest;
 
         let request_indirection = match self.verifier.pass_by_reference.clone() {
-            ByReference::False => RequestIndirection::ByValue(authorization_request_jwt.clone()),
+            ByReference::False => RequestIndirection::ByValue {
+                request: authorization_request_jwt.clone(),
+            },
             ByReference::True { mut at } => {
                 {
                     let Ok(mut path) = at.path_segments_mut() else {
@@ -147,7 +149,7 @@ impl<'a> RequestBuilder<'a> {
                     path.push(&uuid.to_string());
                 }
                 initial_status = Status::SentRequestByReference;
-                RequestIndirection::ByReference(at)
+                RequestIndirection::ByReference { request_uri: at }
             }
         };
 
@@ -158,7 +160,6 @@ impl<'a> RequestBuilder<'a> {
 
         let authorization_request_url = AuthorizationRequest {
             client_id: Some(client_id.0.clone()),
-            client_id_scheme: None,
             request_indirection,
         }
         .to_url(authorization_endpoint)

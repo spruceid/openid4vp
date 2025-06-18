@@ -41,20 +41,16 @@ pub struct AuthorizationRequestObject {
 pub struct AuthorizationRequest {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub client_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub client_id_scheme: Option<String>,
     #[serde(flatten)]
     pub request_indirection: RequestIndirection,
 }
 
 /// A RequestObject, passed by value or by reference.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
 pub enum RequestIndirection {
-    #[serde(rename = "request")]
-    ByValue(String),
-    #[serde(rename = "request_uri")]
-    ByReference(Url),
-    #[serde(untagged)]
+    ByValue { request: String },
+    ByReference { request_uri: Url },
     Direct(UntypedObject),
 }
 
@@ -96,14 +92,14 @@ impl AuthorizationRequest {
         http_client: &H,
     ) -> Result<(AuthorizationRequestObject, Option<String>)> {
         match &self.request_indirection {
-            RequestIndirection::ByValue(jwt) => {
+            RequestIndirection::ByValue { request: jwt } => {
                 let aro: AuthorizationRequestObject =
                     ssi::claims::jwt::decode_unverified::<UntypedObject>(jwt)
                         .context("unable to decode Authorization Request Object JWT")?
                         .try_into()?;
                 Ok((aro, Some(jwt.clone())))
             }
-            RequestIndirection::ByReference(url) => {
+            RequestIndirection::ByReference { request_uri: url } => {
                 let request = base_request()
                     .method("GET")
                     .uri(url.to_string())
@@ -151,8 +147,7 @@ impl AuthorizationRequest {
     /// let authorization_endpoint: Url = "example://".parse().unwrap();
     /// let authorization_request = AuthorizationRequest {
     ///     client_id: Some("xyz".to_string()),
-    ///     client_id_scheme: None,
-    ///     request_indirection: RequestIndirection::ByValue("test".to_string()),
+    ///     request_indirection: RequestIndirection::ByValue{request: "test".to_string()},
     /// };
     ///
     /// let authorization_request_url = authorization_request.to_url(authorization_endpoint).unwrap();
@@ -180,7 +175,7 @@ impl AuthorizationRequest {
     ///
     /// assert_eq!(authorization_request.client_id.unwrap(), "xyz");
     ///
-    /// let RequestIndirection::ByValue(request_object) =
+    /// let RequestIndirection::ByValue{request: request_object} =
     ///     authorization_request.request_indirection
     /// else {
     ///     panic!("expected request-by-value")
@@ -216,7 +211,7 @@ impl AuthorizationRequest {
     ///
     /// assert_eq!(authorization_request.client_id.unwrap(), "xyz");
     ///
-    /// let RequestIndirection::ByValue(request_object) = authorization_request.request_indirection
+    /// let RequestIndirection::ByValue{request: request_object} = authorization_request.request_indirection
     /// else { panic!("expected request-by-value") };
     /// assert_eq!(request_object, "test");
     /// ```
@@ -550,7 +545,7 @@ mod test {
         let url: Url = "mdoc-openid4vp://?client_id=api.verify.spruceid.xyz&request_uri=https%3A%2F%2Fapi.verify.spruceid.xyz%2Fsessions%2Fcadmv%2Frequest%2F0fc25eb0-f845-4733-9c4c-fae695c9c04c".parse().unwrap();
         let authorization_endpoint: Url = "example://".parse().unwrap();
         let req = AuthorizationRequest::from_url(url, &authorization_endpoint).unwrap();
-        let expected = RequestIndirection::ByReference("https://api.verify.spruceid.xyz/sessions/cadmv/request/0fc25eb0-f845-4733-9c4c-fae695c9c04c".parse().unwrap());
+        let expected = RequestIndirection::ByReference{request_uri: "https://api.verify.spruceid.xyz/sessions/cadmv/request/0fc25eb0-f845-4733-9c4c-fae695c9c04c".parse().unwrap()};
         assert_eq!(req.request_indirection, expected);
     }
 
@@ -559,7 +554,7 @@ mod test {
         let url: Url = "mdoc-openid4vp://?client_id=labs-online-presentation-sample-app.vii.au01.mattr.global&client_id_scheme=x509_san_dns&request_uri=https%3A%2F%2Flabs-online-presentation-sample-app.vii.au01.mattr.global%2Fv2%2Fpresentations%2Fsessions%2Ff7e72833-6f3f-4385-b9dd-3a4ea9453948%2Frequests%2Ff7286044-4c94-4ccf-9956-29a8cc6d0687".parse().unwrap();
         let authorization_endpoint: Url = "example://".parse().unwrap();
         let req = AuthorizationRequest::from_url(url, &authorization_endpoint).unwrap();
-        let expected = RequestIndirection::ByReference("https://labs-online-presentation-sample-app.vii.au01.mattr.global/v2/presentations/sessions/f7e72833-6f3f-4385-b9dd-3a4ea9453948/requests/f7286044-4c94-4ccf-9956-29a8cc6d0687".parse().unwrap());
+        let expected = RequestIndirection::ByReference{request_uri:"https://labs-online-presentation-sample-app.vii.au01.mattr.global/v2/presentations/sessions/f7e72833-6f3f-4385-b9dd-3a4ea9453948/requests/f7286044-4c94-4ccf-9956-29a8cc6d0687".parse().unwrap()};
         assert_eq!(req.request_indirection, expected);
     }
 }
