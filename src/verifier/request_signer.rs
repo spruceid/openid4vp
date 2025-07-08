@@ -80,6 +80,6 @@ impl JwsSigner for P256Signer {
     ) -> std::result::Result<Vec<u8>, ssi::claims::SignatureError> {
         self.try_sign(signing_bytes)
             .await
-            .map_err(|e| ssi::claims::SignatureError::Other(format!("Failed to sign bytes: {}", e)))
+            .map_err(|e| ssi::claims::SignatureError::Other(format!("Failed to sign bytes: {e}")))
     }
 }
