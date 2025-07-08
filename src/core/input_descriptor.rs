@@ -327,9 +327,7 @@ impl<'de> Deserialize<'de> for CompiledJsonSchema {
 
         let compiled = jsonschema::JSONSchema::compile(&raw)
             .map(Arc::new)
-            .map_err(|e| {
-                serde::de::Error::custom(format!("Failed to compile JSON schema: {e}"))
-            })?;
+            .map_err(|e| serde::de::Error::custom(format!("Failed to compile JSON schema: {e}")))?;
 
         Ok(CompiledJsonSchema { raw, compiled })
     }
