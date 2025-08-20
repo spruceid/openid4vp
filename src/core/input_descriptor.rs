@@ -272,12 +272,15 @@ impl Constraints {
 #[derive(Debug, Clone)]
 pub struct CompiledJsonSchema {
     raw: serde_json::Value,
-    compiled: Arc<jsonschema::JSONSchema>,
+    compiled: Arc<jsonschema::Resource>,
 }
 
 impl CompiledJsonSchema {
-    pub fn validator(&self) -> &Arc<jsonschema::JSONSchema> {
-        &self.compiled
+    pub fn validator(&self) -> Arc<jsonschema::Validator> {
+        let validator = jsonschema::validator_for(&self.compiled.contents())
+            // Safety: the compiled contents should always be valid json schema
+            .unwrap();
+        Arc::new(validator)
     }
 }
 
@@ -291,7 +294,7 @@ impl<'a> TryFrom<&'a serde_json::Value> for CompiledJsonSchema {
     type Error = ValidationError<'a>;
 
     fn try_from(value: &'a serde_json::Value) -> Result<Self, Self::Error> {
-        let compiled = jsonschema::JSONSchema::compile(value)?;
+        let compiled = jsonschema::Resource::from_contents(value.to_owned())?;
         Ok(Self {
             raw: value.to_owned(),
             compiled: Arc::new(compiled),
@@ -325,7 +328,7 @@ impl<'de> Deserialize<'de> for CompiledJsonSchema {
     {
         let raw = serde_json::Value::deserialize(deserializer)?;
 
-        let compiled = jsonschema::JSONSchema::compile(&raw)
+        let compiled = jsonschema::Resource::from_contents(raw.clone())
             .map(Arc::new)
             .map_err(|e| serde::de::Error::custom(format!("Failed to compile JSON schema: {e}")))?;
 
