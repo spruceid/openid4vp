@@ -1,3 +1,4 @@
+#![cfg(feature = "test")]
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};

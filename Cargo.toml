@@ -41,7 +41,7 @@ tracing = "0.1.37"
 url = { version = "2.4.1", features = ["serde"] }
 x509-cert = "0.2.4"
 thiserror = "1.0.65"
-isomdl = "0.1.0"
+isomdl = { git = "https://github.com/spruceid/isomdl", rev = "0e53d21" }
 
 [dev-dependencies]
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -55,5 +55,5 @@ uuid = { version = "1.2", features = ["v4", "serde", "js"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 uuid = { version = "1.2", features = ["v4", "serde"] }
 
-[patch.crates-io]
-isomdl = { path = "../isomdl" }
+# [patch.crates-io]
+# isomdl = { path = "../isomdl" }

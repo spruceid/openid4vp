@@ -10,14 +10,14 @@ use isomdl::{
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum SessionState {
-    Initiated {
-        annex_c: annexc::InitiatedSessionState,
-        annex_d: annexd::InitiatedSessionState,
-    },
-    Complete(ResponseAuthenticationOutcome),
-}
+// #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+// pub enum SessionState {
+//     Initiated {
+//         annex_c: annexc::InitiatedSessionState,
+//         annex_d: annexd::InitiatedSessionState,
+//     },
+//     Complete(ResponseAuthenticationOutcome),
+// }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct EncryptionInfo(String, EncryptionParameters);
@@ -45,8 +45,8 @@ pub struct InitiateResponse {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "protocol")]
 pub enum DCAPIRequest {
-    #[serde(rename = "org-iso-mdoc")]
-    AnnexC { data: annexc::InitiateResponse },
+    // #[serde(rename = "org-iso-mdoc")]
+    // AnnexC { data: annexc::InitiateResponse },
     #[serde(rename = "openid4vp")]
     AnnexD { data: DCAPIRequestAnnexD },
 }
@@ -56,14 +56,14 @@ pub struct DCAPIRequestAnnexD {
     pub request: String,
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", tag = "protocol")]
-pub enum DCAPIResponse {
-    #[serde(rename = "org-iso-mdoc")]
-    AnnexC { data: annexc::DCAPIResponseData },
-    #[serde(rename = "openid4vp")]
-    AnnexD { data: annexd::DCAPIResponseData },
-}
+// #[derive(Deserialize, Serialize)]
+// #[serde(rename_all = "camelCase", tag = "protocol")]
+// pub enum DCAPIResponse {
+//     #[serde(rename = "org-iso-mdoc")]
+//     AnnexC { data: annexc::DCAPIResponseData },
+//     #[serde(rename = "openid4vp")]
+//     AnnexD { data: annexd::DCAPIResponseData },
+// }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct EncryptedResponse(String, EncryptedResponseData);

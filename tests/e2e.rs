@@ -1,3 +1,4 @@
+#![cfg(feature = "test")]
 use jwt_vp::create_test_verifiable_presentation;
 use openid4vp::{
     core::{
