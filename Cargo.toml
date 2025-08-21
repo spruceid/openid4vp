@@ -13,6 +13,8 @@ default = []
 # Enables code paths that increase the chance of interoperability with other wallets and verifiers.
 # This should be used with caution in production environments.
 maximize_interoperability = []
+# Enables test features, e.g., use of in-memory session storage
+test = []
 
 [dependencies]
 anyhow = "1.0.97"

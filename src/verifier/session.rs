@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 use anyhow::{bail, Ok, Result};
 use async_trait::async_trait;
 pub use openid4vp_frontend::*;
+#[cfg(feature = "test")]
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -42,11 +43,13 @@ pub trait SessionStore: Debug {
 /// # Warning
 /// This in-memory store should only be used for test purposes, it will not work for a distributed
 /// deployment.
+#[cfg(feature = "test")]
 #[derive(Debug, Clone, Default)]
 pub struct MemoryStore {
     store: Arc<Mutex<BTreeMap<Uuid, Session>>>,
 }
 
+#[cfg(feature = "test")]
 #[async_trait]
 impl SessionStore for MemoryStore {
     async fn initiate(&self, session: Session) -> Result<()> {

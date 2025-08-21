@@ -25,6 +25,7 @@ impl AsRef<reqwest::Client> for ReqwestClient {
 }
 
 impl ReqwestClient {
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new() -> Result<Self> {
         reqwest::Client::builder()
             .use_rustls_tls()
@@ -32,8 +33,16 @@ impl ReqwestClient {
             .context("unable to build http_client")
             .map(Self)
     }
-}
 
+    #[cfg(target_arch = "wasm32")]
+    pub fn new() -> Result<Self> {
+        reqwest::Client::builder()
+            .build()
+            .context("unable to build http_client")
+            .map(Self)
+    }
+}
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl AsyncHttpClient for ReqwestClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
