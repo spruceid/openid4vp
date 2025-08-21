@@ -23,7 +23,8 @@ http = "1.1.0"
 # This is currently used in the jwt_vp test to go from a `VeriableCredential` to an `AnyJsonCredential` type.
 # There may be a better way to handle this that doesn't require the `json-syntax` crate directly.
 json-syntax = { version = "0.12.5", features = ["serde_json"] }
-jsonschema = { version = "0.32.1", features = ["resolve-async"] }
+jsonschema = { git = "https://github.com/spruceid/jsonschema.git", branch = "feat/wasm-support" }
+# jsonschema = { version = "0.32.1", features = ["resolve-async"] }
 openid4vp-frontend = { version = "0.1.0", path = "openid4vp-frontend" }
 p256 = { version = "0.13.2", features = ["jwk"] }
 rand = { version = "0.8.5" }
