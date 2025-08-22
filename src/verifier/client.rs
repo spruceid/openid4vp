@@ -20,7 +20,7 @@ use crate::core::authorization_request::{
 
 use super::request_signer::RequestSigner;
 
-#[async_trait]
+#[async_trait(?Send)]
 pub trait Client: Debug {
     fn id(&self) -> &ClientId;
 
@@ -140,7 +140,7 @@ impl X509SanVariant {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl Client for DIDClient {
     fn id(&self) -> &ClientId {
         &self.id
@@ -167,7 +167,7 @@ impl Client for DIDClient {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl Client for X509SanClient {
     fn id(&self) -> &ClientId {
         &self.id
