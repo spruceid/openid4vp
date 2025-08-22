@@ -1,4 +1,3 @@
-use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use http::{Request, Response};
@@ -15,66 +14,66 @@ pub(crate) fn base_request() -> http::request::Builder {
     Request::builder().header("Prefer", "OID4VP-0.0.20")
 }
 
-#[derive(Debug, Clone)]
-pub struct ReqwestClient(reqwest::Client);
-
-impl AsRef<reqwest::Client> for ReqwestClient {
-    fn as_ref(&self) -> &reqwest::Client {
-        &self.0
-    }
-}
-
-impl ReqwestClient {
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn new() -> Result<Self> {
-        reqwest::Client::builder()
-            .use_rustls_tls()
-            .build()
-            .context("unable to build http_client")
-            .map(Self)
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn new() -> Result<Self> {
-        reqwest::Client::builder()
-            .build()
-            .context("unable to build http_client")
-            .map(Self)
-    }
-}
 #[cfg(not(target_arch = "wasm32"))]
-#[async_trait]
-impl AsyncHttpClient for ReqwestClient {
-    async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
-        let response = self
-            .0
-            .execute(request.try_into().context("unable to convert request")?)
-            .await
-            .context("http request failed")?;
+pub use client::*;
 
-        let mut builder = Response::builder()
-            .status(response.status())
-            .version(response.version());
+#[cfg(not(target_arch = "wasm32"))]
+mod client {
+    use super::*;
+    use anyhow::Context;
 
-        builder
-            .extensions_mut()
-            .context("unable to set extensions")?
-            .extend(response.extensions().clone());
+    #[derive(Debug, Clone)]
+    pub struct ReqwestClient(reqwest::Client);
 
-        builder
-            .headers_mut()
-            .context("unable to set headers")?
-            .extend(response.headers().clone());
+    impl AsRef<reqwest::Client> for ReqwestClient {
+        fn as_ref(&self) -> &reqwest::Client {
+            &self.0
+        }
+    }
 
-        builder
-            .body(
-                response
-                    .bytes()
-                    .await
-                    .context("failed to extract response body")?
-                    .to_vec(),
-            )
-            .context("unable to construct response")
+    impl ReqwestClient {
+        pub fn new() -> Result<Self> {
+            return reqwest::Client::builder()
+                .use_rustls_tls()
+                .build()
+                .context("unable to build http_client")
+                .map(Self);
+        }
+    }
+
+    #[async_trait]
+    impl AsyncHttpClient for ReqwestClient {
+        async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
+            let response = self
+                .0
+                .execute(request.try_into().context("unable to convert request")?)
+                .await
+                .context("http request failed")?;
+
+            let mut builder = Response::builder()
+                .status(response.status())
+                .version(response.version());
+
+            builder
+                .extensions_mut()
+                .context("unable to set extensions")?
+                .extend(response.extensions().clone());
+
+            builder
+                .headers_mut()
+                .context("unable to set headers")?
+                .extend(response.headers().clone());
+
+            builder
+                .body(
+                    response
+                        .bytes()
+                        .await
+                        .context("failed to extract response body")?
+                        .to_vec(),
+                )
+                .context("unable to construct response")
+        }
     }
 }
 
