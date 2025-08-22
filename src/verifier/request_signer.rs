@@ -4,11 +4,11 @@ use p256::ecdsa::{signature::Signer, Signature, SigningKey};
 use ssi::claims::jws::{JwsSigner, JwsSignerInfo};
 use ssi::jwk::Algorithm;
 
-use ssi::jwk::JWK;
+pub use ssi::jwk::JWK;
 
 use std::fmt::Debug;
 
-#[async_trait]
+#[async_trait(?Send)]
 pub trait RequestSigner: Debug {
     type Error: std::fmt::Display;
 
@@ -47,7 +47,7 @@ impl P256Signer {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl RequestSigner for P256Signer {
     type Error = anyhow::Error;
 
