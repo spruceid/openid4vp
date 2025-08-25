@@ -1,14 +1,8 @@
-use anyhow::Context;
-use isomdl::{
-    definitions::{
-        helpers::{ByteStr, NonEmptyMap, NonEmptyVec},
-        x509::trust_anchor::TrustAnchorRegistry,
-        CoseKey,
-    },
-    presentation::authentication::ResponseAuthenticationOutcome,
+use isomdl::definitions::{
+    helpers::{ByteStr, NonEmptyMap, NonEmptyVec},
+    CoseKey,
 };
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 
 // #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 // pub enum SessionState {

@@ -8,7 +8,8 @@ pub use ssi::jwk::JWK;
 
 use std::fmt::Debug;
 
-#[async_trait(?Send)]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait RequestSigner: Debug {
     type Error: std::fmt::Display;
 
@@ -47,7 +48,8 @@ impl P256Signer {
     }
 }
 
-#[async_trait(?Send)]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl RequestSigner for P256Signer {
     type Error = anyhow::Error;
 

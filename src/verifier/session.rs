@@ -1,6 +1,6 @@
-use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
-use anyhow::{bail, Ok, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 pub use openid4vp_frontend::*;
 #[cfg(feature = "test")]
