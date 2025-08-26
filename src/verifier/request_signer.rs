@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+use p256::pkcs8::DecodePrivateKey;
 use ssi::claims::jws::{JwsSigner, JwsSignerInfo};
 use ssi::jwk::Algorithm;
 
@@ -43,6 +44,15 @@ impl P256Signer {
         Ok(Self { key, jwk })
     }
 
+    pub fn from_pkcs8_pem(s: &str) -> Result<Self> {
+        let key = p256::SecretKey::from_pkcs8_pem(s)?;
+        let jwk = serde_json::from_str(&key.to_jwk_string())?;
+        Ok(Self {
+            key: key.into(),
+            jwk,
+        })
+    }
+
     pub fn jwk(&self) -> &JWK {
         &self.jwk
     }
@@ -83,5 +93,26 @@ impl JwsSigner for P256Signer {
         self.try_sign(signing_bytes)
             .await
             .map_err(|e| ssi::claims::SignatureError::Other(format!("Failed to sign bytes: {e}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::verifier::request_signer::P256Signer;
+    use anyhow::Result;
+
+    #[test]
+    fn test_p25_from_pkcs8_pem() -> Result<()> {
+        let pem = r#"-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpuJEtk8m2LIgMcZy
+pbrD0ECdHI3UzCnImDfRYydCvFShRANCAARmahl0HOSy+6nH91+Alxe+BF/va3jI
+1jSnv8o+7a2nhvU3XKDFLlCR1MBjoJTjy92+H3hPMw3FRFcTamaXA+Co
+-----END PRIVATE KEY-----"#;
+
+        let key = P256Signer::from_pkcs8_pem(pem)?;
+
+        println!("JWK: {}", key.jwk());
+
+        Ok(())
     }
 }
