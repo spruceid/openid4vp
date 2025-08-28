@@ -10,11 +10,8 @@ use crate::{
             AuthorizationRequest, AuthorizationRequestObject, RequestIndirection,
         },
         dcql_query::DcqlQuery,
-        metadata::{
-            parameters::wallet::{AuthorizationEndpoint, ClientIdSchemesSupported},
-            WalletMetadata,
-        },
-        object::{ParsingErrorContext, TypedParameter, UntypedObject},
+        metadata::{parameters::wallet::ClientIdSchemesSupported, WalletMetadata},
+        object::{TypedParameter, UntypedObject},
         presentation_definition::PresentationDefinition,
     },
     verifier::{by_reference::ByReference, session::Status},
@@ -163,10 +160,7 @@ impl<'a> RequestBuilder<'a> {
             }
         };
 
-        let authorization_endpoint = wallet_metadata
-            .get::<AuthorizationEndpoint>()
-            .parsing_error()?
-            .0;
+        let authorization_endpoint = wallet_metadata.authorization_endpoint().0.clone();
 
         let authorization_request_url = AuthorizationRequest {
             client_id: Some(client_id.0.clone()),
