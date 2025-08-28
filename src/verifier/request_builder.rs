@@ -164,9 +164,9 @@ impl<'a> RequestBuilder<'a> {
         };
 
         let authorization_endpoint = wallet_metadata
-            .get::<AuthorizationEndpoint>()
-            .parsing_error()?
-            .0;
+            .authorization_endpoint()
+            .0
+            .clone();
 
         let authorization_request_url = AuthorizationRequest {
             client_id: Some(client_id.0.clone()),
