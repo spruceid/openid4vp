@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use anyhow::Result;
 use async_trait::async_trait;
 pub use openid4vp_frontend::*;
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "test")]
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -12,7 +13,7 @@ use crate::core::{
     presentation_definition::PresentationDefinition,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub uuid: Uuid,
     pub status: Status,
@@ -23,7 +24,8 @@ pub struct Session {
 }
 
 /// Storage interface for session information.
-#[async_trait]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait SessionStore: Debug {
     /// Store a new authorization request session.
     async fn initiate(&self, session: Session) -> Result<()>;
