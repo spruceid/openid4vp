@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};

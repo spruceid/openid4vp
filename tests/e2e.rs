@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 use jwt_vp::create_test_verifiable_presentation;
 use openid4vp::{
     core::{

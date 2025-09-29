@@ -20,7 +20,8 @@ use crate::core::authorization_request::{
 
 use super::request_signer::RequestSigner;
 
-#[async_trait]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait Client: Debug {
     fn id(&self) -> &ClientId;
 
@@ -140,7 +141,8 @@ impl X509SanVariant {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Client for DIDClient {
     fn id(&self) -> &ClientId {
         &self.id
@@ -167,7 +169,8 @@ impl Client for DIDClient {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Client for X509SanClient {
     fn id(&self) -> &ClientId {
         &self.id
