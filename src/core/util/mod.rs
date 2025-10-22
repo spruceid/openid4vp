@@ -1,12 +1,12 @@
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use http::{Request, Response};
 
 /// Generic HTTP client.
 ///
 /// A trait is used here so to facilitate native HTTP/TLS when compiled for mobile applications.
-#[async_trait]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait AsyncHttpClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>>;
 }
@@ -25,6 +25,7 @@ impl AsRef<reqwest::Client> for ReqwestClient {
 }
 
 impl ReqwestClient {
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new() -> Result<Self> {
         reqwest::Client::builder()
             .use_rustls_tls()
@@ -32,10 +33,20 @@ impl ReqwestClient {
             .context("unable to build http_client")
             .map(Self)
     }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn new() -> Result<Self> {
+        reqwest::Client::builder()
+            .build()
+            .context("unable to build http_client")
+            .map(Self)
+    }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl AsyncHttpClient for ReqwestClient {
+    #[cfg(not(target_arch = "wasm32"))]
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
         let response = self
             .0
@@ -51,6 +62,32 @@ impl AsyncHttpClient for ReqwestClient {
             .extensions_mut()
             .context("unable to set extensions")?
             .extend(response.extensions().clone());
+
+        builder
+            .headers_mut()
+            .context("unable to set headers")?
+            .extend(response.headers().clone());
+
+        builder
+            .body(
+                response
+                    .bytes()
+                    .await
+                    .context("failed to extract response body")?
+                    .to_vec(),
+            )
+            .context("unable to construct response")
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
+        let response = self
+            .0
+            .execute(request.try_into().context("unable to convert request")?)
+            .await
+            .context("http request failed")?;
+
+        let mut builder = Response::builder().status(response.status());
 
         builder
             .headers_mut()

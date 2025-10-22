@@ -4,11 +4,12 @@ use p256::ecdsa::{signature::Signer, Signature, SigningKey};
 use ssi::claims::jws::{JwsSigner, JwsSignerInfo};
 use ssi::jwk::Algorithm;
 
-use ssi::jwk::JWK;
+pub use ssi::jwk::JWK;
 
 use std::fmt::Debug;
 
-#[async_trait]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait RequestSigner: Debug {
     type Error: std::fmt::Display;
 
@@ -42,12 +43,21 @@ impl P256Signer {
         Ok(Self { key, jwk })
     }
 
+    #[cfg(feature = "pkcs8")]
+    pub fn from_pkcs8_pem(s: &str) -> Result<Self> {
+        use p256::pkcs8::DecodePrivateKey;
+
+        let key = p256::SecretKey::from_pkcs8_pem(s)?;
+        Self::new(key.into())
+    }
+
     pub fn jwk(&self) -> &JWK {
         &self.jwk
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl RequestSigner for P256Signer {
     type Error = anyhow::Error;
 
@@ -81,5 +91,25 @@ impl JwsSigner for P256Signer {
         self.try_sign(signing_bytes)
             .await
             .map_err(|e| ssi::claims::SignatureError::Other(format!("Failed to sign bytes: {e}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "pkcs8")]
+    #[test]
+    fn test_p25_from_pkcs8_pem() {
+        use crate::verifier::request_signer::P256Signer;
+
+        let pem = r#"-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpuJEtk8m2LIgMcZy
+pbrD0ECdHI3UzCnImDfRYydCvFShRANCAARmahl0HOSy+6nH91+Alxe+BF/va3jI
+1jSnv8o+7a2nhvU3XKDFLlCR1MBjoJTjy92+H3hPMw3FRFcTamaXA+Co
+-----END PRIVATE KEY-----"#;
+
+        let key =
+            P256Signer::from_pkcs8_pem(pem).expect("failed to parse p256 signer from pem key");
+
+        println!("JWK: {}", key.jwk());
     }
 }

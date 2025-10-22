@@ -23,11 +23,14 @@ pub mod session;
 /// An OpenID4VP verifier, also known as the client.
 #[derive(Debug, Clone)]
 pub struct Verifier {
-    client: Arc<dyn Client + Send + Sync>,
-    default_request_params: UntypedObject,
-    pass_by_reference: ByReference,
-    session_store: Arc<dyn SessionStore + Send + Sync>,
-    submission_endpoint: Url,
+    pub client: Arc<dyn Client + Send + Sync>,
+    pub default_request_params: UntypedObject,
+    pub pass_by_reference: ByReference,
+    #[cfg(target_arch = "wasm32")]
+    pub session_store: Arc<dyn SessionStore>,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub session_store: Arc<dyn SessionStore + Send + Sync>,
+    pub submission_endpoint: Url,
 }
 
 impl Verifier {
@@ -138,6 +141,9 @@ pub struct VerifierBuilder {
     client: Option<Arc<dyn Client + Send + Sync>>,
     default_request_params: UntypedObject,
     pass_by_reference: ByReference,
+    #[cfg(target_arch = "wasm32")]
+    session_store: Option<Arc<dyn SessionStore>>,
+    #[cfg(not(target_arch = "wasm32"))]
     session_store: Option<Arc<dyn SessionStore + Send + Sync>>,
     submission_endpoint: Option<Url>,
 }
@@ -208,7 +214,8 @@ impl VerifierBuilder {
     /// will use to maintain session state across transactions.
     pub fn with_session_store(
         mut self,
-        session_store: Arc<dyn SessionStore + Send + Sync>,
+        #[cfg(target_arch = "wasm32")] session_store: Arc<dyn SessionStore>,
+        #[cfg(not(target_arch = "wasm32"))] session_store: Arc<dyn SessionStore + Send + Sync>,
     ) -> Self {
         self.session_store = Some(session_store);
         self
