@@ -13,9 +13,14 @@ use crate::core::{
     util::{base_request, AsyncHttpClient},
 };
 
-#[async_trait]
+#[cfg_attr(target_arch="wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait Wallet: RequestVerifier + Sync {
+    #[cfg(not(target_arch = "wasm32"))]
     type HttpClient: AsyncHttpClient + Send + Sync;
+
+    #[cfg(target_arch = "wasm32")]
+    type HttpClient: AsyncHttpClient;
 
     fn metadata(&self) -> &WalletMetadata;
     fn http_client(&self) -> &Self::HttpClient;
