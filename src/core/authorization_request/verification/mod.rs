@@ -27,22 +27,23 @@ pub mod x509_san;
 #[allow(unused_variables)]
 #[async_trait]
 pub trait RequestVerifier {
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `did`.
-    async fn did(
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `decentralized_identifier`.
+    /// The request MUST be signed with a private key associated with the DID.
+    async fn decentralized_identifier(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: Option<String>,
     ) -> Result<(), Error> {
-        bail!("'did' client verification not implemented")
+        bail!("'decentralized_identifier' client verification not implemented")
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `entity_id` or `https`.
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `openid_federation`.
     async fn openid_federation(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: Option<String>,
     ) -> Result<(), Error> {
-        bail!("openid federation client verification not implemented")
+        bail!("'openid_federation' client verification not implemented")
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `pre-registered`.
@@ -55,6 +56,7 @@ pub trait RequestVerifier {
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `redirect_uri`.
+    /// Requests using this scheme cannot be signed.
     async fn redirect_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -72,15 +74,6 @@ pub trait RequestVerifier {
         bail!("'verifier_attestation' client verification not implemented")
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `web-origin`.
-    async fn web_origin(
-        &self,
-        decoded_request: &AuthorizationRequestObject,
-        request_jwt: Option<String>,
-    ) -> Result<(), Error> {
-        bail!("'web-origin' client verification not implemented")
-    }
-
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
     async fn x509_san_dns(
         &self,
@@ -90,13 +83,13 @@ pub trait RequestVerifier {
         bail!("'x509_san_dns' client verification not implemented")
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_uri`.
-    async fn x509_san_uri(
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_hash`.
+    async fn x509_hash(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: Option<String>,
     ) -> Result<(), Error> {
-        bail!("'x509_san_uri' client verification not implemented")
+        bail!("'x509_hash' client verification not implemented")
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is any other value.
@@ -129,17 +122,22 @@ pub(crate) async fn verify_request<W: Wallet + ?Sized>(
     let client_id_scheme = decoded_request.client_id_scheme();
 
     match client_id_scheme.map(|scheme| scheme.0.as_str()) {
-        Some(ClientIdScheme::DID) => wallet.did(decoded_request, jwt).await?,
-        Some(ClientIdScheme::ENTITY_ID) => wallet.openid_federation(decoded_request, jwt).await?,
-        Some(ClientIdScheme::HTTPS) => wallet.openid_federation(decoded_request, jwt).await?,
+        Some(ClientIdScheme::DECENTRALIZED_IDENTIFIER) => {
+            wallet.decentralized_identifier(decoded_request, jwt).await?
+        }
+        Some(ClientIdScheme::OPENID_FEDERATION) => {
+            wallet.openid_federation(decoded_request, jwt).await?
+        }
         Some(ClientIdScheme::PREREGISTERED) => wallet.preregistered(decoded_request, jwt).await?,
         Some(ClientIdScheme::REDIRECT_URI) => wallet.redirect_uri(decoded_request, jwt).await?,
         Some(ClientIdScheme::VERIFIER_ATTESTATION) => {
             wallet.verifier_attestation(decoded_request, jwt).await?
         }
-        Some(ClientIdScheme::WEB_ORIGIN) => wallet.web_origin(decoded_request, jwt).await?,
         Some(ClientIdScheme::X509_SAN_DNS) => wallet.x509_san_dns(decoded_request, jwt).await?,
-        Some(ClientIdScheme::X509_SAN_URI) => wallet.x509_san_uri(decoded_request, jwt).await?,
+        Some(ClientIdScheme::X509_HASH) => wallet.x509_hash(decoded_request, jwt).await?,
+        Some(ClientIdScheme::ORIGIN) => {
+            bail!("'origin' client_id_scheme is reserved for Digital Credentials API and MUST NOT be accepted")
+        }
         Some(scheme) => wallet.other(scheme, decoded_request, jwt).await?,
         None => wallet.none(decoded_request, jwt).await?,
     };

@@ -69,20 +69,19 @@ impl DIDClient {
     }
 }
 
-/// A [Client] with the `x509_san_dns` or `x509_san_uri` Client Identifier.
+/// A [Client] with the `x509_san_dns` Client Identifier.
+/// See: Section 5.9.3
 #[derive(Debug, Clone)]
-pub struct X509SanClient {
+pub struct X509SanDnsClient {
     id: ClientId,
     x5c: Vec<Certificate>,
     signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
-    variant: X509SanVariant,
 }
 
-impl X509SanClient {
+impl X509SanDnsClient {
     pub fn new(
         x5c: Vec<Certificate>,
         signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
-        variant: X509SanVariant,
     ) -> Result<Self> {
         let leaf = &x5c[0];
         let id = if let Some(san) = leaf
@@ -96,17 +95,10 @@ impl X509SanClient {
                 }
             })
             .flatten()
-            .filter_map(|general_name| match (general_name, variant) {
-                (GeneralName::DnsName(uri), X509SanVariant::Dns) => Some(uri.to_string()),
-                (gn, X509SanVariant::Dns) => {
+            .filter_map(|general_name| match general_name {
+                GeneralName::DnsName(dns) => Some(dns.to_string()),
+                gn => {
                     debug!("found non-DNS SAN: {gn:?}");
-                    None
-                }
-                (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Uri) => {
-                    Some(uri.to_string())
-                }
-                (gn, X509SanVariant::Uri) => {
-                    debug!("found non-URI SAN: {gn:?}");
                     None
                 }
             })
@@ -114,29 +106,13 @@ impl X509SanClient {
         {
             san
         } else {
-            bail!("x509 certificate does not contain Subject Alternative Name");
+            bail!("x509 certificate does not contain DNS Subject Alternative Name");
         };
-        Ok(X509SanClient {
+        Ok(X509SanDnsClient {
             id: ClientId(id),
             x5c,
             signer,
-            variant,
         })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum X509SanVariant {
-    Uri,
-    Dns,
-}
-
-impl X509SanVariant {
-    pub fn to_scheme(&self) -> ClientIdScheme {
-        match self {
-            X509SanVariant::Uri => ClientIdScheme(ClientIdScheme::X509_SAN_URI.to_string()),
-            X509SanVariant::Dns => ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string()),
-        }
     }
 }
 
@@ -147,7 +123,7 @@ impl Client for DIDClient {
     }
 
     fn scheme(&self) -> ClientIdScheme {
-        ClientIdScheme(ClientIdScheme::DID.to_string())
+        ClientIdScheme(ClientIdScheme::DECENTRALIZED_IDENTIFIER.to_string())
     }
 
     async fn generate_request_object_jwt(
@@ -168,13 +144,13 @@ impl Client for DIDClient {
 }
 
 #[async_trait]
-impl Client for X509SanClient {
+impl Client for X509SanDnsClient {
     fn id(&self) -> &ClientId {
         &self.id
     }
 
     fn scheme(&self) -> ClientIdScheme {
-        self.variant.to_scheme()
+        ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string())
     }
 
     async fn generate_request_object_jwt(

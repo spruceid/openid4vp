@@ -124,7 +124,7 @@ impl Wallet for JwtVcWallet {
 
 #[async_trait]
 impl RequestVerifier for JwtVcWallet {
-    async fn did(
+    async fn decentralized_identifier(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: Option<String>,

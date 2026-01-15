@@ -8,20 +8,16 @@ use x509_cert::{
     Certificate,
 };
 
-use crate::{
-    core::{
-        authorization_request::AuthorizationRequestObject,
-        metadata::{parameters::wallet::RequestObjectSigningAlgValuesSupported, WalletMetadata},
-        object::ParsingErrorContext,
-    },
-    verifier::client::X509SanVariant,
+use crate::core::{
+    authorization_request::{parameters::ClientIdScheme, AuthorizationRequestObject},
+    metadata::{parameters::wallet::RequestObjectSigningAlgValuesSupported, WalletMetadata},
+    object::ParsingErrorContext,
 };
 
 use super::verifier::Verifier;
 
 /// Default implementation of request validation for `client_id_scheme` `x509_san_dns`.
 pub fn validate<V: Verifier>(
-    x509_san_variant: X509SanVariant,
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
@@ -32,7 +28,7 @@ pub fn validate<V: Verifier>(
         .context("client_id is required")?;
     let client_id_source = client_id
         .0
-        .strip_prefix(&format!("{}:", x509_san_variant.to_scheme().0))
+        .strip_prefix(&format!("{}:", ClientIdScheme::X509_SAN_DNS))
         .unwrap_or(&client_id.0);
     let (headers_b64, body_b64, sig_b64) = ssi::claims::jws::split_jws(&request_jwt)?;
 
@@ -88,34 +84,19 @@ pub fn validate<V: Verifier>(
             }
         })
         .flatten()
-        .filter_map(|gn| match (gn, x509_san_variant) {
-            (GeneralName::DnsName(uri), X509SanVariant::Dns) => Some(uri.to_string()),
-            (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Uri) => {
-                Some(uri.to_string())
-            }
-            #[cfg(feature = "maximize_interoperability")]
-            (GeneralName::DnsName(uri), X509SanVariant::Uri) => Some(uri.to_string()),
-            #[cfg(feature = "maximize_interoperability")]
-            (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Dns) => Some(
-                url::Url::parse(uri.as_str())
-                    .map(|u| u.authority().to_string())
-                    .unwrap_or(uri.to_string()),
-            ),
-            (gn, X509SanVariant::Dns) => {
+        .filter_map(|gn| match gn {
+            GeneralName::DnsName(dns) => Some(dns.to_string()),
+            gn => {
                 debug!("found non-DNS SAN: {gn:?}");
                 None
             }
-            (gn, X509SanVariant::Uri) => {
-                debug!("found non-URI SAN: {gn:?}");
-                None
-            }
         })
-        .any(|uri| {
-            debug!("comparing SAN '{uri}' to client_id '{client_id_source}'");
-            uri == client_id_source
+        .any(|dns| {
+            debug!("comparing SAN '{dns}' to client_id '{client_id_source}'");
+            dns == client_id_source
         })
     {
-        bail!("client_id does not match any Subject Alternative Name")
+        bail!("client_id does not match any DNS Subject Alternative Name")
     }
 
     if let Some(_trusted_roots) = trusted_roots {

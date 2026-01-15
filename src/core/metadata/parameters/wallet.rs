@@ -274,7 +274,7 @@ mod test {
     fn client_id_schemes_supported() {
         let exp = [
             ClientIdScheme(ClientIdScheme::REDIRECT_URI.to_string()),
-            ClientIdScheme(ClientIdScheme::X509_SAN_URI.to_string()),
+            ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string()),
         ];
         let ClientIdSchemesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));

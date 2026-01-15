@@ -76,16 +76,37 @@ impl From<ClientIdScheme> for Json {
 }
 
 impl ClientIdScheme {
-    pub const DID: &str = "did";
-    /// Deprecated, use `https` instead.
-    pub const ENTITY_ID: &str = "entity_id";
-    pub const HTTPS: &str = "https";
+    /// Client Identifier is a Decentralized Identifier (DID).
+    /// The request MUST be signed with a private key associated with the DID.
+    pub const DECENTRALIZED_IDENTIFIER: &str = "decentralized_identifier";
+
+    /// Client Identifier is an Entity Identifier per OpenID Federation.
+    pub const OPENID_FEDERATION: &str = "openid_federation";
+
+    /// No explicit scheme. client_id is pre-registered with the Wallet.
     pub const PREREGISTERED: &str = "pre-registered";
+
+    /// Client Identifier is the Verifier's Redirect URI.
+    /// Requests using this scheme cannot be signed.
     pub const REDIRECT_URI: &str = "redirect_uri";
+
+    /// Client authenticates using a Verifier Attestation JWT.
+    /// The request MUST be signed with the private key corresponding to
+    /// the public key in the `cnf` claim in the Verifier attestation JWT.
     pub const VERIFIER_ATTESTATION: &str = "verifier_attestation";
-    pub const WEB_ORIGIN: &str = "web-origin";
+
+    /// Client Identifier is a DNS name from X.509 Subject Alternative Name.
+    /// The request MUST be signed with the private key corresponding to
+    /// the public key in the leaf X.509 certificate.
     pub const X509_SAN_DNS: &str = "x509_san_dns";
-    pub const X509_SAN_URI: &str = "x509_san_uri";
+
+    /// Client Identifier is the base64url-encoded SHA-256 hash of the
+    /// DER-encoded leaf X.509 certificate.
+    pub const X509_HASH: &str = "x509_hash";
+
+    /// Reserved for Digital Credentials API.
+    /// The Wallet MUST NOT accept this Client Identifier Prefix in requests.
+    pub const ORIGIN: &str = "origin";
 }
 
 impl Deref for ClientIdScheme {
@@ -716,3 +737,109 @@ impl From<ExpectedOrigins> for Json {
         json!(value.0)
     }
 }
+
+/// `transaction_data` field in the Authorization Request.
+///
+/// OPTIONAL. A non-empty array of strings, where each string is a base64url-encoded
+/// JSON object that contains a typed parameter set with details about the transaction
+/// that the Verifier is requesting the End-User to authorize.
+///
+/// Each transaction data object MUST contain:
+/// - `type`: String identifying the transaction data type
+/// - `credential_ids`: Non-empty array of strings referencing requested Credentials
+///
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1
+#[derive(Debug, Clone)]
+pub struct TransactionData(pub Vec<String>);
+
+impl TypedParameter for TransactionData {
+    const KEY: &'static str = "transaction_data";
+}
+
+impl TryFrom<Json> for TransactionData {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(serde_json::from_value(value).map(Self)?)
+    }
+}
+
+impl From<TransactionData> for Json {
+    fn from(value: TransactionData) -> Self {
+        json!(value.0)
+    }
+}
+
+/// `verifier_info` field in the Authorization Request.
+///
+/// OPTIONAL. A non-empty array of attestations about the Verifier relevant to
+/// the Credential Request. These attestations MAY include Verifier metadata,
+/// policies, trust status, or authorizations.
+///
+/// Each attestation object MUST contain:
+/// - `format`: String identifying the attestation format
+/// - `data`: Object or string containing the attestation
+/// - `credential_ids`: Optional array of referenced Credential identifiers
+///
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1
+#[derive(Debug, Clone)]
+pub struct VerifierInfo(pub Vec<Json>);
+
+impl TypedParameter for VerifierInfo {
+    const KEY: &'static str = "verifier_info";
+}
+
+impl TryFrom<Json> for VerifierInfo {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(serde_json::from_value(value).map(Self)?)
+    }
+}
+
+impl From<VerifierInfo> for Json {
+    fn from(value: VerifierInfo) -> Self {
+        json!(value.0)
+    }
+}
+
+/// `request_uri_method` field in the Authorization Request.
+///
+/// OPTIONAL. A String value that specifies the HTTP method to be used when
+/// dereferencing the `request_uri`. Valid values are "get" and "post".
+/// If omitted, the default value is "get".
+///
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum RequestUriMethod {
+    #[default]
+    Get,
+    Post,
+}
+
+impl TypedParameter for RequestUriMethod {
+    const KEY: &'static str = "request_uri_method";
+}
+
+impl TryFrom<Json> for RequestUriMethod {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        let s: String = serde_json::from_value(value)?;
+        match s.as_str() {
+            "get" => Ok(RequestUriMethod::Get),
+            "post" => Ok(RequestUriMethod::Post),
+            _ => bail!("invalid request_uri_method: {}", s),
+        }
+    }
+}
+
+impl From<RequestUriMethod> for Json {
+    fn from(value: RequestUriMethod) -> Self {
+        Json::String(match value {
+            RequestUriMethod::Get => "get".to_string(),
+            RequestUriMethod::Post => "post".to_string(),
+        })
+    }
+}
+
