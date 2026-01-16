@@ -692,3 +692,139 @@ impl From<RequestUriMethod> for Json {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_id_prefix_x509_san_dns() {
+        let client_id = ClientId("x509_san_dns:example.com".to_string());
+        let empty_request = UntypedObject::default();
+
+        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        assert_eq!(scheme.0, "x509_san_dns");
+    }
+
+    #[test]
+    fn client_id_prefix_decentralized_identifier() {
+        let client_id = ClientId("decentralized_identifier:did:key:z123456".to_string());
+        let empty_request = UntypedObject::default();
+
+        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        assert_eq!(scheme.0, "decentralized_identifier");
+    }
+
+    #[test]
+    fn client_id_prefix_redirect_uri() {
+        let client_id = ClientId("redirect_uri:https://verifier.example.com/callback".to_string());
+        let empty_request = UntypedObject::default();
+
+        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        assert_eq!(scheme.0, "redirect_uri");
+    }
+
+    #[test]
+    fn client_id_prefix_openid_federation() {
+        let client_id = ClientId("openid_federation:https://federation.example.com".to_string());
+        let empty_request = UntypedObject::default();
+
+        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        assert_eq!(scheme.0, "openid_federation");
+    }
+
+    #[test]
+    fn client_id_prefix_verifier_attestation() {
+        let client_id = ClientId("verifier_attestation:some-attestation-id".to_string());
+        let empty_request = UntypedObject::default();
+
+        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        assert_eq!(scheme.0, "verifier_attestation");
+    }
+
+    #[test]
+    fn client_id_prefix_x509_hash() {
+        let client_id = ClientId("x509_hash:abc123hash".to_string());
+        let empty_request = UntypedObject::default();
+
+        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        assert_eq!(scheme.0, "x509_hash");
+    }
+
+    #[test]
+    fn client_id_prefix_origin_reserved() {
+        // origin: is reserved for DC API and wallet MUST reject
+        let client_id = ClientId("origin:https://example.com".to_string());
+        let empty_request = UntypedObject::default();
+
+        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        assert_eq!(scheme.0, "origin");
+    }
+
+    #[test]
+    fn client_id_explicit_scheme_overrides_prefix() {
+        // When client_id_scheme is explicitly provided, it should override the prefix
+        let client_id = ClientId("x509_san_dns:example.com".to_string());
+        let mut request = UntypedObject::default();
+        request.insert(ClientIdScheme("redirect_uri".to_string()));
+
+        let scheme = client_id.resolve_scheme(&request).unwrap().unwrap();
+        // Should use the explicit scheme, not the prefix
+        assert_eq!(scheme.0, "redirect_uri");
+    }
+
+    #[test]
+    fn client_id_no_prefix_returns_whole_string() {
+        // When there's no colon, the whole string is treated as the scheme
+        let client_id = ClientId("pre-registered-client".to_string());
+        let empty_request = UntypedObject::default();
+
+        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        assert_eq!(scheme.0, "pre-registered-client");
+    }
+
+    #[test]
+    fn response_mode_default_is_fragment() {
+        let default = ResponseMode::default();
+        assert!(matches!(default, ResponseMode::Unsupported(s) if s == "fragment"));
+    }
+
+    #[test]
+    fn response_mode_parsing() {
+        assert!(matches!(
+            ResponseMode::from("direct_post".to_string()),
+            ResponseMode::DirectPost
+        ));
+        assert!(matches!(
+            ResponseMode::from("direct_post.jwt".to_string()),
+            ResponseMode::DirectPostJwt
+        ));
+        assert!(matches!(
+            ResponseMode::from("dc_api".to_string()),
+            ResponseMode::DcApi
+        ));
+        assert!(matches!(
+            ResponseMode::from("dc_api.jwt".to_string()),
+            ResponseMode::DcApiJwt
+        ));
+        assert!(
+            matches!(ResponseMode::from("unknown".to_string()), ResponseMode::Unsupported(s) if s == "unknown")
+        );
+    }
+
+    #[test]
+    fn request_uri_method_parsing() {
+        let get: RequestUriMethod = Json::String("get".to_string()).try_into().unwrap();
+        assert_eq!(get, RequestUriMethod::Get);
+
+        let post: RequestUriMethod = Json::String("post".to_string()).try_into().unwrap();
+        assert_eq!(post, RequestUriMethod::Post);
+
+        let invalid: Result<RequestUriMethod, _> = Json::String("invalid".to_string()).try_into();
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn request_uri_method_default_is_get() {
+        assert_eq!(RequestUriMethod::default(), RequestUriMethod::Get);
+    }
+}

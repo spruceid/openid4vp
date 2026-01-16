@@ -161,7 +161,7 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
 mod test {
     use crate::core::response::parameters::{VpToken, VpTokenItem};
 
-    use super::{JwtAuthorizationResponse, UnencodedAuthorizationResponse};
+    use super::{AuthorizationResponse, JwtAuthorizationResponse, UnencodedAuthorizationResponse};
 
     #[test]
     fn jwt_authorization_response_to_form_urlencoded() {
@@ -238,5 +238,115 @@ mod test {
         // cred2 should have 2 presentations
         let cred2 = json.get("cred2").unwrap().as_array().unwrap();
         assert_eq!(cred2.len(), 2);
+    }
+
+    #[test]
+    fn vp_token_round_trip_form_urlencoded() {
+        // Test that VpToken can be serialized to form-urlencoded and parsed back
+        let vp_token = VpToken::with_credential(
+            "my_credential_id",
+            vec![VpTokenItem::String(
+                "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature".into(),
+            )],
+        );
+
+        let response = UnencodedAuthorizationResponse::new(vp_token);
+        let encoded = response.into_x_www_form_urlencoded().unwrap();
+
+        // Parse it back
+        let parsed = AuthorizationResponse::from_x_www_form_urlencoded(encoded.as_bytes()).unwrap();
+
+        let AuthorizationResponse::Unencoded(unencoded) = parsed else {
+            panic!("Expected Unencoded response");
+        };
+
+        // Verify the vp_token was parsed correctly
+        assert_eq!(unencoded.vp_token.len(), 1);
+        let presentations = unencoded.vp_token.get("my_credential_id").unwrap();
+        assert_eq!(presentations.len(), 1);
+        assert!(
+            matches!(&presentations[0], VpTokenItem::String(s) if s.starts_with("eyJhbGciOiJFUzI1NiJ9"))
+        );
+    }
+
+    #[test]
+    fn vp_token_round_trip_with_state() {
+        use crate::core::authorization_request::parameters::State;
+
+        let vp_token = VpToken::with_credential(
+            "credential_query_1",
+            vec![VpTokenItem::String("sd-jwt-vc~disclosure1~kb-jwt".into())],
+        );
+
+        let response =
+            UnencodedAuthorizationResponse::with_state(vp_token, State("state123".into()));
+        let encoded = response.into_x_www_form_urlencoded().unwrap();
+
+        // Parse it back
+        let parsed = AuthorizationResponse::from_x_www_form_urlencoded(encoded.as_bytes()).unwrap();
+
+        let AuthorizationResponse::Unencoded(unencoded) = parsed else {
+            panic!("Expected Unencoded response");
+        };
+
+        // Verify state was preserved
+        assert!(unencoded.state.is_some());
+        assert_eq!(unencoded.state.unwrap().0, "state123");
+
+        // Verify vp_token
+        let presentations = unencoded.vp_token.get("credential_query_1").unwrap();
+        assert_eq!(presentations.len(), 1);
+    }
+
+    #[test]
+    fn vp_token_multiple_credentials() {
+        // Test VpToken with multiple credential query responses
+        let mut vp_token = VpToken::new();
+        vp_token.insert(
+            "pid_credential",
+            vec![VpTokenItem::String("sd-jwt-for-pid".into())],
+        );
+        vp_token.insert(
+            "mdl_credential",
+            vec![VpTokenItem::String("mdoc-for-mdl".into())],
+        );
+
+        let response = UnencodedAuthorizationResponse::new(vp_token);
+        let encoded = response.into_x_www_form_urlencoded().unwrap();
+
+        // Parse it back
+        let parsed = AuthorizationResponse::from_x_www_form_urlencoded(encoded.as_bytes()).unwrap();
+
+        let AuthorizationResponse::Unencoded(unencoded) = parsed else {
+            panic!("Expected Unencoded response");
+        };
+
+        assert_eq!(unencoded.vp_token.len(), 2);
+        assert!(unencoded.vp_token.get("pid_credential").is_some());
+        assert!(unencoded.vp_token.get("mdl_credential").is_some());
+    }
+
+    #[test]
+    fn vp_token_with_json_object_item() {
+        // Test VpToken with JSON-LD credential (JSON object, not string)
+        let json_ld_vp: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
+            r#"{
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiablePresentation"],
+            "verifiableCredential": []
+        }"#,
+        )
+        .unwrap();
+
+        let vp_token =
+            VpToken::with_credential("json_ld_cred", vec![VpTokenItem::JsonObject(json_ld_vp)]);
+
+        let json = serde_json::to_value(&vp_token).unwrap();
+
+        // Should serialize the JSON object correctly
+        let cred = json.get("json_ld_cred").unwrap().as_array().unwrap();
+        assert_eq!(cred.len(), 1);
+        assert!(cred[0].is_object());
+        assert!(cred[0].get("@context").is_some());
     }
 }
