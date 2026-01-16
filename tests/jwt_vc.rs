@@ -67,7 +67,7 @@ pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
       {
         "authorization_endpoint": "openid4vp:",
         "client_id_schemes_supported": [
-          "did"
+          "decentralized_identifier"
         ],
         "request_object_signing_alg_values_supported": [
           "ES256"
@@ -161,7 +161,7 @@ impl AsyncHttpClient for MockHttpClient {
         self.verifier
             .verify_response(
                 id.parse().context("failed to parse id")?,
-                AuthorizationResponse::from_x_www_form_urlencoded(body, false)
+                AuthorizationResponse::from_x_www_form_urlencoded(body)
                     .context("failed to parse authorization response request")?,
                 |_, _| {
                     Box::pin(async move {
