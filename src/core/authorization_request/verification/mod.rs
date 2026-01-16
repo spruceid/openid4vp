@@ -164,9 +164,7 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
         }
     }
 
-    let client_metadata = ClientMetadata::resolve(request, wallet.http_client())
-        .await?
-        .0;
+    let client_metadata = ClientMetadata::resolve(request)?.0;
 
     let response_mode = request.get::<ResponseMode>().parsing_error()?;
 

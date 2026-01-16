@@ -102,7 +102,7 @@ impl PresentationSubmission {
         definition: &PresentationDefinition,
         value: &serde_json::Value,
         decoder: &impl ClaimsDecoder<T>,
-    ) -> Result<MatchingInputs<T>, SubmissionError> {
+    ) -> Result<MatchingInputs<'_, T>, SubmissionError> {
         let mut inputs = Vec::new();
         for d in &self.descriptor_map {
             d.find_inputs(definition, value, decoder, &mut inputs)?;
@@ -129,7 +129,7 @@ impl PresentationSubmission {
         definition: &PresentationDefinition,
         value: &serde_json::Value,
         decoder: &impl ClaimsDecoder<T>,
-    ) -> Result<MatchingInputs<T>, SubmissionError> {
+    ) -> Result<MatchingInputs<'_, T>, SubmissionError> {
         let matches = self.find_inputs(definition, value, decoder)?;
         matches.validate(definition)?;
         Ok(matches)
