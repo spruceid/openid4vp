@@ -65,7 +65,10 @@ impl VpToken {
     }
 
     /// Create a VpToken with a single credential query result.
-    pub fn with_credential(credential_id: impl Into<String>, presentations: Vec<VpTokenItem>) -> Self {
+    pub fn with_credential(
+        credential_id: impl Into<String>,
+        presentations: Vec<VpTokenItem>,
+    ) -> Self {
         let mut map = HashMap::new();
         map.insert(credential_id.into(), presentations);
         Self(map)

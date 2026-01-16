@@ -3,9 +3,15 @@ use openid4vp::{
     core::{
         authorization_request::parameters::{ClientMetadata, Nonce, ResponseMode, ResponseType},
         credential_format::*,
-        dcql_query::{DcqlCredentialClaimsQuery, DcqlCredentialClaimsQueryPath, DcqlCredentialQuery, DcqlQuery},
+        dcql_query::{
+            DcqlCredentialClaimsQuery, DcqlCredentialClaimsQueryPath, DcqlCredentialQuery,
+            DcqlQuery,
+        },
         object::UntypedObject,
-        response::{parameters::{VpToken, VpTokenItem}, AuthorizationResponse, UnencodedAuthorizationResponse},
+        response::{
+            parameters::{VpToken, VpTokenItem},
+            AuthorizationResponse, UnencodedAuthorizationResponse,
+        },
     },
     utils::NonEmptyVec,
     verifier::session::{Outcome, Status},
@@ -20,10 +26,8 @@ async fn w3c_vc_did_client_direct_post() {
     let (wallet, verifier) = jwt_vc::wallet_verifier().await;
 
     // Create a DCQL query for JWT VC credentials
-    let mut credential_query = DcqlCredentialQuery::new(
-        "did-key-id".into(),
-        ClaimFormatDesignation::JwtVcJson,
-    );
+    let mut credential_query =
+        DcqlCredentialQuery::new("did-key-id".into(), ClaimFormatDesignation::JwtVcJson);
 
     // Add claims query for credentialSubject.id
     let claims = NonEmptyVec::new(DcqlCredentialClaimsQuery::new(
@@ -57,7 +61,10 @@ async fn w3c_vc_did_client_direct_post() {
 
     // Verify DCQL query is present
     let parsed_dcql = request.dcql_query().unwrap().unwrap();
-    assert_eq!(dcql_query.credentials().len(), parsed_dcql.credentials().len());
+    assert_eq!(
+        dcql_query.credentials().len(),
+        parsed_dcql.credentials().len()
+    );
     assert_eq!(
         dcql_query.credentials()[0].id(),
         parsed_dcql.credentials()[0].id()
@@ -74,7 +81,7 @@ async fn w3c_vc_did_client_direct_post() {
 
     // Create vp_token with the credential query ID from the DCQL query
     let vp_token = VpToken::with_credential(
-        "did-key-id",  // This matches the credential query ID in dcql_query
+        "did-key-id", // This matches the credential query ID in dcql_query
         vec![VpTokenItem::from(vp)],
     );
 

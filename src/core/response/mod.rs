@@ -42,10 +42,7 @@ impl AuthorizationResponse {
         let vp_token: VpToken =
             serde_json::from_str(&unencoded.vp_token).context("failed to decode vp_token")?;
 
-        let state: Option<State> = unencoded
-            .state
-            .map(|s| State(s))
-            .or(None);
+        let state: Option<State> = unencoded.state.map(State).or(None);
 
         Ok(Self::Unencoded(UnencodedAuthorizationResponse {
             vp_token,
@@ -70,6 +67,7 @@ struct JsonEncodedAuthorizationResponse {
 ///
 /// > The Authorization Response MUST contain the `vp_token` parameter.
 /// > The `state` parameter MUST be included if it was present in the Authorization Request.
+///
 /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UnencodedAuthorizationResponse {
@@ -181,7 +179,9 @@ mod test {
         // vp_token is an object mapping credential IDs to presentations
         let vp_token = VpToken::with_credential(
             "my_credential",
-            vec![VpTokenItem::String("eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...".into())],
+            vec![VpTokenItem::String(
+                "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...".into(),
+            )],
         );
 
         let response = UnencodedAuthorizationResponse::new(vp_token);
@@ -198,13 +198,12 @@ mod test {
 
         let vp_token = VpToken::with_credential(
             "credential_query_1",
-            vec![VpTokenItem::String("sd-jwt-vc~disclosure1~disclosure2~kb-jwt".into())],
+            vec![VpTokenItem::String(
+                "sd-jwt-vc~disclosure1~disclosure2~kb-jwt".into(),
+            )],
         );
 
-        let response = UnencodedAuthorizationResponse::with_state(
-            vp_token,
-            State("abc123".into()),
-        );
+        let response = UnencodedAuthorizationResponse::with_state(vp_token, State("abc123".into()));
 
         let url_encoded = response.into_x_www_form_urlencoded().unwrap();
 
@@ -217,10 +216,13 @@ mod test {
         // Test that VpToken serializes to the DCQL format
         let mut vp_token = VpToken::new();
         vp_token.insert("cred1", vec![VpTokenItem::String("jwt1".into())]);
-        vp_token.insert("cred2", vec![
-            VpTokenItem::String("jwt2a".into()),
-            VpTokenItem::String("jwt2b".into()),
-        ]);
+        vp_token.insert(
+            "cred2",
+            vec![
+                VpTokenItem::String("jwt2a".into()),
+                VpTokenItem::String("jwt2b".into()),
+            ],
+        );
 
         let json = serde_json::to_value(&vp_token).unwrap();
 

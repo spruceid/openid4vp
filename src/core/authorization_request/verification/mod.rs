@@ -123,7 +123,9 @@ pub(crate) async fn verify_request<W: Wallet + ?Sized>(
 
     match client_id_scheme.map(|scheme| scheme.0.as_str()) {
         Some(ClientIdScheme::DECENTRALIZED_IDENTIFIER) => {
-            wallet.decentralized_identifier(decoded_request, jwt).await?
+            wallet
+                .decentralized_identifier(decoded_request, jwt)
+                .await?
         }
         Some(ClientIdScheme::OPENID_FEDERATION) => {
             wallet.openid_federation(decoded_request, jwt).await?

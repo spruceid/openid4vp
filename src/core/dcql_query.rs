@@ -293,7 +293,7 @@ pub enum TrustedAuthorityType {
     Other(String),
 }
 
-/// A Credential Set Query object 
+/// A Credential Set Query object
 /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialSetQuery {
@@ -561,10 +561,7 @@ mod tests {
         // Check trusted_authorities
         let authorities = cred.trusted_authorities().unwrap();
         assert_eq!(authorities.len(), 2);
-        assert_eq!(
-            authorities[0].authority_type(),
-            &TrustedAuthorityType::Aki
-        );
+        assert_eq!(authorities[0].authority_type(), &TrustedAuthorityType::Aki);
         assert_eq!(
             authorities[1].authority_type(),
             &TrustedAuthorityType::OpenidFederation

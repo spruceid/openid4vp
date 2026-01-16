@@ -280,7 +280,6 @@ impl ClientMetadata {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Nonce(String);
 
