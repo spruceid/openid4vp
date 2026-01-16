@@ -6,7 +6,6 @@ use crate::core::{
         AuthorizationSignedResponseAlg, JWKs, VpFormats,
     },
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
     util::{base_request, AsyncHttpClient},
 };
 use anyhow::{anyhow, bail, Context, Error, Ok};
@@ -617,103 +616,6 @@ impl TryFrom<Json> for State {
 impl From<State> for Json {
     fn from(value: State) -> Self {
         Json::String(value.0)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PresentationDefinition {
-    raw: Json,
-    parsed: PresentationDefinitionParsed,
-}
-
-impl PresentationDefinition {
-    pub fn into_parsed(self) -> PresentationDefinitionParsed {
-        self.parsed
-    }
-
-    pub fn parsed(&self) -> &PresentationDefinitionParsed {
-        &self.parsed
-    }
-}
-
-impl TryFrom<PresentationDefinitionParsed> for PresentationDefinition {
-    type Error = Error;
-
-    fn try_from(parsed: PresentationDefinitionParsed) -> Result<Self, Self::Error> {
-        let raw = serde_json::to_value(parsed.clone())?;
-        Ok(Self { raw, parsed })
-    }
-}
-
-impl TypedParameter for PresentationDefinition {
-    const KEY: &'static str = "presentation_definition";
-}
-
-impl TryFrom<Json> for PresentationDefinition {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        let parsed = serde_json::from_value(value.clone())?;
-        Ok(Self { raw: value, parsed })
-    }
-}
-
-impl From<PresentationDefinition> for Json {
-    fn from(value: PresentationDefinition) -> Self {
-        value.raw
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PresentationDefinitionUri(pub Url);
-
-impl TypedParameter for PresentationDefinitionUri {
-    const KEY: &'static str = "presentation_definition_uri";
-}
-
-impl TryFrom<Json> for PresentationDefinitionUri {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(serde_json::from_value(value).map(Self)?)
-    }
-}
-
-impl From<PresentationDefinitionUri> for Json {
-    fn from(value: PresentationDefinitionUri) -> Self {
-        value.0.to_string().into()
-    }
-}
-
-impl PresentationDefinitionUri {
-    pub async fn resolve<H: AsyncHttpClient>(
-        &self,
-        http_client: &H,
-    ) -> Result<PresentationDefinition, Error> {
-        let url = self.0.to_string();
-
-        let request = base_request()
-            .method("GET")
-            .uri(&url)
-            .body(vec![])
-            .context("failed to build presentation definition request")?;
-
-        let response = http_client.execute(request).await.context(format!(
-            "failed to make presentation definition request at {url}"
-        ))?;
-
-        let status = response.status();
-
-        if !status.is_success() {
-            bail!("presentation definition request was unsuccessful (status: {status})")
-        }
-
-        serde_json::from_slice::<Json>(response.body())
-            .context(format!(
-            "failed to parse presentation definition response as JSON from {url} (status: {status})"
-        ))?
-            .try_into()
-            .context("failed to parse presentation definition from JSON")
     }
 }
 

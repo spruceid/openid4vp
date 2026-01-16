@@ -232,7 +232,7 @@ mod test {
             },
             "client_id_schemes_supported": [
                 "redirect_uri",
-                "x509_san_uri"
+                "x509_san_dns"
             ],
             "request_object_signing_alg_values_supported": [
               "ES256"

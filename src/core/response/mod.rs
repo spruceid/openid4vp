@@ -1,4 +1,4 @@
-use super::{object::UntypedObject, presentation_submission::PresentationSubmission};
+use super::object::UntypedObject;
 
 use anyhow::{Context, Error, Result};
 use parameters::State;
@@ -9,6 +9,13 @@ use self::parameters::VpToken;
 
 pub mod parameters;
 
+/// Authorization Response.
+///
+/// The response can be either:
+/// - `Unencoded`: Plain response with `vp_token` and optional `state`
+/// - `Jwt`: Encrypted response as JWE (for `direct_post.jwt` response mode)
+///
+/// See [OID4VP Section 6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AuthorizationResponse {
@@ -17,40 +24,39 @@ pub enum AuthorizationResponse {
 }
 
 impl AuthorizationResponse {
-    pub fn from_x_www_form_urlencoded(bytes: &[u8], should_strip_quotes: bool) -> Result<Self> {
+    /// Parse an Authorization Response from `application/x-www-form-urlencoded` bytes.
+    ///
+    /// This handles both:
+    /// - JWT/JWE responses (for `direct_post.jwt` mode)
+    /// - Unencoded responses (for `direct_post` mode)
+    pub fn from_x_www_form_urlencoded(bytes: &[u8]) -> Result<Self> {
+        // Try JWT response first (for direct_post.jwt mode)
         if let Ok(jwt) = serde_urlencoded::from_bytes(bytes) {
             return Ok(Self::Jwt(jwt));
         }
 
+        // Parse as unencoded response
         let unencoded = serde_urlencoded::from_bytes::<JsonEncodedAuthorizationResponse>(bytes)
-            .context("failed to construct flat map")?;
+            .context("failed to parse authorization response")?;
 
         let vp_token: VpToken =
-            serde_json::from_str(&unencoded.vp_token).context("failed to decode vp token")?;
-
-        let presentation_submission: PresentationSubmission =
-            serde_json::from_str(&unencoded.presentation_submission)
-                .context("failed to decode presentation submission")?;
+            serde_json::from_str(&unencoded.vp_token).context("failed to decode vp_token")?;
 
         let state: Option<State> = unencoded
             .state
-            .map(|s| serde_json::from_str(&s))
-            .transpose()
-            .context("failed to decode state")?;
+            .map(|s| State(s))
+            .or(None);
 
         Ok(Self::Unencoded(UnencodedAuthorizationResponse {
             vp_token,
-            presentation_submission,
             state,
-            should_strip_quotes,
         }))
     }
 }
 
+/// Internal struct for form-urlencoded parsing/serialization.
 #[derive(Debug, Deserialize, Serialize)]
 struct JsonEncodedAuthorizationResponse {
-    /// `presentation_submission` is JSON string encoded.
-    pub(crate) presentation_submission: String,
     /// `vp_token` is JSON string encoded.
     pub(crate) vp_token: String,
     /// `state` is a regular string.
@@ -58,26 +64,47 @@ struct JsonEncodedAuthorizationResponse {
     pub(crate) state: Option<String>,
 }
 
+/// Unencoded Authorization Response.
+///
+/// Used with `direct_post` response mode (unencrypted).
+///
+/// > The Authorization Response MUST contain the `vp_token` parameter.
+/// > The `state` parameter MUST be included if it was present in the Authorization Request.
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UnencodedAuthorizationResponse {
-    pub presentation_submission: PresentationSubmission,
+    /// The VP Token containing credential presentations.
+    ///
+    /// This is a JSON object mapping credential query IDs
+    /// (from `dcql_query`) to arrays of Verifiable Presentations.
     pub vp_token: VpToken,
+
+    /// Optional state value echoed from the Authorization Request.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<State>,
-    /// This is an internal non-normative setting to determine
-    /// the behavior of removing extra quotations around a JSON
-    /// string encoded vp_token, e.g. "'[{ @context: [...] }]'" -> '[{ @context: [...] }]'
-    #[serde(skip)]
-    pub should_strip_quotes: bool,
 }
 
 impl UnencodedAuthorizationResponse {
-    /// Encode the Authorization Response as 'application/x-www-form-urlencoded'.
+    /// Create a new Authorization Response with a VP Token.
+    pub fn new(vp_token: VpToken) -> Self {
+        Self {
+            vp_token,
+            state: None,
+        }
+    }
+
+    /// Create a new Authorization Response with a VP Token and state.
+    pub fn with_state(vp_token: VpToken, state: State) -> Self {
+        Self {
+            vp_token,
+            state: Some(state),
+        }
+    }
+
+    /// Encode the Authorization Response as `application/x-www-form-urlencoded`.
     pub fn into_x_www_form_urlencoded(self) -> Result<String> {
         let encoded = serde_urlencoded::to_string(JsonEncodedAuthorizationResponse::from(self))
-            .context(
-                "failed to encode presentation_submission as 'application/x-www-form-urlencoded'",
-            )?;
+            .context("failed to encode authorization response as x-www-form-urlencoded")?;
 
         Ok(encoded)
     }
@@ -87,49 +114,21 @@ impl UnencodedAuthorizationResponse {
         &self.vp_token
     }
 
-    /// Return the Presentation Submission.
-    pub fn presentation_submission(&self) -> &PresentationSubmission {
-        &self.presentation_submission
-    }
-
-    // Internal helper method for cleaning up quoted strings.
-    // urlencoding a JSON string adds quotes around the string,
-    // which causes issues when decoding for some verifiers.
-    fn sanitize_string(&self, s: String) -> String {
-        // NOTE: Depending on whether `should_strip_quotes` option is set,
-        // this will remove any extra quotations around a JSON string.
-        match self.should_strip_quotes {
-            true => s.trim_matches(|c| c == '"' || c == '\'').to_string(),
-            false => s,
-        }
+    /// Return the state value, if present.
+    pub fn state(&self) -> Option<&State> {
+        self.state.as_ref()
     }
 }
 
 impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
     fn from(value: UnencodedAuthorizationResponse) -> Self {
         let vp_token = serde_json::to_string(&value.vp_token)
-            .ok()
-            // Perform any optional string sanitizations
-            .map(|s| value.sanitize_string(s))
-            // SAFTEY: VP Token will always be a valid JSON object.
+            // SAFETY: VP Token will always be a valid JSON object.
             .unwrap();
 
-        let presentation_submission = serde_json::to_string(&value.presentation_submission)
-            // SAFETY: presentation submission will always be a valid JSON object.
-            .unwrap();
+        let state = value.state.map(|s| s.0);
 
-        let state = value
-            .state
-            .map(|s| serde_json::to_string(&s))
-            .transpose()
-            // SAFETY: State will always be a valid JSON object.
-            .unwrap();
-
-        Self {
-            vp_token,
-            presentation_submission,
-            state,
-        }
+        Self { vp_token, state }
     }
 }
 
@@ -162,9 +161,7 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
 
 #[cfg(test)]
 mod test {
-    use serde_json::json;
-
-    use crate::core::object::UntypedObject;
+    use crate::core::response::parameters::{VpToken, VpTokenItem};
 
     use super::{JwtAuthorizationResponse, UnencodedAuthorizationResponse};
 
@@ -181,28 +178,63 @@ mod test {
 
     #[test]
     fn unencoded_authorization_response_to_form_urlencoded() {
-        let object: UntypedObject = serde_json::from_value(json!(
-            {
-                "presentation_submission": {
-                    "id": "d05a7f51-ac09-43af-8864-e00f0175f2c7",
-                    "definition_id": "f619e64a-8f80-4b71-8373-30cf07b1e4f2",
-                    "descriptor_map": []
-                },
-                "vp_token": "string"
-            }
-        ))
-        .unwrap();
-        let mut response = UnencodedAuthorizationResponse::try_from(object).unwrap();
+        // vp_token is an object mapping credential IDs to presentations
+        let vp_token = VpToken::with_credential(
+            "my_credential",
+            vec![VpTokenItem::String("eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...".into())],
+        );
 
-        let url_encoded = response.clone().into_x_www_form_urlencoded().unwrap();
-        assert!(url_encoded.contains("presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D"));
-        assert!(url_encoded.contains("vp_token=%22string%22"));
+        let response = UnencodedAuthorizationResponse::new(vp_token);
+        let url_encoded = response.into_x_www_form_urlencoded().unwrap();
 
-        // NOTE: when `should_strip_quotes` is true, the `%22`
-        // quote encodings enclosing the `vp_token` parameter are stripped
-        response.should_strip_quotes = true;
+        // Should contain vp_token as JSON object
+        assert!(url_encoded.contains("vp_token="));
+        assert!(url_encoded.contains("my_credential"));
+    }
+
+    #[test]
+    fn unencoded_authorization_response_with_state() {
+        use crate::core::authorization_request::parameters::State;
+
+        let vp_token = VpToken::with_credential(
+            "credential_query_1",
+            vec![VpTokenItem::String("sd-jwt-vc~disclosure1~disclosure2~kb-jwt".into())],
+        );
+
+        let response = UnencodedAuthorizationResponse::with_state(
+            vp_token,
+            State("abc123".into()),
+        );
 
         let url_encoded = response.into_x_www_form_urlencoded().unwrap();
-        assert!(url_encoded.contains("vp_token=string"));
+
+        assert!(url_encoded.contains("vp_token="));
+        assert!(url_encoded.contains("state=abc123"));
+    }
+
+    #[test]
+    fn vp_token_dcql_format() {
+        // Test that VpToken serializes to the DCQL format
+        let mut vp_token = VpToken::new();
+        vp_token.insert("cred1", vec![VpTokenItem::String("jwt1".into())]);
+        vp_token.insert("cred2", vec![
+            VpTokenItem::String("jwt2a".into()),
+            VpTokenItem::String("jwt2b".into()),
+        ]);
+
+        let json = serde_json::to_value(&vp_token).unwrap();
+
+        // Should be an object with credential IDs as keys
+        assert!(json.is_object());
+        assert!(json.get("cred1").is_some());
+        assert!(json.get("cred2").is_some());
+
+        // cred1 should have 1 presentation
+        let cred1 = json.get("cred1").unwrap().as_array().unwrap();
+        assert_eq!(cred1.len(), 1);
+
+        // cred2 should have 2 presentations
+        let cred2 = json.get("cred2").unwrap().as_array().unwrap();
+        assert_eq!(cred2.len(), 2);
     }
 }

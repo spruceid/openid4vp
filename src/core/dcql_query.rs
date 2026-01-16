@@ -67,16 +67,47 @@ impl From<DcqlQuery> for Json {
     }
 }
 
+/// A Credential Query object
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialQuery {
+    /// REQUIRED. A string identifying the Credential in the response.
+    /// The value MUST be unique within a DCQL query.
+    /// Valid characters are alphanumeric, underscore, and hyphen.
     id: String,
+
+    /// REQUIRED. A string that specifies the requested format for the Credential.
     format: ClaimFormatDesignation,
+
+    /// OPTIONAL. An object defining additional properties for the Credential.
+    /// The properties are format-specific (e.g., `vct_values` for SD-JWT VC,
+    /// `doctype_value` for mso_mdoc).
     #[serde(skip_serializing_if = "Option::is_none")]
     meta: Option<serde_json::Map<String, Json>>,
+
+    /// OPTIONAL. An array of objects that specifies claims in the Credential.
     #[serde(skip_serializing_if = "Option::is_none")]
     claims: Option<NonEmptyVec<DcqlCredentialClaimsQuery>>,
+
+    /// OPTIONAL. An array of claim set identifiers for alternative claim combinations.
+    /// MUST NOT be present if `claims` is absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     claim_sets: Option<NonEmptyVec<Vec<String>>>,
+
+    /// OPTIONAL. An array of objects that specify expected trust frameworks.
+    /// Each entry specifies a trust framework type and acceptable values.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trusted_authorities: Option<NonEmptyVec<TrustedAuthoritiesQuery>>,
+
+    /// OPTIONAL. Boolean indicating if the Verifier requires cryptographic
+    /// holder binding proof. Defaults to `true` if not present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    require_cryptographic_holder_binding: Option<bool>,
+
+    /// OPTIONAL. Boolean indicating if the Wallet may return multiple Credentials
+    /// matching this query. Defaults to `false` if not present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    multiple: Option<bool>,
 }
 
 impl DcqlCredentialQuery {
@@ -87,6 +118,9 @@ impl DcqlCredentialQuery {
             meta: None,
             claims: None,
             claim_sets: None,
+            trusted_authorities: None,
+            require_cryptographic_holder_binding: None,
+            multiple: None,
         }
     }
 
@@ -149,8 +183,118 @@ impl DcqlCredentialQuery {
     pub fn set_claim_sets(&mut self, claim_sets: Option<NonEmptyVec<Vec<String>>>) {
         self.claim_sets = claim_sets;
     }
+
+    pub fn trusted_authorities(&self) -> Option<&NonEmptyVec<TrustedAuthoritiesQuery>> {
+        self.trusted_authorities.as_ref()
+    }
+
+    pub fn trusted_authorities_mut(&mut self) -> &mut Option<NonEmptyVec<TrustedAuthoritiesQuery>> {
+        &mut self.trusted_authorities
+    }
+
+    pub fn set_trusted_authorities(
+        &mut self,
+        trusted_authorities: Option<NonEmptyVec<TrustedAuthoritiesQuery>>,
+    ) {
+        self.trusted_authorities = trusted_authorities;
+    }
+
+    /// Returns `true` if cryptographic holder binding is required.
+    /// Defaults to `true` per Section 6.1 if not explicitly set.
+    pub fn require_cryptographic_holder_binding(&self) -> bool {
+        self.require_cryptographic_holder_binding.unwrap_or(true)
+    }
+
+    pub fn require_cryptographic_holder_binding_raw(&self) -> Option<bool> {
+        self.require_cryptographic_holder_binding
+    }
+
+    pub fn set_require_cryptographic_holder_binding(
+        &mut self,
+        require_cryptographic_holder_binding: Option<bool>,
+    ) {
+        self.require_cryptographic_holder_binding = require_cryptographic_holder_binding;
+    }
+
+    /// Returns `true` if multiple Credentials may be returned for this query.
+    /// Defaults to `false` per Section 6.1 if not explicitly set.
+    pub fn multiple(&self) -> bool {
+        self.multiple.unwrap_or(false)
+    }
+
+    pub fn multiple_raw(&self) -> Option<bool> {
+        self.multiple
+    }
+
+    pub fn set_multiple(&mut self, multiple: Option<bool>) {
+        self.multiple = multiple;
+    }
 }
 
+/// A Trusted Authorities Query object
+/// Specifies expected trust frameworks for credential issuers.
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct TrustedAuthoritiesQuery {
+    /// REQUIRED. A string uniquely identifying the type of trust framework.
+    /// Defined types: "aki" (Authority Key Identifier), "etsi_tl" (ETSI Trusted List),
+    /// "openid_federation" (OpenID Federation Entity Identifier).
+    #[serde(rename = "type")]
+    authority_type: TrustedAuthorityType,
+
+    /// REQUIRED. A non-empty array of strings containing trust framework-specific
+    /// identification data.
+    values: NonEmptyVec<String>,
+}
+
+impl TrustedAuthoritiesQuery {
+    pub fn new(authority_type: TrustedAuthorityType, values: NonEmptyVec<String>) -> Self {
+        Self {
+            authority_type,
+            values,
+        }
+    }
+
+    pub fn authority_type(&self) -> &TrustedAuthorityType {
+        &self.authority_type
+    }
+
+    pub fn set_authority_type(&mut self, authority_type: TrustedAuthorityType) {
+        self.authority_type = authority_type;
+    }
+
+    pub fn values(&self) -> &NonEmptyVec<String> {
+        &self.values
+    }
+
+    pub fn values_mut(&mut self) -> &mut NonEmptyVec<String> {
+        &mut self.values
+    }
+
+    pub fn set_values(&mut self, values: NonEmptyVec<String>) {
+        self.values = values;
+    }
+}
+
+/// Trusted Authority types
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustedAuthorityType {
+    /// Authority Key Identifier: the KeyIdentifier from an X.509 AuthorityKeyIdentifier,
+    /// encoded as base64url.
+    Aki,
+    /// ETSI Trusted List: identifier per ETSI TS 119 612.
+    EtsiTl,
+    /// OpenID Federation Entity Identifier representing a Trust Anchor.
+    OpenidFederation,
+    /// Other trust framework type not defined in the spec.
+    #[serde(untagged)]
+    Other(String),
+}
+
+/// A Credential Set Query object 
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialSetQuery {
     options: NonEmptyVec<Vec<String>>,
@@ -351,6 +495,9 @@ mod tests {
                     intent_to_retain: Some(false),
                 })),
                 claim_sets: None,
+                trusted_authorities: None,
+                require_cryptographic_holder_binding: None,
+                multiple: None,
             }),
             credential_sets: Some(NonEmptyVec::new(DcqlCredentialSetQuery {
                 options: NonEmptyVec::new(vec!["0".into()]),
@@ -368,5 +515,66 @@ mod tests {
             dcql_query_object,
             serde_json::from_value(dcql_query_json).unwrap()
         );
+    }
+
+    #[test]
+    fn dcql_credential_query_defaults() {
+        // Test that defaults work
+        let cred = DcqlCredentialQuery::new("test".into(), ClaimFormatDesignation::MsoMDoc);
+
+        // require_cryptographic_holder_binding defaults to true
+        assert!(cred.require_cryptographic_holder_binding());
+        assert_eq!(cred.require_cryptographic_holder_binding_raw(), None);
+
+        // multiple defaults to false
+        assert!(!cred.multiple());
+        assert_eq!(cred.multiple_raw(), None);
+    }
+
+    #[test]
+    fn dcql_with_trusted_authorities() {
+        let json = json!({
+            "credentials": [{
+                "id": "pid",
+                "format": "dc+sd-jwt",
+                "meta": {
+                    "vct_values": ["https://example.com/pid"]
+                },
+                "trusted_authorities": [
+                    {
+                        "type": "aki",
+                        "values": ["s9tIpPmhxdiuNkHMEWNpYim8S8Y"]
+                    },
+                    {
+                        "type": "openid_federation",
+                        "values": ["https://trustanchor.example.com"]
+                    }
+                ],
+                "require_cryptographic_holder_binding": false,
+                "multiple": true
+            }]
+        });
+
+        let dcql: DcqlQuery = serde_json::from_value(json.clone()).unwrap();
+        let cred = &dcql.credentials()[0];
+
+        // Check trusted_authorities
+        let authorities = cred.trusted_authorities().unwrap();
+        assert_eq!(authorities.len(), 2);
+        assert_eq!(
+            authorities[0].authority_type(),
+            &TrustedAuthorityType::Aki
+        );
+        assert_eq!(
+            authorities[1].authority_type(),
+            &TrustedAuthorityType::OpenidFederation
+        );
+
+        // Check explicit values override defaults
+        assert!(!cred.require_cryptographic_holder_binding());
+        assert!(cred.multiple());
+
+        // Verify round-trip
+        assert_eq!(json, serde_json::to_value(&dcql).unwrap());
     }
 }

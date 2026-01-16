@@ -1,3 +1,12 @@
+//! DIF Presentation Exchange - Presentation Submission.
+//!
+//! **Note**: As of OpenID4VP v1.0, the `presentation_submission` parameter is NOT used
+//! when using DCQL queries. In v1.0, the `vp_token` directly maps credential query IDs
+//! to presentations without needing a separate submission object.
+//!
+//! This module is kept for backward compatibility with earlier OpenID4VP drafts.
+//! For new implementations, use [`crate::core::response::parameters::VpToken`] instead.
+
 use std::{borrow::Cow, collections::HashMap};
 
 use super::{

@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{anyhow, bail, Context, Error, Result};
-use parameters::{ClientMetadata, PresentationDefinitionUri, State};
+use parameters::{ClientMetadata, State};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -9,13 +9,13 @@ use crate::wallet::Wallet;
 
 use self::{
     parameters::{
-        ClientId, ClientIdScheme, Nonce, PresentationDefinition, RedirectUri, ResponseMode,
-        ResponseType, ResponseUri,
+        ClientId, ClientIdScheme, Nonce, RedirectUri, ResponseMode, ResponseType, ResponseUri,
     },
     verification::verify_request,
 };
 
 use super::{
+    dcql_query::DcqlQuery,
     metadata::parameters::verifier::VpFormats,
     object::{ParsingErrorContext, UntypedObject},
     util::{base_request, AsyncHttpClient},
@@ -52,13 +52,6 @@ pub enum RequestIndirection {
     ByValue { request: String },
     ByReference { request_uri: Url },
     Direct(UntypedObject),
-}
-
-/// A PresentationDefinition, passed by value or by reference
-#[derive(Debug, Clone)]
-pub enum PresentationDefinitionIndirection {
-    ByValue(PresentationDefinition),
-    ByReference(Url),
 }
 
 impl AuthorizationRequest {
@@ -230,27 +223,13 @@ impl AuthorizationRequestObject {
         self.client_id_scheme.as_ref()
     }
 
-    pub async fn resolve_presentation_definition<H: AsyncHttpClient>(
-        &self,
-        http_client: &H,
-    ) -> Result<Option<PresentationDefinition>> {
-        let pd = self.get::<PresentationDefinition>().transpose()?;
-
-        let pd_uri = self.get::<PresentationDefinitionUri>().transpose()?;
-
-        match (pd, pd_uri) {
-            (Some(presentation_definition), None) => Ok(Some(presentation_definition)),
-            (None, Some(presentation_definition_uri)) => Ok(Some(
-                presentation_definition_uri
-                    .resolve(http_client)
-                    .await
-                    .unwrap(),
-            )),
-            (Some(_), Some(_)) => {
-                bail!("only one of presentation_definition or presentation_definition_uri should be provided");
-            }
-            (None, None) => Ok(None),
-        }
+    /// Return the `dcql_query` from the authorization request.
+    ///
+    /// `dcql_query` is the mechanism for specifying credential requirements. 
+    /// Either `dcql_query` or `scope` (as a DCQL alias) MUST be present, but not both.
+    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1
+    pub fn dcql_query(&self) -> Option<Result<DcqlQuery>> {
+        self.get()
     }
 
     pub fn is_id_token_requested(&self) -> Option<bool> {

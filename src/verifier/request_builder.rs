@@ -5,7 +5,6 @@ use uuid::Uuid;
 use crate::{
     core::{
         authorization_request::{
-            self,
             parameters::{ResponseMode, ResponseType, ResponseUri},
             AuthorizationRequest, AuthorizationRequestObject, RequestIndirection,
         },
@@ -15,7 +14,6 @@ use crate::{
             WalletMetadata,
         },
         object::{ParsingErrorContext, TypedParameter, UntypedObject},
-        presentation_definition::PresentationDefinition,
     },
     verifier::{by_reference::ByReference, session::Status},
 };
@@ -25,7 +23,6 @@ use super::{session::Session, Verifier};
 #[derive(Debug, Clone)]
 #[must_use]
 pub struct RequestBuilder<'a> {
-    presentation_definition: Option<PresentationDefinition>,
     dcql_query: Option<DcqlQuery>,
     request_parameters: UntypedObject,
     verifier: &'a Verifier,
@@ -34,23 +31,13 @@ pub struct RequestBuilder<'a> {
 impl<'a> RequestBuilder<'a> {
     pub(crate) fn new(verifier: &'a Verifier) -> Self {
         Self {
-            presentation_definition: None,
             dcql_query: None,
             request_parameters: verifier.default_request_params.clone(),
             verifier,
         }
     }
 
-    /// Set the presentation definition.
-    pub fn with_presentation_definition(
-        mut self,
-        presentation_definition: PresentationDefinition,
-    ) -> Self {
-        self.presentation_definition = Some(presentation_definition);
-        self
-    }
-
-    /// Set the presentation definition
+    /// Set the DCQL query for credential requirements.
     pub fn with_dcql_query(mut self, dcql_query: DcqlQuery) -> Self {
         self.dcql_query = Some(dcql_query);
         self
@@ -86,16 +73,11 @@ impl<'a> RequestBuilder<'a> {
         let _ = self.request_parameters.insert(client_id.clone());
         let _ = self.request_parameters.insert(client_id_scheme.clone());
 
-        let Some(presentation_definition) = self.presentation_definition else {
-            bail!("presentation definition is required, see `with_presentation_definition`")
+        let Some(dcql_query) = self.dcql_query else {
+            bail!("dcql_query is required, see `with_dcql_query`")
         };
 
-        let _ = self.request_parameters.insert(
-            authorization_request::parameters::PresentationDefinition::try_from(
-                presentation_definition.clone(),
-            )
-            .context("failed to construct PresentationDefinition request parameter")?,
-        );
+        let _ = self.request_parameters.insert(dcql_query.clone());
 
         let _ = self
             .request_parameters
@@ -180,8 +162,7 @@ impl<'a> RequestBuilder<'a> {
             status: initial_status,
             authorization_request_jwt,
             authorization_request_object,
-            presentation_definition: Some(presentation_definition),
-            dcql_query: None,
+            dcql_query,
         };
 
         self.verifier
@@ -252,8 +233,7 @@ impl<'a> RequestBuilder<'a> {
             status: initial_status,
             authorization_request_jwt: authorization_request_jwt.clone(),
             authorization_request_object: authorization_request_object.clone(),
-            presentation_definition: None,
-            dcql_query: Some(dcql_query),
+            dcql_query,
         };
 
         self.verifier

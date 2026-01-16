@@ -1,3 +1,11 @@
+//! DIF Presentation Exchange - Presentation Definition.
+//!
+//! **Note**: As of OpenID4VP v1.0, DCQL (Digital Credentials Query Language) is the
+//! preferred query format. This module implements the DIF Presentation Exchange spec
+//! and is kept for backward compatibility with earlier OpenID4VP drafts.
+//!
+//! For new implementations, use [`crate::core::dcql_query::DcqlQuery`] instead.
+
 use super::credential_format::*;
 use super::input_descriptor::*;
 use super::presentation_submission::*;
