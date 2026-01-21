@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "openid4vp-frontend", "wallet-conformance-adapter"]
+
 [package]
 name = "openid4vp"
 version = "0.2.0"
