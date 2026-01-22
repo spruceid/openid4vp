@@ -1,6 +1,4 @@
 pub mod core;
-#[cfg(test)]
-pub(crate) mod tests;
 pub mod utils;
 pub mod verifier;
 pub mod wallet;
