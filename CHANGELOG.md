@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.0]
+## [Unreleased]
 
 ### Added
 
@@ -49,14 +49,12 @@
   - New constructors: `new(vp_token)`, `with_state(vp_token, state)`
 - **BREAKING**: `AuthorizationResponse::from_x_www_form_urlencoded()` no longer takes a boolean parameter
 
-### Deprecated
-
-- `presentation_definition` module: Use `dcql_query::DcqlQuery` for new implementations
-- `presentation_submission` module: Use `response::parameters::VpToken` for new implementations
-- These modules are kept for backward compatibility with DIF Presentation Exchange spec and earlier OID4VP drafts
-
 ### Removed
 
+- **BREAKING**: Removed `presentation_definition` and `presentation_submission` modules entirely
+  - Use `dcql_query::DcqlQuery` instead per OpenID4VP v1.0 spec
+  - Use `response::parameters::VpToken` instead of `PresentationSubmission`
+  - Removed all DIF Presentation Exchange test fixtures
 - **BREAKING**: Removed `presentation_definition` and `presentation_definition_uri` parameters
   - Use `dcql_query` instead per OpenID4VP v1.0 spec
   - `AuthorizationRequestObject::resolve_presentation_definition()` removed

@@ -4,7 +4,6 @@ use axum::{
     response::{IntoResponse, Response},
     Form, Json,
 };
-use http::{Request as HttpRequest, Response as HttpResponse};
 use openid4vp::core::{
     authorization_request::{
         parameters::{ResponseMode, State as RequestState},
@@ -12,7 +11,7 @@ use openid4vp::core::{
     },
     dcql_query::DcqlQuery,
     response::{parameters::VpToken, UnencodedAuthorizationResponse},
-    util::AsyncHttpClient,
+    util::ReqwestClient,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -119,7 +118,18 @@ async fn process_authorization_request(state: AppState, params: AuthorizationPar
         };
 
     // 3. Resolve the request (fetch request_uri if needed, decode JWT)
-    let http_client = ReqwestHttpClient::new();
+    let http_client = match ReqwestClient::new() {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Failed to create HTTP client: {}", e);
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                &format!("Failed to create HTTP client: {}", e),
+                params.state.as_deref(),
+            );
+        }
+    };
     let (request_object, _jwt) = match auth_request.resolve_request(&http_client).await {
         Ok(result) => result,
         Err(e) => {
@@ -305,49 +315,6 @@ fn build_request_url(state: &AppState, params: &AuthorizationParams) -> anyhow::
     }
 
     Ok(url)
-}
-
-/// HTTP client wrapper for openid4vp
-struct ReqwestHttpClient {
-    client: reqwest::Client,
-}
-
-impl ReqwestHttpClient {
-    fn new() -> Self {
-        Self {
-            client: reqwest::Client::new(),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl AsyncHttpClient for ReqwestHttpClient {
-    async fn execute(
-        &self,
-        request: HttpRequest<Vec<u8>>,
-    ) -> anyhow::Result<HttpResponse<Vec<u8>>> {
-        let (parts, body) = request.into_parts();
-
-        let reqwest_request = self
-            .client
-            .request(parts.method, parts.uri.to_string())
-            .headers(parts.headers)
-            .body(body)
-            .build()?;
-
-        let response = self.client.execute(reqwest_request).await?;
-
-        let status = response.status();
-        let headers = response.headers().clone();
-        let body = response.bytes().await?.to_vec();
-
-        let mut http_response = HttpResponse::builder().status(status);
-        for (name, value) in headers.iter() {
-            http_response = http_response.header(name, value);
-        }
-
-        Ok(http_response.body(body)?)
-    }
 }
 
 /// Submit response via direct_post
