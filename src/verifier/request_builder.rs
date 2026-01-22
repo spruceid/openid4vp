@@ -71,7 +71,6 @@ impl<'a> RequestBuilder<'a> {
         let client_id_scheme = self.verifier.client.scheme();
 
         let _ = self.request_parameters.insert(client_id.clone());
-        let _ = self.request_parameters.insert(client_id_scheme.clone());
 
         let Some(dcql_query) = self.dcql_query else {
             bail!("dcql_query is required, see `with_dcql_query`")
@@ -178,10 +177,8 @@ impl<'a> RequestBuilder<'a> {
         let uuid = Uuid::new_v4();
 
         let client_id = self.verifier.client.id();
-        let client_id_scheme = self.verifier.client.scheme();
 
         let _ = self.request_parameters.insert(client_id.clone());
-        let _ = self.request_parameters.insert(client_id_scheme.clone());
 
         let Some(dcql_query) = self.dcql_query else {
             bail!("dcql query is required, see `with_dcql_query`")

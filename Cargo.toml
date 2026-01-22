@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "openid4vp-frontend", "wallet-conformance-adapter"]
+members = [".", "openid4vp-frontend", "wallet-conformance-adapter", "verifier-conformance-adapter"]
 
 [package]
 name = "openid4vp"

@@ -28,11 +28,11 @@ impl WalletMetadata {
         vp_formats_supported: VpFormatsSupported,
         other: Option<UntypedObject>,
     ) -> Self {
-        Self(
-            other.unwrap_or_default(),
-            authorization_endpoint,
-            vp_formats_supported,
-        )
+        let mut inner = other.unwrap_or_default();
+        // Insert required fields into inner UntypedObject so they're accessible via Deref
+        inner.insert(authorization_endpoint.clone());
+        inner.insert(vp_formats_supported.clone());
+        Self(inner, authorization_endpoint, vp_formats_supported)
     }
 
     pub fn authorization_endpoint(&self) -> &AuthorizationEndpoint {

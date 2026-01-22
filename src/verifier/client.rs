@@ -108,8 +108,11 @@ impl X509SanDnsClient {
         } else {
             bail!("x509 certificate does not contain DNS Subject Alternative Name");
         };
+        // client_id for x509_san_dns scheme must be prefixed with "x509_san_dns:"
+        // See https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3
+        let prefixed_id = format!("{}:{}", ClientIdScheme::X509_SAN_DNS, id);
         Ok(X509SanDnsClient {
-            id: ClientId(id),
+            id: ClientId(prefixed_id),
             x5c,
             signer,
         })
