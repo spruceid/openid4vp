@@ -32,7 +32,8 @@ pub trait Client: Debug {
     ) -> Result<String>;
 }
 
-/// A [Client] with the `did` Client Identifier.
+/// A [Client] with the `decentralized_identifier` Client Identifier prefix.
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3
 #[derive(Debug, Clone)]
 pub struct DIDClient {
     id: ClientId,
@@ -61,8 +62,11 @@ impl DIDClient {
             )
         }
 
+        // client_id for decentralized_identifier scheme must be prefixed with "decentralized_identifier:"
+        // See https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3
+        let prefixed_id = format!("{}:{}", ClientIdScheme::DECENTRALIZED_IDENTIFIER, id);
         Ok(Self {
-            id: ClientId(id.to_string()),
+            id: ClientId(prefixed_id),
             vm,
             signer,
         })
