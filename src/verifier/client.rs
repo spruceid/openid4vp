@@ -32,7 +32,7 @@ pub trait Client: Debug {
     ) -> Result<String>;
 }
 
-/// A [Client] with the `decentralized_identifier` Client Identifier prefix.
+/// A [Client](crate::verifier::client::Client) with the `decentralized_identifier` Client Identifier prefix.
 /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3
 #[derive(Debug, Clone)]
 pub struct DIDClient {
@@ -73,7 +73,7 @@ impl DIDClient {
     }
 }
 
-/// A [Client] with the `x509_san_dns` Client Identifier.
+/// A [Client](crate::verifier::client::Client) with the `x509_san_dns` Client Identifier.
 /// See: Section 5.9.3
 #[derive(Debug, Clone)]
 pub struct X509SanDnsClient {

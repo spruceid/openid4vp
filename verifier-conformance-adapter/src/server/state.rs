@@ -28,8 +28,9 @@ use openid4vp::{
         Verifier,
     },
 };
-use p256::{ecdsa::SigningKey, elliptic_curve::sec1::ToEncodedPoint, SecretKey};
+use p256::{ecdsa::SigningKey, SecretKey};
 use rcgen::{CertificateParams, DnType, KeyPair, SanType};
+use ssi::jwk::JWK;
 use tracing::info;
 use url::Url;
 use x509_cert::{der::Decode, Certificate};
@@ -53,7 +54,7 @@ pub struct AppState {
     pub wallet_metadata: WalletMetadata,
     pub public_url: Url,
     pub oidf_config: OidfConfig,
-    pub encryption_key_jwk: serde_json::Value,
+    pub encryption_key_jwk: JWK,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -279,40 +280,31 @@ fn build_oidf_config(signing_key: &SigningKey, cert_der: &[u8], domain: &str) ->
 }
 
 /// Generate an encryption key pair for JARM (direct_post.jwt)
-fn generate_encryption_key() -> Result<(
-    serde_json::Value,
-    serde_json::Map<String, serde_json::Value>,
-)> {
+///
+/// Returns (private_jwk, public_jwk_map) where:
+/// - private_jwk is a typed JWK for decryption
+/// - public_jwk_map is a JSON Map for the JWKs metadata (includes "alg" for ECDH-ES)
+fn generate_encryption_key() -> Result<(JWK, serde_json::Map<String, serde_json::Value>)> {
     use rand::rngs::OsRng;
 
     let secret_key = SecretKey::random(&mut OsRng);
     let public_key = secret_key.public_key();
-    let point = public_key.to_encoded_point(false);
 
-    let x = BASE64_URL_SAFE_NO_PAD.encode(point.x().unwrap());
-    let y = BASE64_URL_SAFE_NO_PAD.encode(point.y().unwrap());
-    let d = BASE64_URL_SAFE_NO_PAD.encode(secret_key.to_bytes());
+    let mut private_jwk: JWK = serde_json::from_str(&secret_key.to_jwk_string())
+        .context("Failed to parse private key JWK")?;
 
-    let mut public_jwk = serde_json::Map::new();
-    public_jwk.insert("kty".to_string(), serde_json::json!("EC"));
-    public_jwk.insert("crv".to_string(), serde_json::json!("P-256"));
-    public_jwk.insert("x".to_string(), serde_json::json!(x));
-    public_jwk.insert("y".to_string(), serde_json::json!(y));
-    public_jwk.insert("use".to_string(), serde_json::json!("enc"));
-    public_jwk.insert("alg".to_string(), serde_json::json!("ECDH-ES"));
-    public_jwk.insert("kid".to_string(), serde_json::json!("enc-key-1"));
+    // Add required fields for JARM encryption
+    private_jwk.public_key_use = Some("enc".into());
+    private_jwk.key_id = Some("enc-key-1".into());
 
-    let private_jwk = serde_json::json!({
-        "kty": "EC",
-        "crv": "P-256",
-        "x": x,
-        "y": y,
-        "d": d,
-        "use": "enc",
-        "kid": "enc-key-1"
-    });
+    let mut public_jwk_map: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&public_key.to_jwk_string())
+            .context("Failed to parse public key JWK")?;
+    public_jwk_map.insert("use".to_string(), serde_json::json!("enc"));
+    public_jwk_map.insert("alg".to_string(), serde_json::json!("ECDH-ES"));
+    public_jwk_map.insert("kid".to_string(), serde_json::json!("enc-key-1"));
 
-    Ok((private_jwk, public_jwk))
+    Ok((private_jwk, public_jwk_map))
 }
 
 /// Build client_metadata with vp_formats_supported for the authorization request
