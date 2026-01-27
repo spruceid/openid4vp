@@ -406,10 +406,11 @@ const DIRECT_POST_JWT: &str = "direct_post.jwt";
 const DC_API: &str = "dc_api";
 const DC_API_JWT: &str = "dc_api.jwt";
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(into = "String", from = "String")]
 pub enum ResponseMode {
     /// The `direct_post` response mode as defined in OID4VP.
+    #[default]
     DirectPost,
     /// The `direct_post.jwt` response mode as defined in OID4VP.
     DirectPostJwt,
@@ -474,12 +475,6 @@ impl fmt::Display for ResponseMode {
             ResponseMode::Unsupported(u) => u,
         }
         .fmt(f)
-    }
-}
-
-impl Default for ResponseMode {
-    fn default() -> Self {
-        Self::Unsupported("fragment".into())
     }
 }
 
@@ -783,9 +778,9 @@ mod tests {
     }
 
     #[test]
-    fn response_mode_default_is_fragment() {
+    fn response_mode_default_is_direct_post() {
         let default = ResponseMode::default();
-        assert!(matches!(default, ResponseMode::Unsupported(s) if s == "fragment"));
+        assert!(matches!(default, ResponseMode::DirectPost));
     }
 
     #[test]

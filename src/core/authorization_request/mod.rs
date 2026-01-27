@@ -373,92 +373,31 @@ mod test {
 
     #[test]
     fn deserialize_authorization_request_object() {
+        // Using DCQL (Digital Credentials Query Language) format per OID4VP v1.0
         let json = json!({
           "aud": "https://self-issued.me/v2",
           "response_type": "vp_token",
-          "presentation_definition": {
-            "id": "b5323a8f-493b-4e5c-a766-4f7ed28424f7",
-            "input_descriptors": [
+          "dcql_query": {
+            "credentials": [
               {
-                "id": "org.iso.18013.5.1.mDL",
-                "format": {
-                  "mso_mdoc": {
-                    "alg": [
-                      "ES256"
-                    ]
-                  }
+                "id": "my_credential",
+                "format": "mso_mdoc",
+                "meta": {
+                  "doctype_value": "org.iso.18013.5.1.mDL"
                 },
-                "constraints": {
-                  "fields": [
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['family_name']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['given_name']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['birth_date']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['issue_date']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['expiry_date']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['issuing_country']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['issuing_authority']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['document_number']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['portrait']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['driving_privileges']"
-                      ],
-                      "intent_to_retain": true
-                    },
-                    {
-                      "path": [
-                        "$['org.iso.18013.5.1']['un_distinguishing_sign']"
-                      ],
-                      "intent_to_retain": true
-                    }
-                  ],
-                  "limit_disclosure": "required"
-                }
+                "claims": [
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "family_name" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "given_name" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "birth_date" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "issue_date" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "expiry_date" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "issuing_country" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "issuing_authority" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "document_number" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "portrait" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "driving_privileges" },
+                  { "namespace": "org.iso.18013.5.1", "claim_name": "un_distinguishing_sign" }
+                ]
               }
             ]
           },

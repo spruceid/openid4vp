@@ -21,6 +21,7 @@ use super::{
 
 pub mod did;
 pub mod verifier;
+pub mod x509_hash;
 pub mod x509_san;
 
 /// Verifies Authorization Request Objects.

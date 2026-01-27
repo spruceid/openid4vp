@@ -10,6 +10,8 @@ use openid4vp::core::{
         AuthorizationRequest, AuthorizationRequestObject,
     },
     dcql_query::DcqlQuery,
+    jwe::{find_encryption_jwk, JweBuilder},
+    object::ParsingErrorContext,
     response::{parameters::VpToken, UnencodedAuthorizationResponse},
     util::ReqwestClient,
 };
@@ -17,7 +19,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::crypto::encrypt_jwe;
 use crate::server::AppState;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -428,8 +429,8 @@ async fn submit_direct_post_jwt(
         payload["state"] = Value::String(state_val.clone());
     }
 
-    // Get verifier's public key
-    let verifier_jwk = match get_verifier_encryption_key(request_object).await {
+    // Get verifier's public key from client_metadata
+    let verifier_jwk = match get_verifier_encryption_key(request_object) {
         Ok(key) => key,
         Err(e) => {
             error!("Failed to get verifier encryption key: {}", e);
@@ -442,8 +443,12 @@ async fn submit_direct_post_jwt(
         }
     };
 
-    // Create JWE (ECDH-ES with A256GCM)
-    let jwe = match encrypt_jwe(&payload, &verifier_jwk) {
+    // Build JWE (ECDH-ES with A256GCM)
+    let jwe = match JweBuilder::new()
+        .payload(payload)
+        .recipient_key_json(&verifier_jwk)
+        .and_then(|b| b.build())
+    {
         Ok(jwe) => jwe,
         Err(e) => {
             error!("JWE encryption failed: {}", e);
@@ -525,28 +530,15 @@ async fn submit_direct_post_jwt(
 }
 
 /// Get verifier's encryption key from client_metadata
-async fn get_verifier_encryption_key(
-    request: &AuthorizationRequestObject,
-) -> anyhow::Result<Value> {
-    let client_metadata = request.client_metadata()?;
+fn get_verifier_encryption_key(request: &AuthorizationRequestObject) -> anyhow::Result<Value> {
+    let client_metadata = request.client_metadata().parsing_error()?;
+    let jwks = client_metadata.jwks().parsing_error()?;
+    let keys: Vec<_> = jwks.keys.iter().collect();
 
-    // Try jwks first using the typed accessor
-    if let Some(jwks_result) = client_metadata.jwks() {
-        let jwks = jwks_result?;
+    let jwk = find_encryption_jwk(keys.into_iter())?;
 
-        // Find encryption key (use == "enc")
-        for key_map in &jwks.keys {
-            if key_map.get("use").and_then(|v| v.as_str()) == Some("enc") {
-                return Ok(Value::Object(key_map.clone()));
-            }
-        }
-        // Fall back to first key
-        if let Some(key_map) = jwks.keys.first() {
-            return Ok(Value::Object(key_map.clone()));
-        }
-    }
-
-    anyhow::bail!("No encryption key found in client_metadata (jwks)")
+    let jwk_str = serde_json::to_string(&jwk)?;
+    Ok(serde_json::from_str(&jwk_str)?)
 }
 
 /// Create an error response

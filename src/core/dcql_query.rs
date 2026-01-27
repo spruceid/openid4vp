@@ -419,6 +419,47 @@ impl DcqlCredentialClaimsQuery {
     pub fn set_intent_to_retain(&mut self, intent_to_retain: Option<bool>) {
         self.intent_to_retain = intent_to_retain;
     }
+
+    /// Extracts the namespace from the path (for mso_mdoc credentials).
+    ///
+    /// For mdoc credentials, the DCQL path structure is `[namespace, element_identifier]`.
+    /// This method returns the first String element of the path if present.
+    /// See: [OID4VP §B.3.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.1)
+    pub fn namespace(&self) -> Option<&str> {
+        match self.path.first() {
+            Some(DcqlCredentialClaimsQueryPath::String(s)) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Extracts the element identifier from the path (for mso_mdoc credentials).
+    ///
+    /// For mdoc credentials, the DCQL path structure is `[namespace, element_identifier]`.
+    /// This method returns the second String element of the path if present.
+    /// See: [OID4VP §B.3.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.1)
+    pub fn element_identifier(&self) -> Option<&str> {
+        match self.path.get(1) {
+            Some(DcqlCredentialClaimsQueryPath::String(s)) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Extracts the claim name from the path.
+    ///
+    /// This returns the last String element in the path, which represents the
+    /// actual claim/attribute name for most credential formats.
+    ///
+    /// For nested claims (e.g., `["address", "street"]`), this returns `"street"`.
+    /// For mdoc claims (e.g., `["org.iso.18013.5.1", "given_name"]`), this returns `"given_name"`.
+    pub fn claim_name(&self) -> Option<&str> {
+        self.path.iter().rev().find_map(|element| {
+            if let DcqlCredentialClaimsQueryPath::String(s) = element {
+                Some(s.as_str())
+            } else {
+                None
+            }
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -573,5 +614,74 @@ mod tests {
 
         // Verify round-trip
         assert_eq!(json, serde_json::to_value(&dcql).unwrap());
+    }
+
+    #[test]
+    fn dcql_claims_path_extraction_mdoc() {
+        // Test mdoc-style path: [namespace, element_identifier]
+        let claim = DcqlCredentialClaimsQuery::new(
+            vec![
+                DcqlCredentialClaimsQueryPath::String("org.iso.18013.5.1".into()),
+                DcqlCredentialClaimsQueryPath::String("given_name".into()),
+            ]
+            .try_into()
+            .unwrap(),
+        );
+
+        assert_eq!(claim.namespace(), Some("org.iso.18013.5.1"));
+        assert_eq!(claim.element_identifier(), Some("given_name"));
+        assert_eq!(claim.claim_name(), Some("given_name"));
+    }
+
+    #[test]
+    fn dcql_claims_path_extraction_nested() {
+        // Test nested claim path: ["address", "street"]
+        let claim = DcqlCredentialClaimsQuery::new(
+            vec![
+                DcqlCredentialClaimsQueryPath::String("address".into()),
+                DcqlCredentialClaimsQueryPath::String("street".into()),
+            ]
+            .try_into()
+            .unwrap(),
+        );
+
+        assert_eq!(claim.namespace(), Some("address"));
+        assert_eq!(claim.element_identifier(), Some("street"));
+        assert_eq!(claim.claim_name(), Some("street"));
+    }
+
+    #[test]
+    fn dcql_claims_path_extraction_with_array_index() {
+        // Test path with array index: ["items", 0, "name"]
+        let claim = DcqlCredentialClaimsQuery::new(
+            vec![
+                DcqlCredentialClaimsQueryPath::String("items".into()),
+                DcqlCredentialClaimsQueryPath::Integer(0),
+                DcqlCredentialClaimsQueryPath::String("name".into()),
+            ]
+            .try_into()
+            .unwrap(),
+        );
+
+        // namespace() only returns first String element
+        assert_eq!(claim.namespace(), Some("items"));
+        // element_identifier() returns None because path[1] is Integer
+        assert_eq!(claim.element_identifier(), None);
+        // claim_name() returns the last String element
+        assert_eq!(claim.claim_name(), Some("name"));
+    }
+
+    #[test]
+    fn dcql_claims_path_extraction_single_element() {
+        // Test single element path: ["name"]
+        let claim = DcqlCredentialClaimsQuery::new(
+            vec![DcqlCredentialClaimsQueryPath::String("name".into())]
+                .try_into()
+                .unwrap(),
+        );
+
+        assert_eq!(claim.namespace(), Some("name"));
+        assert_eq!(claim.element_identifier(), None);
+        assert_eq!(claim.claim_name(), Some("name"));
     }
 }
