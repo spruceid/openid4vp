@@ -26,6 +26,18 @@
   - `verifier_attestation`: Verifier attestation JWT-based identification
   - `origin`: Reserved for Digital Credentials API (Wallet MUST reject)
 - New `X509SanDnsClient` verifier client for `x509_san_dns` scheme
+- **ISO 18013-7 mdoc support** for OID4VP v1.0 (Section B.2.6):
+  - `Handover` struct for redirect flow per Section B.2.6.1
+  - `DcApiHandover` struct for Digital Credentials API flow per Section B.2.6.2
+  - `SessionTranscript` struct (`[null, null, Handover]`) for mdoc DeviceAuthentication
+  - `compute_jwk_thumbprint()` function per RFC 7638
+  - `get_encryption_jwk_thumbprint()` helper for extracting JWK thumbprint from request
+  - Test vectors from specification Annex B
+- **JWE builder** (`JweBuilder`) for encrypted authorization responses:
+  - Support for ECDH-ES+A256KW key agreement and A256GCM content encryption
+  - APU/APV parameters intentionally omitted (optional per spec, not used in v1.0)
+- `x509_hash` client identifier scheme verification per Section 5.9.3.3
+- `DcqlQuery::matching_credentials()` method for credential matching against queries
 
 ### Changed
 
@@ -48,6 +60,8 @@
   - Removed `should_strip_quotes` field
   - New constructors: `new(vp_token)`, `with_state(vp_token, state)`
 - **BREAKING**: `AuthorizationResponse::from_x_www_form_urlencoded()` no longer takes a boolean parameter
+- **BREAKING**: `ResponseMode::default()` changed from `Unsupported("fragment")` to `DirectPost`
+  - Fragment response mode is not valid for OID4VP v1.0
 
 ### Removed
 
@@ -71,6 +85,10 @@
 - **BREAKING**: Removed `client_metadata_uri` parameter (not in v1.0 spec)
   - `ClientMetadataUri` type removed from `authorization_request::parameters`
   - `ClientMetadata::resolve()` no longer takes HTTP client parameter (metadata must be inline)
+- **BREAKING**: Removed `maximize_interoperability` feature flag
+  - No longer needed; library now targets v1.0 compliance exclusively
+- **BREAKING**: Removed `input_descriptor` module entirely
+  - Use `dcql_query` module instead for credential queries
 
 ## [0.1.0]
 
