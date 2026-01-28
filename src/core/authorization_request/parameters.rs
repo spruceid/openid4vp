@@ -1,10 +1,7 @@
 use std::{fmt, ops::Deref};
 
 use crate::core::{
-    metadata::parameters::verifier::{
-        AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
-        AuthorizationSignedResponseAlg, JWKs, VpFormats,
-    },
+    metadata::parameters::verifier::{EncryptedResponseEncValuesSupported, JWKs, VpFormats},
     object::{TypedParameter, UntypedObject},
 };
 use anyhow::{anyhow, bail, Error, Ok};
@@ -18,20 +15,26 @@ use super::AuthorizationRequestObject;
 pub struct ClientId(pub String);
 
 impl ClientId {
-    /// Retrieves the `client_id_scheme` from the authorization request object.
+    /// Extracts the Client Identifier Prefix from the client_id.
     ///
-    /// If the `client_id_scheme` is not present, it will be inferred from the `client_id`.
-    pub fn resolve_scheme(&self, value: &UntypedObject) -> Result<Option<ClientIdScheme>, Error> {
-        let client_id_scheme = value.get::<ClientIdScheme>();
-        if client_id_scheme.is_some() {
-            return client_id_scheme.transpose();
+    /// Per OID4VP v1.0 Section 5.9.1, the Client Identifier Prefix is the part
+    /// before the first `:` in the client_id.
+    ///
+    /// Per Section 5.9.2, if no `:` is present, the client is treated as
+    /// pre-registered and this method returns `None`.
+    ///
+    /// Example: `x509_san_dns:example.com` -> returns `Some(ClientIdScheme("x509_san_dns"))`
+    /// Example: `pre-registered-client` -> returns `None` (pre-registered)
+    pub fn resolve_prefix(&self) -> Option<ClientIdScheme> {
+        if self.0.contains(':') {
+            self.0
+                .split(':')
+                .next()
+                .map(|s| ClientIdScheme(s.to_string()))
+        } else {
+            // Per Section 5.9.2: If no ':' is present, treat as pre-registered
+            None
         }
-
-        Ok(self
-            .0
-            .split(':')
-            .next()
-            .map(|s| ClientIdScheme(s.to_string())))
     }
 }
 impl TypedParameter for ClientId {
@@ -52,13 +55,13 @@ impl From<ClientId> for Json {
     }
 }
 
+/// Client Identifier Prefix per OID4VP v1.0 Section 5.9.
+///
+/// The prefix is extracted from the `client_id` parameter (before the first `:`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClientIdScheme(pub String);
 
-impl TypedParameter for ClientIdScheme {
-    const KEY: &'static str = "client_id_scheme";
-}
-
+// JSON conversions needed for wallet metadata (client_id_schemes_supported)
 impl TryFrom<Json> for ClientIdScheme {
     type Error = Error;
 
@@ -212,71 +215,22 @@ impl ClientMetadata {
     ///
     /// If unspecified, the default algorithm to use for signing authorization responses is RS256.
     ///
-    /// The algorithm none is not allowed.
+    /// Returns the supported content encryption algorithms for encrypted responses.
     ///
-    ///  A list of defined ["alg" values](https://datatracker.ietf.org/doc/html/rfc7518#section-3.1)
-    /// for this use can be found in the IANA "JSON Web Signature and Encryption Algorithms" registry established
-    /// by [JWA](https://www.rfc-editor.org/rfc/rfc7515.html#ref-JWA); the initial contents of this registry are the values
-    /// defined in Section 3.1 of [JWA](https://www.rfc-editor.org/rfc/rfc7515.html#ref-JWA).
+    /// Per OID4VP v1.0 Section 5.1, this is specified via `encrypted_response_enc_values_supported`.
+    /// If not specified, defaults to `["A128GCM"]` per Section 8.3.
     ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.3
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.2.1
-    /// See: https://datatracker.ietf.org/doc/html/rfc7518#section-3.1
+    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1
+    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3
     ///
-    pub fn authorization_signed_response_alg(
+    pub fn encrypted_response_enc_values_supported(
         &self,
-    ) -> Result<AuthorizationSignedResponseAlg, Error> {
-        self.0.get().unwrap_or(Ok(AuthorizationSignedResponseAlg(
-            ssi::crypto::Algorithm::RS256,
-        )))
-    }
-
-    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
-    ///
-    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
-    ///
-    /// The JWE [RFC7516](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7516)
-    /// `alg` algorithm REQUIRED for encrypting authorization responses.
-    ///
-    /// If both signing and encryption are requested, the response will be signed then encrypted,
-    /// with the result being a Nested JWT, as defined in JWT
-    /// [RFC7519](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7519).
-    ///
-    /// The default, if omitted, is that no encryption is performed.
-    ///
-    ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.4
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.4.1
-    ///
-    pub fn authorization_encrypted_response_alg(
-        &self,
-    ) -> Option<Result<AuthorizationEncryptedResponseAlg, Error>> {
-        self.0.get()
-    }
-
-    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
-    ///
-    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
-    ///
-    /// The JWE [RFC7516](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7516) `enc` algorithm
-    /// REQUIRED for encrypting authorization responses.
-    ///
-    /// If `authorization_encrypted_response_alg` is specified, the default for this value is `A128CBC-HS256`.
-    ///
-    /// When `authorization_encrypted_response_enc` is included, authorization_encrypted_response_alg MUST also be provided.
-    ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.5
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.6.1
-    ///
-    pub fn authorization_encrypted_response_enc(
-        &self,
-    ) -> Option<Result<AuthorizationEncryptedResponseEnc, Error>> {
-        match self.0.get() {
-            Some(enc) => Some(enc),
-            None => self
-                .authorization_encrypted_response_alg()
-                .map(|_| Ok(AuthorizationEncryptedResponseEnc("A128CBC-HS256".into()))),
-        }
+    ) -> Result<EncryptedResponseEncValuesSupported, Error> {
+        self.0
+            .get()
+            .transpose()?
+            .map(Ok)
+            .unwrap_or_else(|| Ok(EncryptedResponseEncValuesSupported::default()))
     }
 }
 
@@ -694,54 +648,42 @@ mod tests {
     #[test]
     fn client_id_prefix_x509_san_dns() {
         let client_id = ClientId("x509_san_dns:example.com".to_string());
-        let empty_request = UntypedObject::default();
-
-        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        let scheme = client_id.resolve_prefix().unwrap();
         assert_eq!(scheme.0, "x509_san_dns");
     }
 
     #[test]
     fn client_id_prefix_decentralized_identifier() {
         let client_id = ClientId("decentralized_identifier:did:key:z123456".to_string());
-        let empty_request = UntypedObject::default();
-
-        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        let scheme = client_id.resolve_prefix().unwrap();
         assert_eq!(scheme.0, "decentralized_identifier");
     }
 
     #[test]
     fn client_id_prefix_redirect_uri() {
         let client_id = ClientId("redirect_uri:https://verifier.example.com/callback".to_string());
-        let empty_request = UntypedObject::default();
-
-        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        let scheme = client_id.resolve_prefix().unwrap();
         assert_eq!(scheme.0, "redirect_uri");
     }
 
     #[test]
     fn client_id_prefix_openid_federation() {
         let client_id = ClientId("openid_federation:https://federation.example.com".to_string());
-        let empty_request = UntypedObject::default();
-
-        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        let scheme = client_id.resolve_prefix().unwrap();
         assert_eq!(scheme.0, "openid_federation");
     }
 
     #[test]
     fn client_id_prefix_verifier_attestation() {
         let client_id = ClientId("verifier_attestation:some-attestation-id".to_string());
-        let empty_request = UntypedObject::default();
-
-        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        let scheme = client_id.resolve_prefix().unwrap();
         assert_eq!(scheme.0, "verifier_attestation");
     }
 
     #[test]
     fn client_id_prefix_x509_hash() {
         let client_id = ClientId("x509_hash:abc123hash".to_string());
-        let empty_request = UntypedObject::default();
-
-        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        let scheme = client_id.resolve_prefix().unwrap();
         assert_eq!(scheme.0, "x509_hash");
     }
 
@@ -749,32 +691,17 @@ mod tests {
     fn client_id_prefix_origin_reserved() {
         // origin: is reserved for DC API and wallet MUST reject
         let client_id = ClientId("origin:https://example.com".to_string());
-        let empty_request = UntypedObject::default();
-
-        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
+        let scheme = client_id.resolve_prefix().unwrap();
         assert_eq!(scheme.0, "origin");
     }
 
     #[test]
-    fn client_id_explicit_scheme_overrides_prefix() {
-        // When client_id_scheme is explicitly provided, it should override the prefix
-        let client_id = ClientId("x509_san_dns:example.com".to_string());
-        let mut request = UntypedObject::default();
-        request.insert(ClientIdScheme("redirect_uri".to_string()));
-
-        let scheme = client_id.resolve_scheme(&request).unwrap().unwrap();
-        // Should use the explicit scheme, not the prefix
-        assert_eq!(scheme.0, "redirect_uri");
-    }
-
-    #[test]
-    fn client_id_no_prefix_returns_whole_string() {
-        // When there's no colon, the whole string is treated as the scheme
+    fn client_id_no_prefix_is_preregistered() {
+        // Per v1 Section 5.9.2: if no colon, treat as pre-registered client
+        // resolve_prefix() returns None when there's no ':' in the client_id
         let client_id = ClientId("pre-registered-client".to_string());
-        let empty_request = UntypedObject::default();
-
-        let scheme = client_id.resolve_scheme(&empty_request).unwrap().unwrap();
-        assert_eq!(scheme.0, "pre-registered-client");
+        let prefix = client_id.resolve_prefix();
+        assert!(prefix.is_none());
     }
 
     #[test]

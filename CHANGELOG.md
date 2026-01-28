@@ -7,11 +7,13 @@
 - **DCQL (Digital Credentials Query Language)** support per Section 6:
   - `DcqlQuery` struct with `credentials` and optional `credential_sets` fields
   - `DcqlCredentialQuery` with all v1.0 fields including:
+    - `meta`: REQUIRED object for format-specific constraints (default empty `{}`)
     - `trusted_authorities`: Array of trust framework objects (Section 6.1.1)
     - `require_cryptographic_holder_binding`: Boolean (default `true`)
     - `multiple`: Boolean (default `false`)
   - `TrustedAuthoritiesQuery` with types: `aki`, `etsi_tl`, `openid_federation`
-  - `DcqlCredentialSetQuery` for alternative credential combinations
+  - `DcqlCredentialSetQuery` with `options` and `is_required()` (default `true`)
+  - `DcqlCredentialClaimsQuery` with `path` (NonEmptyVec) and optional `values` (NonEmptyVec)
   - `AuthorizationRequestObject::dcql_query()` method for retrieving DCQL queries
 - New authorization request parameters per Section 5.1:
   - `transaction_data`: Array of base64url-encoded transaction binding objects
@@ -33,11 +35,19 @@
   - `compute_jwk_thumbprint()` function per RFC 7638
   - `get_encryption_jwk_thumbprint()` helper for extracting JWK thumbprint from request
   - Test vectors from specification Annex B
-- **JWE builder** (`JweBuilder`) for encrypted authorization responses:
-  - Support for ECDH-ES+A256KW key agreement and A256GCM content encryption
+- **JWE builder** (`JweBuilder`) for encrypted authorization responses per Section 8.3:
+  - `alg` is obtained from JWK's `alg` field (MUST be present per spec)
+  - `enc` is obtained from `encrypted_response_enc_values_supported` (default: `A128GCM`)
+  - `find_encryption_jwk()` returns `EncryptionJwkInfo` with `alg`, `kid`, and `jwk`
+  - `kid` from JWK is propagated to JWE header when present
   - APU/APV parameters intentionally omitted (optional per spec, not used in v1.0)
 - `x509_hash` client identifier scheme verification per Section 5.9.3.3
 - `DcqlQuery::matching_credentials()` method for credential matching against queries
+- Wallet `submit_response()` validates verifier response per Section 8.2:
+  - Empty response body returns `Ok(None)` (no redirect required)
+  - Invalid JSON returns explicit error
+  - Invalid `redirect_uri` URL returns explicit error
+  - Valid JSON with `redirect_uri` returns `Ok(Some(url))`
 
 ### Changed
 
@@ -62,7 +72,11 @@
 - **BREAKING**: `AuthorizationResponse::from_x_www_form_urlencoded()` no longer takes a boolean parameter
 - **BREAKING**: `ResponseMode::default()` changed from `Unsupported("fragment")` to `DirectPost`
   - Fragment response mode is not valid for OID4VP v1.0
-
+- **BREAKING**: Wallet metadata parameter renamed per Section 10.1:
+  - `client_id_schemes_supported` → `client_id_prefixes_supported`
+  - `WalletMetadata::add_client_id_schemes_supported()` → `add_client_id_prefixes_supported()`
+- **BREAKING**: Verifier metadata key renamed per Section 11.1:
+  - `VpFormats::KEY` changed from `vp_formats` to `vp_formats_supported`
 ### Removed
 
 - **BREAKING**: Removed `presentation_definition` and `presentation_submission` modules entirely
@@ -89,6 +103,15 @@
   - No longer needed; library now targets v1.0 compliance exclusively
 - **BREAKING**: Removed `input_descriptor` module entirely
   - Use `dcql_query` module instead for credential queries
+- **BREAKING**: Removed JARM parameters from verifier metadata (not in OID4VP v1.0):
+  - `AuthorizationEncryptedResponseAlg` - use JWK's `alg` field instead
+  - `AuthorizationEncryptedResponseEnc` - use `EncryptedResponseEncValuesSupported` instead
+  - `AuthorizationSignedResponseAlg` - not used in v1.0
+  - `RequireSignedRequestObject` - not used in v1.0
+- **BREAKING**: Removed `ClientMetadata` methods (replaced by v1.0 approach):
+  - `authorization_signed_response_alg()` - not in v1.0
+  - `authorization_encrypted_response_alg()` - use JWK's `alg` field
+  - `authorization_encrypted_response_enc()` - use `encrypted_response_enc_values_supported()`
 
 ## [0.1.0]
 

@@ -16,7 +16,8 @@ use crate::core::{
 
 use super::verifier::Verifier;
 
-/// Default implementation of request validation for `client_id_scheme` `x509_san_dns`.
+/// Default implementation of request validation for `x509_san_dns` Client Identifier Prefix.
+/// Per OID4VP v1.0 Section 5.9.3.
 pub fn validate<V: Verifier>(
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,

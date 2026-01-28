@@ -79,11 +79,13 @@ pub struct DcqlCredentialQuery {
     /// REQUIRED. A string that specifies the requested format for the Credential.
     format: ClaimFormatDesignation,
 
-    /// OPTIONAL. An object defining additional properties for the Credential.
+    /// REQUIRED. An object defining additional properties requested by the Verifier
+    /// that apply to the metadata and validity data of the Credential.
     /// The properties are format-specific (e.g., `vct_values` for SD-JWT VC,
-    /// `doctype_value` for mso_mdoc).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    meta: Option<serde_json::Map<String, Json>>,
+    /// `doctype_value` for mso_mdoc). If empty, no specific constraints are placed.
+    /// Per OID4VP v1.0 §6.1, this field is REQUIRED but can be an empty object.
+    #[serde(default)]
+    meta: serde_json::Map<String, Json>,
 
     /// OPTIONAL. An array of objects that specifies claims in the Credential.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -115,7 +117,7 @@ impl DcqlCredentialQuery {
         Self {
             id,
             format,
-            meta: None,
+            meta: serde_json::Map::new(),
             claims: None,
             claim_sets: None,
             trusted_authorities: None,
@@ -148,15 +150,15 @@ impl DcqlCredentialQuery {
         self.format = format;
     }
 
-    pub fn meta(&self) -> Option<&serde_json::Map<String, Json>> {
-        self.meta.as_ref()
+    pub fn meta(&self) -> &serde_json::Map<String, Json> {
+        &self.meta
     }
 
-    pub fn meta_mut(&mut self) -> &mut Option<serde_json::Map<String, Json>> {
+    pub fn meta_mut(&mut self) -> &mut serde_json::Map<String, Json> {
         &mut self.meta
     }
 
-    pub fn set_meta(&mut self, meta: Option<serde_json::Map<String, Json>>) {
+    pub fn set_meta(&mut self, meta: serde_json::Map<String, Json>) {
         self.meta = meta;
     }
 
@@ -297,11 +299,13 @@ pub enum TrustedAuthorityType {
 /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialSetQuery {
+    /// REQUIRED. A non-empty array where each value is a list of Credential Query
+    /// identifiers representing one set of Credentials that satisfies the use case.
     options: NonEmptyVec<Vec<String>>,
+    /// OPTIONAL. Boolean indicating whether this set of Credentials is required.
+    /// Defaults to `true` per OID4VP v1.0 §6.2 if not explicitly set.
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    purpose: Option<Json>,
 }
 
 impl DcqlCredentialSetQuery {
@@ -309,7 +313,6 @@ impl DcqlCredentialSetQuery {
         Self {
             options,
             required: None,
-            purpose: None,
         }
     }
 
@@ -325,7 +328,14 @@ impl DcqlCredentialSetQuery {
         self.options = options;
     }
 
-    pub fn required(&self) -> Option<bool> {
+    /// Returns `true` if this credential set is required.
+    /// Defaults to `true` per OID4VP v1.0 §6.2 if not explicitly set.
+    pub fn is_required(&self) -> bool {
+        self.required.unwrap_or(true)
+    }
+
+    /// Returns the raw `required` value without applying the default.
+    pub fn required_raw(&self) -> Option<bool> {
         self.required
     }
 
@@ -336,28 +346,25 @@ impl DcqlCredentialSetQuery {
     pub fn set_required(&mut self, required: Option<bool>) {
         self.required = required;
     }
-
-    pub fn purpose(&self) -> Option<&Json> {
-        self.purpose.as_ref()
-    }
-
-    pub fn purpose_mut(&mut self) -> &mut Option<Json> {
-        &mut self.purpose
-    }
-
-    pub fn set_purpose(&mut self, purpose: Option<Json>) {
-        self.purpose = purpose;
-    }
 }
 
+/// A Claims Query object
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialClaimsQuery {
+    /// REQUIRED if `claim_sets` is present in the Credential Query; OPTIONAL otherwise.
+    /// A string identifying the particular claim.
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<String>,
+    /// REQUIRED. A non-empty array representing a claims path pointer that specifies
+    /// the path to a claim within the Credential.
     path: NonEmptyVec<DcqlCredentialClaimsQueryPath>,
+    /// OPTIONAL. A non-empty array of strings, integers or boolean values that specifies
+    /// the expected values of the claim. Per OID4VP v1.0 §6.3, this must be non-empty if present.
     #[serde(skip_serializing_if = "Option::is_none")]
-    values: Option<Vec<DcqlCredentialClaimsQueryValue>>,
-    /// Only applicable for ClaimFormatDesignation::MsoMdoc
+    values: Option<NonEmptyVec<DcqlCredentialClaimsQueryValue>>,
+    /// OPTIONAL (ISO mdoc specific per §B.2.4). Boolean equivalent to `IntentToRetain`
+    /// variable defined in Section 8.3.2.1.2.1 of ISO.18013-5.
     #[serde(skip_serializing_if = "Option::is_none")]
     intent_to_retain: Option<bool>,
 }
@@ -396,15 +403,15 @@ impl DcqlCredentialClaimsQuery {
         self.path = path;
     }
 
-    pub fn values(&self) -> Option<&Vec<DcqlCredentialClaimsQueryValue>> {
+    pub fn values(&self) -> Option<&NonEmptyVec<DcqlCredentialClaimsQueryValue>> {
         self.values.as_ref()
     }
 
-    pub fn values_mut(&mut self) -> &mut Option<Vec<DcqlCredentialClaimsQueryValue>> {
+    pub fn values_mut(&mut self) -> &mut Option<NonEmptyVec<DcqlCredentialClaimsQueryValue>> {
         &mut self.values
     }
 
-    pub fn set_values(&mut self, values: Option<Vec<DcqlCredentialClaimsQueryValue>>) {
+    pub fn set_values(&mut self, values: Option<NonEmptyVec<DcqlCredentialClaimsQueryValue>>) {
         self.values = values;
     }
 
@@ -507,8 +514,7 @@ mod tests {
           ],
           "credential_sets": [
             {
-              "options": [["0"]],
-              "purpose": "Authorize to the government using your mobile drivers license"
+              "options": [["0"]]
             }
           ]
         });
@@ -516,14 +522,12 @@ mod tests {
             credentials: NonEmptyVec::new(DcqlCredentialQuery {
                 id: "0".into(),
                 format: ClaimFormatDesignation::MsoMDoc,
-                meta: Some(
-                    [(
-                        "doctype_value".to_string(),
-                        serde_json::Value::String("org.iso.18013.5.1.mDL".to_string()),
-                    )]
-                    .into_iter()
-                    .collect(),
-                ),
+                meta: [(
+                    "doctype_value".to_string(),
+                    serde_json::Value::String("org.iso.18013.5.1.mDL".to_string()),
+                )]
+                .into_iter()
+                .collect(),
                 claims: Some(NonEmptyVec::new(DcqlCredentialClaimsQuery {
                     id: None,
                     path: vec![
@@ -543,9 +547,6 @@ mod tests {
             credential_sets: Some(NonEmptyVec::new(DcqlCredentialSetQuery {
                 options: NonEmptyVec::new(vec!["0".into()]),
                 required: None,
-                purpose: Some(serde_json::Value::String(
-                    "Authorize to the government using your mobile drivers license".into(),
-                )),
             })),
         };
         assert_eq!(
@@ -570,6 +571,56 @@ mod tests {
         // multiple defaults to false
         assert!(!cred.multiple());
         assert_eq!(cred.multiple_raw(), None);
+
+        // meta defaults to empty map
+        assert!(cred.meta().is_empty());
+    }
+
+    #[test]
+    fn dcql_credential_set_query_defaults() {
+        // Test that is_required() defaults to true per §6.2
+        let cred_set = DcqlCredentialSetQuery::new(NonEmptyVec::new(vec!["cred1".into()]));
+
+        assert!(cred_set.is_required());
+        assert_eq!(cred_set.required_raw(), None);
+
+        // Test explicit false
+        let json = json!({
+            "options": [["cred1"]],
+            "required": false
+        });
+        let cred_set: DcqlCredentialSetQuery = serde_json::from_value(json).unwrap();
+        assert!(!cred_set.is_required());
+        assert_eq!(cred_set.required_raw(), Some(false));
+    }
+
+    #[test]
+    fn dcql_deserialize_with_empty_meta() {
+        // Per §6.1, meta is REQUIRED but can be empty
+        let json = json!({
+            "credentials": [{
+                "id": "test",
+                "format": "mso_mdoc",
+                "meta": {}
+            }]
+        });
+
+        let dcql: DcqlQuery = serde_json::from_value(json).unwrap();
+        assert!(dcql.credentials()[0].meta().is_empty());
+    }
+
+    #[test]
+    fn dcql_deserialize_without_meta_uses_default() {
+        // If meta is missing, it should default to empty map
+        let json = json!({
+            "credentials": [{
+                "id": "test",
+                "format": "mso_mdoc"
+            }]
+        });
+
+        let dcql: DcqlQuery = serde_json::from_value(json).unwrap();
+        assert!(dcql.credentials()[0].meta().is_empty());
     }
 
     #[test]

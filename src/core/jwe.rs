@@ -4,15 +4,32 @@ use josekit::{
     jwk::Jwk,
     jwt::{encode_with_encrypter, JwtPayload},
 };
+use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
-/// Default supported algorithms for OID4VP JWE encryption.
-pub const DEFAULT_ALG: &str = "ECDH-ES";
-pub const DEFAULT_ENC: &str = "A256GCM";
+/// Default content encryption algorithm per OID4VP v1.0 §8.3.
+pub const DEFAULT_ENC: &str = "A128GCM";
+
+/// Information about an encryption JWK including the required `alg` parameter.
+///
+/// Per OID4VP v1.0 §8.3, the `alg` parameter MUST be present in JWKs used for encryption,
+/// and the JWE `alg` MUST be equal to the `alg` value of the chosen JWK.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptionJwkInfo {
+    /// The JWK for encryption.
+    pub jwk: Jwk,
+    /// The algorithm from the JWK (required per spec).
+    pub alg: String,
+    /// The key ID from the JWK (optional).
+    pub kid: Option<String>,
+}
 
 /// Builder for creating JWE-encrypted authorization responses.
 ///
-/// Per OID4VP v1.0 §8.3, responses are encrypted using ECDH-ES with A256GCM.
+/// Per OID4VP v1.0 §8.3:
+/// - The `alg` parameter MUST be present in the JWK and the JWE `alg` MUST equal it
+/// - The `enc` is obtained from `encrypted_response_enc_values_supported` (default: A128GCM)
+/// - If the JWK has a `kid`, the JWE MUST include it in the header
 #[derive(Debug, Clone, Default)]
 pub struct JweBuilder {
     payload: Option<Json>,
@@ -51,13 +68,17 @@ impl JweBuilder {
         Ok(self)
     }
 
-    /// Sets the key agreement algorithm (default: "ECDH-ES").
+    /// Sets the key agreement algorithm.
+    ///
+    /// Per OID4VP v1.0 §8.3, this MUST be equal to the `alg` value of the chosen JWK.
     pub fn alg(mut self, alg: impl Into<String>) -> Self {
         self.alg = Some(alg.into());
         self
     }
 
-    /// Sets the content encryption algorithm (default: "A256GCM").
+    /// Sets the content encryption algorithm (default: "A128GCM").
+    ///
+    /// Per OID4VP v1.0 §8.3, this is obtained from `encrypted_response_enc_values_supported`.
     pub fn enc(mut self, enc: impl Into<String>) -> Self {
         self.enc = Some(enc.into());
         self
@@ -76,12 +97,15 @@ impl JweBuilder {
     /// Returns an error if:
     /// - The payload is not set
     /// - The recipient key is not set
+    /// - The algorithm is not set (required per OID4VP v1.0 §8.3)
     /// - The algorithm is not supported (only "ECDH-ES" is currently supported)
     /// - Encryption fails
     pub fn build(self) -> Result<String> {
         let payload = self.payload.context("payload is required")?;
         let recipient_key = self.recipient_key.context("recipient_key is required")?;
-        let alg = self.alg.unwrap_or_else(|| DEFAULT_ALG.to_string());
+        let alg = self
+            .alg
+            .context("alg is required (must match the JWK's alg per OID4VP v1.0 §8.3)")?;
         let enc = self.enc.unwrap_or_else(|| DEFAULT_ENC.to_string());
 
         if alg != "ECDH-ES" {
@@ -121,8 +145,8 @@ impl JweBuilder {
 
 /// Finds a suitable encryption JWK from a JWKS.
 ///
-/// This function searches for a P-256 key with `use: "enc"` that can be used
-/// for encrypting the authorization response.
+/// Per OID4VP v1.0 §8.3, the Wallet selects a public key based on `kty`, `use`, `alg`,
+/// and other JWK parameters. The `alg` parameter MUST be present in the JWKs.
 ///
 /// # Arguments
 ///
@@ -130,7 +154,7 @@ impl JweBuilder {
 ///
 /// # Returns
 ///
-/// The first suitable encryption key found, or an error if none is found.
+/// An `EncryptionJwkInfo` containing the JWK and its `alg`, or an error if no suitable key is found.
 ///
 /// # Example
 ///
@@ -138,43 +162,75 @@ impl JweBuilder {
 /// use openid4vp::core::jwe::find_encryption_jwk;
 ///
 /// let jwks = client_metadata.jwks()?;
-/// let jwk = find_encryption_jwk(jwks.keys.iter())?;
+/// let jwk_info = find_encryption_jwk(jwks.keys.iter())?;
+/// // jwk_info.alg contains the algorithm to use
 /// ```
-pub fn find_encryption_jwk<'a, I>(keys: I) -> Result<Jwk>
+pub fn find_encryption_jwk<'a, I>(keys: I) -> Result<EncryptionJwkInfo>
 where
     I: Iterator<Item = &'a serde_json::Map<String, Json>>,
 {
-    keys.filter_map(|jwk_map| {
-        let jwk_json = Json::Object(jwk_map.clone());
-        let jwk_str = serde_json::to_string(&jwk_json).ok()?;
-        let jwk = Jwk::from_bytes(jwk_str.as_bytes()).ok()?;
-        Some(jwk)
-    })
-    .find(|jwk| {
-        let Some(crv) = jwk.curve() else {
-            tracing::warn!("JWK in keyset was missing 'crv'");
-            return false;
+    for jwk_map in keys {
+        // Check for required `alg` parameter per OID4VP v1.0 §8.3
+        let Some(alg) = jwk_map.get("alg").and_then(|v| v.as_str()) else {
+            tracing::debug!("JWK missing required 'alg' parameter, skipping");
+            continue;
+        };
+
+        // Currently only support ECDH-ES
+        if alg != "ECDH-ES" {
+            tracing::debug!("JWK has unsupported alg '{alg}', skipping");
+            continue;
+        }
+
+        // Check curve - currently only P-256 supported
+        let Some(crv) = jwk_map.get("crv").and_then(|v| v.as_str()) else {
+            tracing::debug!("JWK missing 'crv' parameter, skipping");
+            continue;
         };
         if crv != "P-256" {
-            return false;
+            tracing::debug!("JWK has unsupported curve '{crv}', skipping");
+            continue;
         }
-        match jwk.key_use() {
-            Some(use_) => use_ == "enc",
+
+        // Check use - should be "enc" for encryption
+        match jwk_map.get("use").and_then(|v| v.as_str()) {
+            Some("enc") => {}
+            Some(other) => {
+                tracing::debug!("JWK has use='{other}', not suitable for encryption");
+                continue;
+            }
             None => {
                 tracing::warn!(
-                    "JWK in keyset was missing 'use', assuming it can be used for encryption"
+                    "JWK missing 'use' parameter, assuming it can be used for encryption"
                 );
-                true
             }
         }
-    })
-    .context("no P-256 key with use='enc' found in JWKS")
+
+        // Parse the JWK
+        let jwk_json = Json::Object(jwk_map.clone());
+        let jwk_str = serde_json::to_string(&jwk_json).context("failed to serialize JWK")?;
+        let jwk = Jwk::from_bytes(jwk_str.as_bytes()).context("failed to parse JWK")?;
+
+        let kid = jwk_map
+            .get("kid")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        return Ok(EncryptionJwkInfo {
+            jwk,
+            alg: alg.to_string(),
+            kid,
+        });
+    }
+
+    bail!("no suitable encryption key found in JWKS (requires P-256 key with alg='ECDH-ES' and use='enc')")
 }
 
 /// Build a JWE-encrypted authorization response per OID4VP 1.0 spec §8.3.
 ///
 /// This function constructs a JWE for `direct_post.jwt` response mode using:
-/// - Algorithm: ECDH-ES with A256GCM (configurable via client metadata)
+/// - Algorithm (`alg`): From the selected JWK (MUST match per §8.3)
+/// - Content encryption (`enc`): From `encrypted_response_enc_values_supported` (default: A128GCM)
 /// - Encryption key from client_metadata.jwks
 ///
 /// # Arguments
@@ -196,6 +252,7 @@ pub fn build_encrypted_response(
     state: Option<&crate::core::authorization_request::parameters::State>,
 ) -> Result<crate::core::response::AuthorizationResponse> {
     use crate::core::{
+        authorization_request::parameters::ClientMetadata,
         object::ParsingErrorContext,
         response::{AuthorizationResponse, JwtAuthorizationResponse},
     };
@@ -211,27 +268,51 @@ pub fn build_encrypted_response(
 
     tracing::debug!("Building JWE encrypted response");
 
-    // Get encryption key from client metadata
-    let client_metadata = request
-        .client_metadata()
-        .context("missing client_metadata in request")?;
+    // Get client metadata
+    let client_metadata = ClientMetadata::resolve(request)?;
 
+    // Get encryption key from client metadata jwks
     let jwks = client_metadata
         .jwks()
         .parsing_error()
         .context("missing jwks in client_metadata")?;
 
     let keys: Vec<_> = jwks.keys.iter().collect();
-    let jwk = find_encryption_jwk(keys.into_iter())?;
+    let jwk_info = find_encryption_jwk(keys.into_iter())?;
+
+    tracing::debug!(
+        "Selected encryption key: alg={}, kid={:?}",
+        jwk_info.alg,
+        jwk_info.kid
+    );
+
+    // Get enc from encrypted_response_enc_values_supported (default: A128GCM per §8.3)
+    let enc_values = client_metadata.encrypted_response_enc_values_supported()?;
+    let enc = enc_values
+        .0
+        .first()
+        .cloned()
+        .unwrap_or_else(|| DEFAULT_ENC.to_string());
+
+    tracing::debug!("Using content encryption algorithm: {enc}");
 
     // Convert JWK to JSON for the builder
-    let jwk_json: Json = serde_json::to_value(&jwk).context("failed to serialize JWK")?;
+    let jwk_json: Json = serde_json::to_value(&jwk_info.jwk).context("failed to serialize JWK")?;
 
     // Build JWE per OID4VP 1.0 spec §8.3
-    let jwe = JweBuilder::new()
+    // - alg MUST equal the alg value of the chosen JWK
+    // - kid MUST be included if present in the JWK
+    let mut builder = JweBuilder::new()
         .payload(payload)
         .recipient_key_json(&jwk_json)?
-        .build()?;
+        .alg(&jwk_info.alg)
+        .enc(&enc);
+
+    if let Some(kid) = &jwk_info.kid {
+        builder = builder.kid(kid);
+    }
+
+    let jwe = builder.build()?;
 
     tracing::debug!("JWE response built successfully");
 
@@ -246,13 +327,15 @@ mod tests {
     use serde_json::json;
 
     fn test_jwk() -> Json {
-        // A test P-256 public key for encryption
+        // A test P-256 public key for encryption per OID4VP v1.0 §8.3
+        // Note: `alg` is required per spec
         json!({
             "kty": "EC",
             "crv": "P-256",
             "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
             "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
-            "use": "enc"
+            "use": "enc",
+            "alg": "ECDH-ES"
         })
     }
 
@@ -267,6 +350,7 @@ mod tests {
             .payload(payload)
             .recipient_key_json(&test_jwk())
             .unwrap()
+            .alg("ECDH-ES")
             .build()
             .unwrap();
 
@@ -282,6 +366,7 @@ mod tests {
             .payload(payload)
             .recipient_key_json(&test_jwk())
             .unwrap()
+            .alg("ECDH-ES")
             .enc("A256GCM")
             .build()
             .unwrap();
@@ -290,10 +375,17 @@ mod tests {
     }
 
     #[test]
+    fn jwe_builder_default_enc_is_a128gcm() {
+        // Per OID4VP v1.0 §8.3, default enc is A128GCM
+        assert_eq!(DEFAULT_ENC, "A128GCM");
+    }
+
+    #[test]
     fn jwe_builder_missing_payload() {
         let result = JweBuilder::new()
             .recipient_key_json(&test_jwk())
             .unwrap()
+            .alg("ECDH-ES")
             .build();
 
         assert!(result.is_err());
@@ -302,35 +394,58 @@ mod tests {
 
     #[test]
     fn jwe_builder_missing_key() {
-        let result = JweBuilder::new().payload(json!({"test": "value"})).build();
+        let result = JweBuilder::new()
+            .payload(json!({"test": "value"}))
+            .alg("ECDH-ES")
+            .build();
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("recipient_key"));
     }
 
     #[test]
+    fn jwe_builder_missing_alg() {
+        // Per OID4VP v1.0 §8.3, alg is required (must match JWK's alg)
+        let result = JweBuilder::new()
+            .payload(json!({"test": "value"}))
+            .recipient_key_json(&test_jwk())
+            .unwrap()
+            .build();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("alg"));
+    }
+
+    #[test]
     fn find_encryption_jwk_success() {
         let jwks = vec![
+            // Signing key (should be skipped)
             json!({
                 "kty": "EC",
                 "crv": "P-256",
                 "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
                 "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
-                "use": "sig"
+                "use": "sig",
+                "alg": "ES256"
             }),
+            // Encryption key (should be selected)
             json!({
                 "kty": "EC",
                 "crv": "P-256",
                 "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
                 "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
-                "use": "enc"
+                "use": "enc",
+                "alg": "ECDH-ES",
+                "kid": "enc-key-1"
             }),
         ];
 
         let keys: Vec<_> = jwks.iter().filter_map(|j| j.as_object()).collect();
 
-        let jwk = find_encryption_jwk(keys.into_iter()).unwrap();
-        assert_eq!(jwk.key_use(), Some("enc"));
+        let jwk_info = find_encryption_jwk(keys.into_iter()).unwrap();
+        assert_eq!(jwk_info.alg, "ECDH-ES");
+        assert_eq!(jwk_info.kid, Some("enc-key-1".to_string()));
+        assert_eq!(jwk_info.jwk.key_use(), Some("enc"));
     }
 
     #[test]
@@ -340,7 +455,26 @@ mod tests {
             "crv": "P-256",
             "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
             "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
-            "use": "sig"
+            "use": "sig",
+            "alg": "ES256"
+        })];
+
+        let keys: Vec<_> = jwks.iter().filter_map(|j| j.as_object()).collect();
+
+        let result = find_encryption_jwk(keys.into_iter());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn find_encryption_jwk_missing_alg() {
+        // Per OID4VP v1.0 §8.3, alg MUST be present in JWKs
+        let jwks = vec![json!({
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+            "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
+            "use": "enc"
+            // Missing alg!
         })];
 
         let keys: Vec<_> = jwks.iter().filter_map(|j| j.as_object()).collect();

@@ -1,8 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{anyhow, bail, Context, Error, Result};
+use base64::prelude::*;
 use parameters::{ClientMetadata, State};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value as Json};
 use url::Url;
 
 use crate::wallet::Wallet;
@@ -20,6 +22,9 @@ use super::{
     object::{ParsingErrorContext, UntypedObject},
     util::{base_request, AsyncHttpClient},
 };
+
+/// Required `typ` header value for Request Objects per OID4VP v1.0 Section 5.
+const REQUEST_OBJECT_TYP: &str = "oauth-authz-req+jwt";
 
 pub mod parameters;
 pub mod verification;
@@ -55,8 +60,13 @@ pub enum RequestIndirection {
 }
 
 impl AuthorizationRequest {
-    /// Validate the [AuthorizationRequest] according to the client_id scheme and return the parsed
-    /// [RequestObject].
+    /// Validate the [AuthorizationRequest] according to the Client Identifier Prefix and return
+    /// the parsed [AuthorizationRequestObject].
+    ///
+    /// Per OID4VP v1.0 Section 5, this validates:
+    /// - The `typ` header of Request Objects (MUST be `oauth-authz-req+jwt`)
+    /// - The Client Identifier Prefix rules per Section 5.9
+    /// - The response mode requirements
     ///
     /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.
     pub async fn validate<W: Wallet + ?Sized>(
@@ -80,12 +90,26 @@ impl AuthorizationRequest {
     }
 
     /// Returns the authorization request object and the JWT if it exists.
+    ///
+    /// Per OID4VP v1.0 Section 5, when a Request Object JWT is present,
+    /// the `typ` header MUST be `oauth-authz-req+jwt`.
+    ///
+    /// Note: For `redirect_uri` prefix, Section 5.9.3 states "The Authorization Request
+    /// MUST NOT be signed", so typ validation is relaxed for that case.
     pub async fn resolve_request<H: AsyncHttpClient>(
         &self,
         http_client: &H,
     ) -> Result<(AuthorizationRequestObject, Option<String>)> {
+        // Check if this is a redirect_uri prefix (unsigned requests per Section 5.9.3)
+        let is_redirect_uri_prefix = self
+            .client_id
+            .as_ref()
+            .map(|c| c.starts_with("redirect_uri:"))
+            .unwrap_or(false);
+
         match &self.request_indirection {
             RequestIndirection::ByValue { request: jwt } => {
+                validate_request_object_typ(jwt, is_redirect_uri_prefix)?;
                 let aro: AuthorizationRequestObject =
                     ssi::claims::jwt::decode_unverified::<UntypedObject>(jwt)
                         .context("unable to decode Authorization Request Object JWT")?
@@ -114,6 +138,7 @@ impl AuthorizationRequest {
                     )
                 }
 
+                validate_request_object_typ(&body, is_redirect_uri_prefix)?;
                 let aro: AuthorizationRequestObject =
                     ssi::claims::jwt::decode_unverified::<UntypedObject>(&body)
                         .context("unable to decode Authorization Request Object JWT")?
@@ -122,6 +147,7 @@ impl AuthorizationRequest {
                 Ok((aro, Some(body)))
             }
             RequestIndirection::Direct(untyped_object) => {
+                // Direct requests (unsigned) don't have a typ header to validate
                 let mut untyped_object = untyped_object.clone();
                 if let Some(client_id) = self.client_id.clone() {
                     untyped_object.insert(ClientId(client_id));
@@ -294,10 +320,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             .get::<ClientId>()
             .map(|c| c.parsing_error())
             .transpose()?;
-        let client_id_scheme = client_id
-            .as_ref()
-            .and_then(|c| c.resolve_scheme(&value).transpose())
-            .transpose()?;
+        let client_id_scheme = client_id.as_ref().and_then(|c| c.resolve_prefix());
 
         let redirect_uri = value.get::<RedirectUri>();
         let response_uri = value.get::<ResponseUri>();
@@ -362,6 +385,65 @@ impl Deref for AuthorizationRequestObject {
 impl DerefMut for AuthorizationRequestObject {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
+    }
+}
+
+/// Validates that a Request Object JWT has the required `typ` header.
+///
+/// Per OID4VP v1.0 Section 5:
+/// "Wallets MUST NOT process Request Objects where the `typ` Header Parameter
+/// is not present or does not have the value `oauth-authz-req+jwt`."
+///
+/// However, for `redirect_uri` prefix (Section 5.9.3), "The Authorization Request
+/// MUST NOT be signed", so we relax validation for that case since it shouldn't
+/// be a JWT at all per the spec.
+fn validate_request_object_typ(jwt: &str, is_redirect_uri_prefix: bool) -> Result<()> {
+    let (headers_b64, _, _) = ssi::claims::jws::split_jws(jwt).context("invalid JWT structure")?;
+
+    let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
+        .decode(headers_b64)
+        .context("JWT headers were not valid base64url")?;
+
+    let headers: Map<String, Json> =
+        serde_json::from_slice(&headers_json_bytes).context("JWT headers were not valid JSON")?;
+
+    let typ = headers.get("typ").and_then(|v| v.as_str());
+
+    match typ {
+        Some(t) if t == REQUEST_OBJECT_TYP => Ok(()),
+        Some(t) => {
+            if is_redirect_uri_prefix {
+                // For redirect_uri, the request shouldn't be signed per spec,
+                // so we're lenient about typ header
+                tracing::warn!(
+                    "Request Object has incorrect 'typ' header '{}' (expected '{}'), \
+                    but allowing for redirect_uri prefix per Section 5.9.3",
+                    t,
+                    REQUEST_OBJECT_TYP
+                );
+                Ok(())
+            } else {
+                bail!(
+                    "Request Object 'typ' header must be '{}', found '{}' (per OID4VP v1.0 Section 5)",
+                    REQUEST_OBJECT_TYP,
+                    t
+                )
+            }
+        }
+        None => {
+            if is_redirect_uri_prefix {
+                // For redirect_uri, the request shouldn't be signed per spec,
+                // so we're lenient about typ header
+                tracing::warn!(
+                    "Request Object missing 'typ' header (expected '{}'), \
+                    but allowing for redirect_uri prefix per Section 5.9.3",
+                    REQUEST_OBJECT_TYP
+                );
+                Ok(())
+            } else {
+                bail!("Request Object missing required 'typ' header (per OID4VP v1.0 Section 5)")
+            }
+        }
     }
 }
 
@@ -474,5 +556,48 @@ mod test {
         let req = AuthorizationRequest::from_url(url, &authorization_endpoint).unwrap();
         let expected = RequestIndirection::ByReference{request_uri:"https://labs-online-presentation-sample-app.vii.au01.mattr.global/v2/presentations/sessions/f7e72833-6f3f-4385-b9dd-3a4ea9453948/requests/f7286044-4c94-4ccf-9956-29a8cc6d0687".parse().unwrap()};
         assert_eq!(req.request_indirection, expected);
+    }
+
+    #[test]
+    fn validate_request_object_typ_valid() {
+        // JWT with correct typ header: {"alg":"none","typ":"oauth-authz-req+jwt"}
+        // Payload: {"client_id":"test"}
+        let jwt =
+            "eyJhbGciOiJub25lIiwidHlwIjoib2F1dGgtYXV0aHotcmVxK2p3dCJ9.eyJjbGllbnRfaWQiOiJ0ZXN0In0.";
+        assert!(validate_request_object_typ(jwt, false).is_ok());
+    }
+
+    #[test]
+    fn validate_request_object_typ_missing() {
+        // JWT without typ header: {"alg":"none"}
+        // Payload: {"client_id":"test"}
+        let jwt = "eyJhbGciOiJub25lIn0.eyJjbGllbnRfaWQiOiJ0ZXN0In0.";
+        let err = validate_request_object_typ(jwt, false).unwrap_err();
+        assert!(err.to_string().contains("missing required 'typ' header"));
+    }
+
+    #[test]
+    fn validate_request_object_typ_wrong_value() {
+        // JWT with wrong typ header: {"alg":"none","typ":"JWT"}
+        // Payload: {"client_id":"test"}
+        let jwt = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJjbGllbnRfaWQiOiJ0ZXN0In0.";
+        let err = validate_request_object_typ(jwt, false).unwrap_err();
+        assert!(err.to_string().contains("must be 'oauth-authz-req+jwt'"));
+    }
+
+    #[test]
+    fn validate_request_object_typ_missing_allowed_for_redirect_uri() {
+        // JWT without typ header: {"alg":"none"}
+        // For redirect_uri prefix, this should be allowed (with warning)
+        let jwt = "eyJhbGciOiJub25lIn0.eyJjbGllbnRfaWQiOiJ0ZXN0In0.";
+        assert!(validate_request_object_typ(jwt, true).is_ok());
+    }
+
+    #[test]
+    fn validate_request_object_typ_wrong_allowed_for_redirect_uri() {
+        // JWT with wrong typ header: {"alg":"none","typ":"JWT"}
+        // For redirect_uri prefix, this should be allowed (with warning)
+        let jwt = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJjbGllbnRfaWQiOiJ0ZXN0In0.";
+        assert!(validate_request_object_typ(jwt, true).is_ok());
     }
 }

@@ -14,6 +14,7 @@ const FORMAT_LDP_VP: &str = "ldp_vp";
 const FORMAT_AC_VC: &str = "ac_vc";
 const FORMAT_AC_VP: &str = "ac_vp";
 const FORMAT_MSO_MDOC: &str = "mso_mdoc";
+const FORMAT_DC_SD_JWT: &str = "dc+sd-jwt";
 
 /// A Json object of claim formats.
 pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
@@ -128,18 +129,19 @@ impl ClaimFormat {
     }
 }
 
-/// Claim format payload
+/// Claim format payload per OID4VP v1.0 Appendix B.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ClaimFormatPayload {
-    #[serde(rename = "alg")]
-    Alg(Vec<String>),
-    /// This variant is primarily used for `jwt_vc_json` and `jwt_vp_json`
-    /// claim presentation algorithm types supported by a wallet.
-    #[serde(rename = "alg_values_supported")]
-    AlgValuesSupported(Vec<String>),
-    /// This variant is primarily used for `ldp`, `ldp_vc`, `ldp_vp`, `ac_vc`, and `ac_vp`
-    #[serde(rename = "proof_type")]
-    ProofType(Vec<String>),
+    /// Algorithms supported for JWT-based credentials (jwt_vc_json, jwt_vp_json).
+    /// Per OID4VP v1.0 Section B.1.3.1.3.
+    #[serde(rename = "alg_values")]
+    AlgValues(Vec<String>),
+    /// Cryptographic suites supported for Data Integrity credentials (ldp_vc, ldp_vp).
+    /// Per OID4VP v1.0 Section B.1.3.2.3.
+    #[serde(rename = "proof_type_values")]
+    ProofTypeValues(Vec<String>),
+    /// Catch-all for other formats (mso_mdoc, dc+sd-jwt, etc.)
+    /// which may have different or multiple metadata parameters.
     #[serde(untagged)]
     Other(serde_json::Value),
 }
@@ -147,18 +149,18 @@ pub enum ClaimFormatPayload {
 impl ClaimFormatPayload {
     /// Adds an algorithm value to the list of supported algorithms.
     ///
-    /// This method is a no-op if self is not of type `AlgValuesSupported` or `Alg`.
+    /// This method is a no-op if self is not of type `AlgValues`.
     pub fn add_alg(&mut self, alg: String) {
-        if let Self::Alg(algs) | Self::AlgValuesSupported(algs) = self {
+        if let Self::AlgValues(algs) = self {
             algs.push(alg);
         }
     }
 
     /// Adds a proof type to the list of supported proof types.
     ///
-    /// This method is a no-op if self is not of type `ProofType`.
+    /// This method is a no-op if self is not of type `ProofTypeValues`.
     pub fn add_proof_type(&mut self, proof_type: String) {
-        if let Self::ProofType(proof_types) = self {
+        if let Self::ProofTypeValues(proof_types) = self {
             proof_types.push(proof_type);
         }
     }
@@ -227,6 +229,12 @@ pub enum ClaimFormatDesignation {
     /// the Credential format can be utilized with any type of Credential (or mdoc document types).
     MsoMDoc,
 
+    /// IETF SD-JWT VC format as defined in OID4VP v1.0 Section B.3.
+    ///
+    /// The Credential Format Identifier is `dc+sd-jwt` per Section B.3.1.
+    /// Metadata parameters include `sd-jwt_alg_values` and `kb-jwt_alg_values` per Section B.3.4.
+    DcSdJwt,
+
     /// Other claim format designations not covered by the above.
     ///
     /// The value of this variant is the name of the claim format designation.
@@ -247,6 +255,7 @@ impl ClaimFormatDesignation {
             FORMAT_AC_VC => Self::AcVc,
             FORMAT_AC_VP => Self::AcVp,
             FORMAT_MSO_MDOC => Self::MsoMDoc,
+            FORMAT_DC_SD_JWT => Self::DcSdJwt,
             _ => Self::Other(name.into_owned()),
         }
     }
@@ -264,6 +273,7 @@ impl ClaimFormatDesignation {
             Self::AcVc => FORMAT_AC_VC,
             Self::AcVp => FORMAT_AC_VP,
             Self::MsoMDoc => FORMAT_MSO_MDOC,
+            Self::DcSdJwt => FORMAT_DC_SD_JWT,
             Self::Other(other) => other,
         }
     }
@@ -281,6 +291,7 @@ impl ClaimFormatDesignation {
             Self::AcVc => Cow::Borrowed(FORMAT_AC_VC),
             Self::AcVp => Cow::Borrowed(FORMAT_AC_VP),
             Self::MsoMDoc => Cow::Borrowed(FORMAT_MSO_MDOC),
+            Self::DcSdJwt => Cow::Borrowed(FORMAT_DC_SD_JWT),
             Self::Other(other) => Cow::Owned(other),
         }
     }

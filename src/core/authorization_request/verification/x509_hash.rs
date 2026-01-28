@@ -16,7 +16,8 @@ use crate::core::{
 
 use super::verifier::Verifier;
 
-/// Default implementation of request validation for `client_id_scheme` `x509_hash`.
+/// Default implementation of request validation for `x509_hash` Client Identifier Prefix.
+/// Per OID4VP v1.0 Section 5.9.3.
 ///
 /// This validates that:
 /// 1. The JWT header contains an `x5c` array with at least one certificate

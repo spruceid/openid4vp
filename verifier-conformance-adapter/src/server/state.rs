@@ -14,7 +14,7 @@ use openid4vp::{
         metadata::{
             parameters::{
                 verifier::JWKs,
-                wallet::{AuthorizationEndpoint, ClientIdSchemesSupported, VpFormatsSupported},
+                wallet::{AuthorizationEndpoint, ClientIdPrefixesSupported, VpFormatsSupported},
             },
             WalletMetadata,
         },
@@ -145,7 +145,7 @@ impl AppState {
             "vct_values".to_string(),
             serde_json::json!(["urn:eudi:pid:1"]),
         );
-        credential_query.set_meta(Some(meta));
+        credential_query.set_meta(meta);
 
         DcqlQuery::new(NonEmptyVec::new(credential_query))
     }
@@ -353,7 +353,7 @@ fn create_wallet_metadata(authorization_endpoint: Url) -> Result<WalletMetadata>
         None,
     );
 
-    metadata.insert(ClientIdSchemesSupported(vec![ClientIdScheme(
+    metadata.insert(ClientIdPrefixesSupported(vec![ClientIdScheme(
         ClientIdScheme::X509_SAN_DNS.to_string(),
     )]));
 
