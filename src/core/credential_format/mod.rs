@@ -111,7 +111,7 @@ impl ClaimFormatPayload {
 }
 
 /// Credential Format Identifiers.
-
+///
 /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ClaimFormatDesignation {
