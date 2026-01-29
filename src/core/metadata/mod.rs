@@ -116,11 +116,8 @@ impl WalletMetadata {
 
         let alg_values_supported = vec![Algorithm::ES256.to_string()];
 
+        // jwt_vc_json covers both credentials AND presentations.
         let mut vp_formats_supported = ClaimFormatMap::new();
-        vp_formats_supported.insert(
-            ClaimFormatDesignation::JwtVpJson,
-            ClaimFormatPayload::AlgValues(alg_values_supported.clone()),
-        );
         vp_formats_supported.insert(
             ClaimFormatDesignation::JwtVcJson,
             ClaimFormatPayload::AlgValues(alg_values_supported.clone()),

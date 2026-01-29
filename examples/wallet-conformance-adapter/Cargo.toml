@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 authors = ["Spruce Systems, Inc."]
 
 [dependencies]
-openid4vp = { path = ".." }
+openid4vp = { path = "../.." }
 
 axum = { version = "0.7", features = ["macros"] }
 tower = "0.5"
