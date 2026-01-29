@@ -185,9 +185,6 @@ mod test {
               "vp_token"
             ],
             "vp_formats_supported": {
-              "jwt_vp_json": {
-                "alg_values": ["ES256"]
-              },
               "jwt_vc_json": {
                 "alg_values": ["ES256"]
               }
