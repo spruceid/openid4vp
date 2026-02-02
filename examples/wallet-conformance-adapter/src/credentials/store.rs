@@ -146,11 +146,17 @@ impl Default for CredentialStore {
     }
 }
 
-/// Check if two formats match (case-insensitive for SD-JWT variants)
+/// Check if two formats match
 fn format_matches(
     cred_format: &ClaimFormatDesignation,
     query_format: &ClaimFormatDesignation,
 ) -> bool {
+    // Direct comparison works for known variants
+    if cred_format == query_format {
+        return true;
+    }
+
+    // For Other variants, do case-insensitive comparison
     match (cred_format, query_format) {
         (ClaimFormatDesignation::Other(a), ClaimFormatDesignation::Other(b)) => {
             a.to_lowercase() == b.to_lowercase()
@@ -160,5 +166,6 @@ fn format_matches(
 }
 
 fn parse_format(format: &str) -> ClaimFormatDesignation {
-    ClaimFormatDesignation::Other(format.to_string())
+    // Use From<&str> to properly recognize known formats like dc+sd-jwt, mso_mdoc, etc.
+    ClaimFormatDesignation::from(format)
 }

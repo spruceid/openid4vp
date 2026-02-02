@@ -1,7 +1,8 @@
 pub mod authorization_request;
 pub mod credential_format;
 pub mod dcql_query;
-pub mod input_descriptor;
+pub mod iso_18013_7;
+pub mod jwe;
 pub mod metadata;
 pub mod object;
 pub mod response;

@@ -66,7 +66,7 @@ pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
     let metadata = serde_json::from_value(json!(
       {
         "authorization_endpoint": "openid4vp:",
-        "client_id_schemes_supported": [
+        "client_id_prefixes_supported": [
           "decentralized_identifier"
         ],
         "request_object_signing_alg_values_supported": [

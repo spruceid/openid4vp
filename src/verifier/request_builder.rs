@@ -10,7 +10,7 @@ use crate::{
         },
         dcql_query::DcqlQuery,
         metadata::{
-            parameters::wallet::{AuthorizationEndpoint, ClientIdSchemesSupported},
+            parameters::wallet::{AuthorizationEndpoint, ClientIdPrefixesSupported},
             WalletMetadata,
         },
         object::{ParsingErrorContext, TypedParameter, UntypedObject},
@@ -68,10 +68,9 @@ impl<'a> RequestBuilder<'a> {
         wallet_metadata: WalletMetadata,
     ) -> Result<Url> {
         let client_id = self.verifier.client.id();
-        let client_id_scheme = self.verifier.client.scheme();
+        let client_id_prefix = self.verifier.client.prefix();
 
         let _ = self.request_parameters.insert(client_id.clone());
-        let _ = self.request_parameters.insert(client_id_scheme.clone());
 
         let Some(dcql_query) = self.dcql_query else {
             bail!("dcql_query is required, see `with_dcql_query`")
@@ -106,13 +105,13 @@ impl<'a> RequestBuilder<'a> {
         }
 
         if !wallet_metadata
-            .get_or_default::<ClientIdSchemesSupported>()?
+            .get_or_default::<ClientIdPrefixesSupported>()?
             .0
-            .contains(&client_id_scheme)
+            .contains(&client_id_prefix)
         {
             bail!(
-                "the wallet does not support the client_id_scheme '{}'",
-                client_id_scheme.0
+                "the wallet does not support Client Identifier Prefix '{}'",
+                client_id_prefix.0
             )
         }
 
@@ -178,10 +177,8 @@ impl<'a> RequestBuilder<'a> {
         let uuid = Uuid::new_v4();
 
         let client_id = self.verifier.client.id();
-        let client_id_scheme = self.verifier.client.scheme();
 
         let _ = self.request_parameters.insert(client_id.clone());
-        let _ = self.request_parameters.insert(client_id_scheme.clone());
 
         let Some(dcql_query) = self.dcql_query else {
             bail!("dcql query is required, see `with_dcql_query`")

@@ -1,5 +1,5 @@
 use crate::core::{
-    authorization_request::AuthorizationRequestObject,
+    authorization_request::{parameters::ClientIdScheme, AuthorizationRequestObject},
     metadata::{parameters::wallet::RequestObjectSigningAlgValuesSupported, WalletMetadata},
     object::ParsingErrorContext,
 };
@@ -9,7 +9,8 @@ use serde_json::{Map, Value as Json};
 
 use ssi::jwk::JWKResolver;
 
-/// Default implementation of request validation for `client_id_scheme` `did`.
+/// Default implementation of request validation for `decentralized_identifier` Client Identifier Prefix.
+/// Per Section 5.9.3.
 pub async fn verify_with_resolver(
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
@@ -62,11 +63,12 @@ pub async fn verify_with_resolver(
         "expected a DID verification method in 'kid' header, received '{kid}'"
     ))?;
 
-    if client_id.0 != did {
-        bail!(
-            "DIDs from 'kid' ({did}) and 'client_id' ({}) do not match",
-            client_id.0
-        )
+    // Extract the DID from client_id, removing the "decentralized_identifier:" prefix if present
+    let prefix = format!("{}:", ClientIdScheme::DECENTRALIZED_IDENTIFIER);
+    let client_id_did = client_id.0.strip_prefix(&prefix).unwrap_or(&client_id.0);
+
+    if client_id_did != did {
+        bail!("DIDs from 'kid' ({did}) and 'client_id' ({client_id_did}) do not match",)
     }
 
     if let Some(dids) = trusted_dids {

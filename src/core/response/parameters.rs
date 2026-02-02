@@ -38,7 +38,7 @@ impl From<IdToken> for Json {
 /// - Keys are the credential query `id` values from the DCQL query
 /// - Values are arrays of Verifiable Presentations matching that query
 ///
-/// From [OID4VP Section 6.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1):
+/// From [OID4VP Section 8.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1):
 /// > `vp_token`: REQUIRED when the Response Type value is `vp_token`. JSON object with
 /// > keys matching the `id` values from the Credential Queries in the `dcql_query` and
 /// > values being arrays of Verifiable Presentations.

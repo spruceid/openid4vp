@@ -5,7 +5,7 @@ use openid4vp::core::{
     metadata::{
         parameters::wallet::{
             AuthorizationEncryptionAlgValuesSupported, AuthorizationEncryptionEncValuesSupported,
-            AuthorizationEndpoint, ClientIdSchemesSupported, ResponseTypesSupported,
+            AuthorizationEndpoint, ClientIdPrefixesSupported, ResponseTypesSupported,
             VpFormatsSupported,
         },
         WalletMetadata,
@@ -36,7 +36,7 @@ pub async fn wallet_metadata(State(state): State<AppState>) -> Json<Value> {
     let mut metadata = WalletMetadata::new(authorization_endpoint, vp_formats_supported, None);
 
     metadata.insert(ResponseTypesSupported(vec![ResponseType::VpToken]));
-    metadata.insert(ClientIdSchemesSupported(vec![ClientIdScheme(
+    metadata.insert(ClientIdPrefixesSupported(vec![ClientIdScheme(
         "redirect_uri".to_string(),
     )]));
     metadata.insert(AuthorizationEncryptionAlgValuesSupported(vec![
