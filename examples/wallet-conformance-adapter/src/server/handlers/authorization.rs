@@ -10,6 +10,8 @@ use openid4vp::core::{
         AuthorizationRequest, AuthorizationRequestObject,
     },
     dcql_query::DcqlQuery,
+    jwe::{find_encryption_jwk, EncryptionJwkInfo, JweBuilder},
+    object::ParsingErrorContext,
     response::{parameters::VpToken, UnencodedAuthorizationResponse},
     util::ReqwestClient,
 };
@@ -17,7 +19,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::crypto::encrypt_jwe;
 use crate::server::AppState;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -428,9 +429,9 @@ async fn submit_direct_post_jwt(
         payload["state"] = Value::String(state_val.clone());
     }
 
-    // Get verifier's public key
-    let verifier_jwk = match get_verifier_encryption_key(request_object).await {
-        Ok(key) => key,
+    // Get verifier's public key from client_metadata
+    let jwk_info = match get_verifier_encryption_key(request_object) {
+        Ok(info) => info,
         Err(e) => {
             error!("Failed to get verifier encryption key: {}", e);
             return error_response(
@@ -442,8 +443,31 @@ async fn submit_direct_post_jwt(
         }
     };
 
-    // Create JWE (ECDH-ES with A256GCM)
-    let jwe = match encrypt_jwe(&payload, &verifier_jwk) {
+    // Convert JWK to JSON Value for the builder
+    let verifier_jwk: Value = match serde_json::to_value(&jwk_info.jwk) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Failed to serialize JWK: {}", e);
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "encryption_error",
+                &e.to_string(),
+                original_state.as_deref(),
+            );
+        }
+    };
+
+    // Build JWE per OID4VP v1.0 §8.3 (alg from JWK, enc default A128GCM)
+    let mut builder = JweBuilder::new().payload(payload).alg(&jwk_info.alg);
+
+    if let Some(ref kid) = jwk_info.kid {
+        builder = builder.kid(kid);
+    }
+
+    let jwe = match builder
+        .recipient_key_json(&verifier_jwk)
+        .and_then(|b| b.build())
+    {
         Ok(jwe) => jwe,
         Err(e) => {
             error!("JWE encryption failed: {}", e);
@@ -525,28 +549,14 @@ async fn submit_direct_post_jwt(
 }
 
 /// Get verifier's encryption key from client_metadata
-async fn get_verifier_encryption_key(
+fn get_verifier_encryption_key(
     request: &AuthorizationRequestObject,
-) -> anyhow::Result<Value> {
-    let client_metadata = request.client_metadata()?;
+) -> anyhow::Result<EncryptionJwkInfo> {
+    let client_metadata = request.client_metadata().parsing_error()?;
+    let jwks = client_metadata.jwks().parsing_error()?;
+    let keys: Vec<_> = jwks.keys.iter().collect();
 
-    // Try jwks first using the typed accessor
-    if let Some(jwks_result) = client_metadata.jwks() {
-        let jwks = jwks_result?;
-
-        // Find encryption key (use == "enc")
-        for key_map in &jwks.keys {
-            if key_map.get("use").and_then(|v| v.as_str()) == Some("enc") {
-                return Ok(Value::Object(key_map.clone()));
-            }
-        }
-        // Fall back to first key
-        if let Some(key_map) = jwks.keys.first() {
-            return Ok(Value::Object(key_map.clone()));
-        }
-    }
-
-    anyhow::bail!("No encryption key found in client_metadata (jwks)")
+    find_encryption_jwk(keys.into_iter())
 }
 
 /// Create an error response

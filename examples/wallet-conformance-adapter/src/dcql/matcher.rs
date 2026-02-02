@@ -42,7 +42,7 @@ impl<'a> DcqlMatcher<'a> {
                         .all(|cred_id| selection.presentations.contains_key(cred_id))
                 });
 
-                if !satisfied && cred_set.required().unwrap_or(true) {
+                if !satisfied && cred_set.is_required() {
                     warn!("Required credential set not satisfied");
                     // Continue anyway for conformance testing
                 }
@@ -66,22 +66,22 @@ impl<'a> DcqlMatcher<'a> {
         let format = query.format();
 
         // Extract VCT values if present (for SD-JWT VC)
-        let vct_values = query.meta().and_then(|meta| {
-            meta.get("vct_values")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect::<Vec<_>>()
-                })
-        });
+        let vct_values = query
+            .meta()
+            .get("vct_values")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect::<Vec<_>>()
+            });
 
         // Extract doctype if present (for mso_mdoc)
-        let doctype = query.meta().and_then(|meta| {
-            meta.get("doctype_value")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-        });
+        let doctype = query
+            .meta()
+            .get("doctype_value")
+            .and_then(|v| v.as_str())
+            .map(String::from);
 
         // Extract required claims from the query
         let required_claims = self.extract_required_claims(query);

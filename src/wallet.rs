@@ -9,7 +9,7 @@ use crate::core::{
         AuthorizationRequestObject,
     },
     metadata::WalletMetadata,
-    response::{AuthorizationResponse, PostRedirection},
+    response::AuthorizationResponse,
     util::{base_request, AsyncHttpClient},
 };
 
@@ -85,8 +85,24 @@ pub trait Wallet: RequestVerifier + Sync {
             bail!("authorization response request was unsuccessful (status: {status}): {body}")
         }
 
-        Ok(serde_json::from_str(&body)
-            .ok()
-            .map(|PostRedirection { redirect_uri }| redirect_uri))
+        // Per OID4VP spec section 8.2:
+        // - Response MUST be JSON with Content-Type application/json
+        // - `redirect_uri` is OPTIONAL
+        // - If not present, wallet is not required to perform further steps
+        if body.trim().is_empty() {
+            return Ok(None);
+        }
+
+        let response: serde_json::Value =
+            serde_json::from_str(&body).context("verifier response is not valid JSON")?;
+
+        let redirect_uri = response
+            .get("redirect_uri")
+            .and_then(|v| v.as_str())
+            .map(Url::parse)
+            .transpose()
+            .context("invalid redirect_uri in verifier response")?;
+
+        Ok(redirect_uri)
     }
 }

@@ -24,7 +24,7 @@ use super::request_signer::RequestSigner;
 pub trait Client: Debug {
     fn id(&self) -> &ClientId;
 
-    fn scheme(&self) -> ClientIdScheme;
+    fn prefix(&self) -> ClientIdScheme;
 
     async fn generate_request_object_jwt(
         &self,
@@ -62,8 +62,8 @@ impl DIDClient {
             )
         }
 
-        // client_id for decentralized_identifier scheme must be prefixed with "decentralized_identifier:"
-        // See https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3
+        // Per OID4VP v1.0 Section 5.9.3, client_id for decentralized_identifier prefix
+        // must be "decentralized_identifier:<DID>"
         let prefixed_id = format!("{}:{}", ClientIdScheme::DECENTRALIZED_IDENTIFIER, id);
         Ok(Self {
             id: ClientId(prefixed_id),
@@ -112,8 +112,8 @@ impl X509SanDnsClient {
         } else {
             bail!("x509 certificate does not contain DNS Subject Alternative Name");
         };
-        // client_id for x509_san_dns scheme must be prefixed with "x509_san_dns:"
-        // See https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3
+        // Per OID4VP v1.0 Section 5.9.3, client_id for x509_san_dns prefix
+        // must be "x509_san_dns:<DNS SAN>"
         let prefixed_id = format!("{}:{}", ClientIdScheme::X509_SAN_DNS, id);
         Ok(X509SanDnsClient {
             id: ClientId(prefixed_id),
@@ -129,7 +129,7 @@ impl Client for DIDClient {
         &self.id
     }
 
-    fn scheme(&self) -> ClientIdScheme {
+    fn prefix(&self) -> ClientIdScheme {
         ClientIdScheme(ClientIdScheme::DECENTRALIZED_IDENTIFIER.to_string())
     }
 
@@ -156,7 +156,7 @@ impl Client for X509SanDnsClient {
         &self.id
     }
 
-    fn scheme(&self) -> ClientIdScheme {
+    fn prefix(&self) -> ClientIdScheme {
         ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string())
     }
 

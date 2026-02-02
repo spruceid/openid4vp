@@ -7,8 +7,8 @@ license = "MIT OR Apache-2.0"
 authors = ["Spruce Systems, Inc."]
 
 [dependencies]
-openid4vp = { path = ".." }
-ssi = { version = "0.12", features = ["secp256r1"] }
+openid4vp = { path = "../.." }
+ssi = { version = "0.11", default-features = false, features = ["secp256r1"] }
 
 axum = { version = "0.7", features = ["macros"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "timeout"] }

@@ -1,10 +1,10 @@
 use anyhow::{bail, Context, Result};
 use base64::prelude::*;
 use serde_json::{Map, Value as Json};
+use sha2::{Digest, Sha256};
 use tracing::debug;
 use x509_cert::{
     der::{referenced::OwnedToRef, Decode},
-    ext::pkix::{name::GeneralName, SubjectAltName},
     Certificate,
 };
 
@@ -16,8 +16,20 @@ use crate::core::{
 
 use super::verifier::Verifier;
 
-/// Default implementation of request validation for `x509_san_dns` Client Identifier Prefix.
+/// Default implementation of request validation for `x509_hash` Client Identifier Prefix.
 /// Per OID4VP v1.0 Section 5.9.3.
+///
+/// This validates that:
+/// 1. The JWT header contains an `x5c` array with at least one certificate
+/// 2. The base64url-encoded SHA-256 hash of the leaf certificate matches the client_id
+/// 3. The JWT signature is valid using the leaf certificate's public key
+///
+/// # Arguments
+///
+/// * `wallet_metadata` - The wallet's metadata, used to check supported signing algorithms
+/// * `request_object` - The decoded authorization request object
+/// * `request_jwt` - The original JWT string
+/// * `trusted_roots` - Optional trusted root certificates for chain validation (not yet implemented)
 pub fn validate<V: Verifier>(
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
@@ -27,10 +39,13 @@ pub fn validate<V: Verifier>(
     let client_id = request_object
         .client_id()
         .context("client_id is required")?;
-    let client_id_source = client_id
+
+    // Strip the "x509_hash:" prefix if present
+    let expected_hash = client_id
         .0
-        .strip_prefix(&format!("{}:", ClientIdScheme::X509_SAN_DNS))
+        .strip_prefix(&format!("{}:", ClientIdScheme::X509_HASH))
         .unwrap_or(&client_id.0);
+
     let (headers_b64, body_b64, sig_b64) = ssi::claims::jws::split_jws(&request_jwt)?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
@@ -74,30 +89,20 @@ pub fn validate<V: Verifier>(
 
     debug!("Leaf certificate: {leaf_cert:?}");
 
-    if !leaf_cert
-        .tbs_certificate
-        .filter::<SubjectAltName>()
-        .filter_map(|r| match r {
-            Ok((_crit, san)) => Some(san.0.into_iter()),
-            Err(e) => {
-                debug!("unable to parse SubjectAlternativeName from DER: {e}");
-                None
-            }
-        })
-        .flatten()
-        .filter_map(|gn| match gn {
-            GeneralName::DnsName(dns) => Some(dns.to_string()),
-            gn => {
-                debug!("found non-DNS SAN: {gn:?}");
-                None
-            }
-        })
-        .any(|dns| {
-            debug!("comparing SAN '{dns}' to client_id '{client_id_source}'");
-            dns == client_id_source
-        })
-    {
-        bail!("client_id does not match any DNS Subject Alternative Name")
+    // Compute SHA-256 hash of the DER-encoded certificate and base64url encode
+    let computed_hash = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(&leaf_cert_der));
+
+    debug!(
+        "x509_hash verification: expected='{}', computed='{}'",
+        expected_hash, computed_hash
+    );
+
+    if computed_hash != expected_hash {
+        bail!(
+            "client_id hash '{}' does not match certificate hash '{}'",
+            expected_hash,
+            computed_hash
+        );
     }
 
     if let Some(_trusted_roots) = trusted_roots {

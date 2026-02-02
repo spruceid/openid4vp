@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 
 use anyhow::{Error, Result};
 use parameters::wallet::{
-    ClientIdSchemesSupported, RequestObjectSigningAlgValuesSupported, ResponseTypesSupported,
+    ClientIdPrefixesSupported, RequestObjectSigningAlgValuesSupported, ResponseTypesSupported,
 };
 use serde::{Deserialize, Serialize};
 use ssi::jwk::Algorithm;
@@ -68,21 +68,21 @@ impl WalletMetadata {
         Ok(())
     }
 
-    /// Add a client ID scheme to the list of the client ID schemes supported.
+    /// Add a client ID prefix to the list of the client ID prefixes supported.
     ///
-    /// This method will construct a `client_id_schemes_supported` property in the
+    /// This method will construct a `client_id_prefixes_supported` property in the
     /// wallet metadata if none exists previously, otherwise, this method will append
-    /// the client ID schemes to the existing list of the client ID schemes supported.
-    pub fn add_client_id_schemes_supported(
+    /// the client ID prefixes to the existing list.
+    pub fn add_client_id_prefixes_supported(
         &mut self,
-        client_id_schemes: &[ClientIdScheme],
+        client_id_prefixes: &[ClientIdScheme],
     ) -> Result<()> {
-        let mut supported = self.0.get_or_default::<ClientIdSchemesSupported>()?;
+        let mut supported = self.0.get_or_default::<ClientIdPrefixesSupported>()?;
 
-        // Insert the scheme.
-        supported.0.extend_from_slice(client_id_schemes);
+        // Insert the prefix.
+        supported.0.extend_from_slice(client_id_prefixes);
 
-        // Insert the updated client IDs schemes supported.
+        // Insert the updated client ID prefixes supported.
         self.0.insert(supported);
 
         Ok(())
@@ -116,14 +116,11 @@ impl WalletMetadata {
 
         let alg_values_supported = vec![Algorithm::ES256.to_string()];
 
+        // jwt_vc_json covers both credentials AND presentations.
         let mut vp_formats_supported = ClaimFormatMap::new();
         vp_formats_supported.insert(
-            ClaimFormatDesignation::JwtVpJson,
-            ClaimFormatPayload::AlgValuesSupported(alg_values_supported.clone()),
-        );
-        vp_formats_supported.insert(
             ClaimFormatDesignation::JwtVcJson,
-            ClaimFormatPayload::AlgValuesSupported(alg_values_supported.clone()),
+            ClaimFormatPayload::AlgValues(alg_values_supported.clone()),
         );
         let vp_formats_supported = VpFormatsSupported(vp_formats_supported);
 
@@ -188,11 +185,8 @@ mod test {
               "vp_token"
             ],
             "vp_formats_supported": {
-              "jwt_vp_json": {
-                "alg_values_supported": ["ES256"]
-              },
               "jwt_vc_json": {
-                "alg_values_supported": ["ES256"]
+                "alg_values": ["ES256"]
               }
             },
             "request_object_signing_alg_values_supported": [
