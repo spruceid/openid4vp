@@ -19,17 +19,17 @@ impl VpFormats {
     ///
     /// For example, the security method would need to match one of the `alg`
     /// values in the claim format payload.
+    ///
+    /// - For jwt_vc_json/jwt_vp_json: matches against `alg_values` (Section B.1.3.1.3)
+    /// - For ldp_vc/ldp_vp: matches against `proof_type_values` (Section B.1.3.2.3)
     pub fn supports_security_method(
         &self,
         format: &ClaimFormatDesignation,
         security_method: &String,
     ) -> bool {
         match self.0.get(format) {
-            Some(ClaimFormatPayload::Alg(alg_values))
-            | Some(ClaimFormatPayload::AlgValuesSupported(alg_values)) => {
-                alg_values.contains(security_method)
-            }
-            Some(ClaimFormatPayload::ProofType(proof_types)) => {
+            Some(ClaimFormatPayload::AlgValues(alg_values)) => alg_values.contains(security_method),
+            Some(ClaimFormatPayload::ProofTypeValues(proof_types)) => {
                 proof_types.contains(security_method)
             }
             _ => false,
@@ -38,7 +38,7 @@ impl VpFormats {
 }
 
 impl TypedParameter for VpFormats {
-    const KEY: &'static str = "vp_formats";
+    const KEY: &'static str = "vp_formats_supported";
 }
 
 impl TryFrom<Json> for VpFormats {
@@ -83,14 +83,18 @@ impl From<JWKs> for Json {
     }
 }
 
+/// Encrypted response enc values supported by the verifier.
+///
+/// Per OID4VP v1.0 Section 5.1, this is an array of JWE `enc` algorithms.
+/// Default is `A128GCM` if not specified.
 #[derive(Debug, Clone)]
-pub struct RequireSignedRequestObject(pub bool);
+pub struct EncryptedResponseEncValuesSupported(pub Vec<String>);
 
-impl TypedParameter for RequireSignedRequestObject {
-    const KEY: &'static str = "require_signed_request_object";
+impl TypedParameter for EncryptedResponseEncValuesSupported {
+    const KEY: &'static str = "encrypted_response_enc_values_supported";
 }
 
-impl TryFrom<Json> for RequireSignedRequestObject {
+impl TryFrom<Json> for EncryptedResponseEncValuesSupported {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
@@ -98,72 +102,16 @@ impl TryFrom<Json> for RequireSignedRequestObject {
     }
 }
 
-impl From<RequireSignedRequestObject> for Json {
-    fn from(value: RequireSignedRequestObject) -> Json {
-        Json::Bool(value.0)
+impl From<EncryptedResponseEncValuesSupported> for Json {
+    fn from(value: EncryptedResponseEncValuesSupported) -> Json {
+        Json::Array(value.0.into_iter().map(Json::String).collect())
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct AuthorizationEncryptedResponseAlg(pub String);
-
-impl TypedParameter for AuthorizationEncryptedResponseAlg {
-    const KEY: &'static str = "authorization_encrypted_response_alg";
-}
-
-impl TryFrom<Json> for AuthorizationEncryptedResponseAlg {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(serde_json::from_value(value)?))
-    }
-}
-
-impl From<AuthorizationEncryptedResponseAlg> for Json {
-    fn from(value: AuthorizationEncryptedResponseAlg) -> Json {
-        Json::String(value.0)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AuthorizationEncryptedResponseEnc(pub String);
-
-impl TypedParameter for AuthorizationEncryptedResponseEnc {
-    const KEY: &'static str = "authorization_encrypted_response_enc";
-}
-
-impl TryFrom<Json> for AuthorizationEncryptedResponseEnc {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(serde_json::from_value(value)?))
-    }
-}
-
-impl From<AuthorizationEncryptedResponseEnc> for Json {
-    fn from(value: AuthorizationEncryptedResponseEnc) -> Json {
-        Json::String(value.0)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AuthorizationSignedResponseAlg(pub ssi::crypto::Algorithm);
-
-impl TypedParameter for AuthorizationSignedResponseAlg {
-    const KEY: &'static str = "authorization_signed_response_alg";
-}
-
-impl TryFrom<Json> for AuthorizationSignedResponseAlg {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(serde_json::from_value(value)?))
-    }
-}
-
-impl From<AuthorizationSignedResponseAlg> for Json {
-    fn from(value: AuthorizationSignedResponseAlg) -> Json {
-        Json::String(value.0.to_string())
+impl Default for EncryptedResponseEncValuesSupported {
+    fn default() -> Self {
+        // Default to A128GCM per OID4VP v1.0 Section 8.3
+        Self(vec!["A128GCM".to_string()])
     }
 }
 
@@ -179,6 +127,10 @@ mod test {
     use super::*;
 
     fn metadata() -> UntypedObject {
+        // OID4VP v1.0 compliant client_metadata example
+        // Per Section 5.1 and 8.3:
+        // - jwks contains keys with `alg` parameter (required for encryption)
+        // - encrypted_response_enc_values_supported specifies enc algorithms
         serde_json::from_value(json!(
         {
             "jwks":{
@@ -189,21 +141,20 @@ mod test {
                      "x":"MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4",
                      "y":"4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM",
                      "use":"enc",
+                     "alg":"ECDH-ES",
                      "kid":"1"
                   }
                ]
             },
-            "authorization_encrypted_response_alg":"ECDH-ES",
-            "authorization_encrypted_response_enc":"A256GCM",
-            "require_signed_request_object":true,
-            "vp_formats":{ "mso_mdoc":{} }
+            "encrypted_response_enc_values_supported": ["A128GCM", "A256GCM"],
+            "vp_formats_supported":{ "mso_mdoc":{} }
         }
         ))
         .unwrap()
     }
 
     #[test]
-    fn vp_formats() {
+    fn vp_formats_supported() {
         let VpFormats(formats) = metadata().get().unwrap().unwrap();
 
         let mso_doc = formats
@@ -233,27 +184,19 @@ mod test {
             "4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM"
         );
         assert_eq!(jwk.get("use").unwrap(), "enc");
+        assert_eq!(jwk.get("alg").unwrap(), "ECDH-ES");
         assert_eq!(jwk.get("kid").unwrap(), "1");
     }
 
     #[test]
-    fn require_signed_request_object() {
-        let exp = true;
-        let RequireSignedRequestObject(b) = metadata().get().unwrap().unwrap();
-        assert_eq!(b, exp);
+    fn encrypted_response_enc_values_supported() {
+        let EncryptedResponseEncValuesSupported(encs) = metadata().get().unwrap().unwrap();
+        assert_eq!(encs, vec!["A128GCM", "A256GCM"]);
     }
 
     #[test]
-    fn authorization_encrypted_response_alg() {
-        let exp = "ECDH-ES";
-        let AuthorizationEncryptedResponseAlg(s) = metadata().get().unwrap().unwrap();
-        assert_eq!(s, exp);
-    }
-
-    #[test]
-    fn authorization_encrypted_response_enc() {
-        let exp = "A256GCM";
-        let AuthorizationEncryptedResponseEnc(s) = metadata().get().unwrap().unwrap();
-        assert_eq!(s, exp);
+    fn encrypted_response_enc_values_supported_default() {
+        let default = EncryptedResponseEncValuesSupported::default();
+        assert_eq!(default.0, vec!["A128GCM"]);
     }
 }

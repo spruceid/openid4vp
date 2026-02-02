@@ -1,0 +1,22 @@
+[package]
+name = "cli-verifier"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal CLI Verifier for OID4VP v1.0 protocol testing"
+
+[dependencies]
+openid4vp = { path = "../.." }
+anyhow = "1.0"
+async-trait = "0.1"
+axum = "0.7"
+base64 = "0.21"
+clap = { version = "4.4", features = ["derive"] }
+qrcode = "0.14"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.32", features = ["full", "signal"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = { version = "2.4", features = ["serde"] }
+uuid = { version = "1.2", features = ["v4", "serde"] }

@@ -3,7 +3,6 @@ use super::object::UntypedObject;
 use anyhow::{Context, Error, Result};
 use parameters::State;
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 use self::parameters::VpToken;
 
@@ -15,7 +14,7 @@ pub mod parameters;
 /// - `Unencoded`: Plain response with `vp_token` and optional `state`
 /// - `Jwt`: Encrypted response as JWE (for `direct_post.jwt` response mode)
 ///
-/// See [OID4VP Section 6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6)
+/// See [OID4VP Section 8](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AuthorizationResponse {
@@ -68,7 +67,7 @@ struct JsonEncodedAuthorizationResponse {
 /// > The Authorization Response MUST contain the `vp_token` parameter.
 /// > The `state` parameter MUST be included if it was present in the Authorization Request.
 ///
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1
+/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UnencodedAuthorizationResponse {
     /// The VP Token containing credential presentations.
@@ -142,11 +141,6 @@ impl JwtAuthorizationResponse {
         serde_urlencoded::to_string(self)
             .context("failed to encode response as 'application/x-www-form-urlencoded'")
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PostRedirection {
-    pub redirect_uri: Url,
 }
 
 impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
