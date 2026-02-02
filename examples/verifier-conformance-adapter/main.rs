@@ -86,25 +86,15 @@ fn print_startup_banner(args: &Args, oidf: &OidfConfig) {
     println!("║    GET  {}/status/{{session_id}}", base_url);
     println!("║                                                                              ║");
     println!("╠══════════════════════════════════════════════════════════════════════════════╣");
-    println!("║  OIDF Test Configuration (signing_jwk):                                      ║");
-    println!("║                                                                              ║");
-    println!("║  \"x\":   \"{}\"", oidf.x);
-    println!("║  \"y\":   \"{}\"", oidf.y);
-    println!("║  \"d\":   \"{}\"", oidf.d);
-    println!("║  \"x5c\": [\"{}\"]", truncate_middle(&oidf.x5c, 60));
-    println!("║                                                                              ║");
-    println!("║  Full x5c (copy this):                                                       ║");
-    println!("║  {}", oidf.x5c);
-    println!("║                                                                              ║");
+    println!("║  OIDF Test Configuration (signing_jwk) - Copy the JSON below:               ║");
     println!("╚══════════════════════════════════════════════════════════════════════════════╝");
     println!();
-}
-
-fn truncate_middle(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        let half = (max_len - 3) / 2;
-        format!("{}...{}", &s[..half], &s[s.len() - half..])
-    }
+    println!("{{");
+    println!("  \"x\": \"{}\",", oidf.x);
+    println!("  \"y\": \"{}\",", oidf.y);
+    println!("  \"d\": \"{}\",", oidf.d);
+    println!("  \"x5c\": [\"{}\"]", oidf.x5c);
+    println!("}}");
+    println!();
+    println!();
 }

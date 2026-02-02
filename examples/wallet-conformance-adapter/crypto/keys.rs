@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use p256::ecdsa::{Signature, SigningKey, signature::Signer};
+use p256::ecdsa::{signature::Signer, Signature, SigningKey};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::LazyLock;
@@ -11,20 +11,22 @@ use std::sync::LazyLock;
 static HOLDER_KEY: LazyLock<SigningKey> = LazyLock::new(|| {
     // d parameter from the JWK (base64url-decoded to 32 bytes)
     let d_b64 = "DVt4adukimqmbPWT2g8amdJWUCBRuDOHorjeNQ0xTZk";
-    let d_bytes = URL_SAFE_NO_PAD.decode(d_b64).expect("Failed to decode d parameter");
+    let d_bytes = URL_SAFE_NO_PAD
+        .decode(d_b64)
+        .expect("Failed to decode d parameter");
 
-    let d_array: [u8; 32] = d_bytes.as_slice()
+    let d_array: [u8; 32] = d_bytes
+        .as_slice()
         .try_into()
         .expect("Invalid key length - expected 32 bytes");
 
-    SigningKey::from_bytes(&d_array.into())
-        .expect("Failed to create signing key")
+    SigningKey::from_bytes(&d_array.into()).expect("Failed to create signing key")
 });
 
 /// Get the public JWK for the JWKS endpoint
 pub fn public_jwk() -> Value {
-    use p256::PublicKey;
     use p256::elliptic_curve::sec1::ToEncodedPoint;
+    use p256::PublicKey;
 
     let public_key: PublicKey = HOLDER_KEY.verifying_key().into();
     let encoded_point = public_key.to_encoded_point(false);
