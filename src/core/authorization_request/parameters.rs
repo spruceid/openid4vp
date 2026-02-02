@@ -123,18 +123,18 @@ impl Deref for ClientIdScheme {
 /// client_metadata: OPTIONAL. A JSON object containing the Verifier metadata values.
 /// It MUST be UTF-8 encoded. The following metadata parameters MAY be used:
 ///
-/// jwks: OPTIONAL. A JWKS as defined in [RFC7591]. It MAY contain one or more public keys, such as those used by the Wallet as an input to a key agreement that may be used for encryption of the Authorization Response (see Section 7.3), or where the Wallet will require the public key of the Verifier to generate the Verifiable Presentation. This allows the Verifier to pass ephemeral keys specific to this Authorization Request. Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
+/// jwks: OPTIONAL. A JWKS as defined in RFC7591. It MAY contain one or more public keys, such as those used by the Wallet as an input to a key agreement that may be used for encryption of the Authorization Response (see Section 7.3), or where the Wallet will require the public key of the Verifier to generate the Verifiable Presentation. This allows the Verifier to pass ephemeral keys specific to this Authorization Request. Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
 /// vp_formats: REQUIRED when not available to the Wallet via another mechanism. As defined in Section 10.1.
-/// authorization_signed_response_alg: OPTIONAL. As defined in [JARM].
-/// authorization_encrypted_response_alg: OPTIONAL. As defined in [JARM].
-/// authorization_encrypted_response_enc: OPTIONAL. As defined in [JARM].
+/// authorization_signed_response_alg: OPTIONAL. As defined in JARM.
+/// authorization_encrypted_response_alg: OPTIONAL. As defined in JARM.
+/// authorization_encrypted_response_enc: OPTIONAL. As defined in JARM.
 /// Authoritative data the Wallet is able to obtain about the Client from other sources,
 /// for example those from an OpenID Federation Entity Statement, take precedence over the
 /// values passed in client_metadata. Other metadata parameters MUST be ignored unless a
 /// profile of this specification explicitly defines them as usable in the client_metadata parameter.
 ///
 ///
-/// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.4
+/// See reference: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.4>
 ///
 #[derive(Debug, Clone)]
 pub struct ClientMetadata(pub UntypedObject);
@@ -183,11 +183,11 @@ impl ClientMetadata {
     /// Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
     ///
     ///
-    /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.1
+    /// See reference: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.1>
     ///
     /// The jwks_uri or jwks metadata parameters can be used by clients to register their public encryption keys.
     ///
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-4
+    /// See: <https://openid.net/specs/oauth-v2-jarm-final.html#section-3-4>
     ///
     pub fn jwks(&self) -> Option<Result<JWKs, Error>> {
         self.0.get()
@@ -199,7 +199,7 @@ impl ClientMetadata {
     ///
     /// As defined in [Section 10.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#client_metadata_parameters).
     ///
-    /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.2
+    /// See reference: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.2>
     pub fn vp_formats(&self) -> Result<VpFormats, Error> {
         self.0.get().ok_or(anyhow!("missing vp_formats"))?
     }
@@ -220,8 +220,8 @@ impl ClientMetadata {
     /// Per OID4VP v1.0 Section 5.1, this is specified via `encrypted_response_enc_values_supported`.
     /// If not specified, defaults to `["A128GCM"]` per Section 8.3.
     ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3
+    /// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1>
+    /// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3>
     ///
     pub fn encrypted_response_enc_values_supported(
         &self,
@@ -546,7 +546,7 @@ impl From<ExpectedOrigins> for Json {
 /// - `type`: String identifying the transaction data type
 /// - `credential_ids`: Non-empty array of strings referencing requested Credentials
 ///
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1>
 #[derive(Debug, Clone)]
 pub struct TransactionData(pub Vec<String>);
 
@@ -579,7 +579,7 @@ impl From<TransactionData> for Json {
 /// - `data`: Object or string containing the attestation
 /// - `credential_ids`: Optional array of referenced Credential identifiers
 ///
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1>
 #[derive(Debug, Clone)]
 pub struct VerifierInfo(pub Vec<Json>);
 
@@ -607,7 +607,7 @@ impl From<VerifierInfo> for Json {
 /// dereferencing the `request_uri`. Valid values are "get" and "post".
 /// If omitted, the default value is "get".
 ///
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4>
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum RequestUriMethod {
     #[default]

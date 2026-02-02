@@ -253,7 +253,7 @@ impl AuthorizationRequestObject {
     ///
     /// `dcql_query` is the mechanism for specifying credential requirements.
     /// Either `dcql_query` or `scope` (as a DCQL alias) MUST be present, but not both.
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1
+    /// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1>
     pub fn dcql_query(&self) -> Option<Result<DcqlQuery>> {
         self.get()
     }

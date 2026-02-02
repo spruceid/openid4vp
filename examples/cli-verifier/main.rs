@@ -482,9 +482,6 @@ fn build_client_metadata(credential_types: &[String]) -> ClientMetadata {
                 // Per OID4VP v1.0 Section B.1.3.2.1:
                 // "The Credential Format Identifier is `ldp_vc` to request a W3C Verifiable
                 // Credential... or a Verifiable Presentation of such a Credential."
-                //
-                // So ldp_vc covers BOTH the credential AND the presentation format.
-                // There is NO ldp_vp in the spec.
                 vp_formats.insert(
                     ClaimFormatDesignation::LdpVc,
                     ClaimFormatPayload::ProofTypeValues(vec![
@@ -503,9 +500,6 @@ fn build_client_metadata(credential_types: &[String]) -> ClientMetadata {
                 // Per OID4VP v1.0 Section B.1.3.1.1:
                 // "The Credential Format Identifier is `jwt_vc_json` to request a W3C Verifiable
                 // Credential... or a Verifiable Presentation of such a Credential."
-                //
-                // So jwt_vc_json covers BOTH the credential AND the presentation format.
-                // There is NO jwt_vp_json in the spec.
                 vp_formats.insert(
                     ClaimFormatDesignation::JwtVcJson,
                     ClaimFormatPayload::AlgValues(vec![

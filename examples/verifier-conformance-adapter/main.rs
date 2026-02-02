@@ -13,7 +13,6 @@ mod server;
 use server::{create_router, AppState, OidfConfig};
 
 #[derive(Parser, Debug)]
-#[command(name = "oid4vp-verifier-adapter")]
 #[command(about = "OID4VP 1.0 Verifier Adapter for Conformance Testing")]
 struct Args {
     /// Port to listen on

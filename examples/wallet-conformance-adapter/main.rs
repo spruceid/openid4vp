@@ -16,9 +16,7 @@ use engine::{HeadlessConfig, HeadlessEngine, WalletEngine};
 use server::{create_router, AppState};
 
 #[derive(Parser, Debug)]
-#[command(name = "oid4vp-wallet-adapter")]
 #[command(about = "Headless OID4VP wallet adapter for conformance testing")]
-#[command(version)]
 struct Cli {
     #[arg(short, long, default_value = "3000", env = "PORT")]
     port: u16,

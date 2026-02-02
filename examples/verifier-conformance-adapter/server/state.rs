@@ -38,7 +38,7 @@ use x509_cert::{der::Decode, Certificate};
 const WALLET_AUTHORIZATION_ENDPOINT: &str =
     "https://demo.certification.openid.net/test/a/my-verifier-oid4vp1/authorize";
 
-const CACHE_DIR: &str = "verifier-conformance-adapter/.cache/certs";
+const CACHE_DIR: &str = "examples/verifier-conformance-adapter/.cache/certs";
 
 /// OIDF configuration info for display
 pub struct OidfConfig {

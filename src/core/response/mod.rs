@@ -67,7 +67,7 @@ struct JsonEncodedAuthorizationResponse {
 /// > The Authorization Response MUST contain the `vp_token` parameter.
 /// > The `state` parameter MUST be included if it was present in the Authorization Request.
 ///
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1>
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UnencodedAuthorizationResponse {
     /// The VP Token containing credential presentations.

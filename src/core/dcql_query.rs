@@ -68,7 +68,7 @@ impl From<DcqlQuery> for Json {
 }
 
 /// A Credential Query object
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1>
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialQuery {
     /// REQUIRED. A string identifying the Credential in the response.
@@ -235,7 +235,7 @@ impl DcqlCredentialQuery {
 
 /// A Trusted Authorities Query object
 /// Specifies expected trust frameworks for credential issuers.
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1>
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TrustedAuthoritiesQuery {
     /// REQUIRED. A string uniquely identifying the type of trust framework.
@@ -279,7 +279,7 @@ impl TrustedAuthoritiesQuery {
 }
 
 /// Trusted Authority types
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1>
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TrustedAuthorityType {
@@ -296,7 +296,7 @@ pub enum TrustedAuthorityType {
 }
 
 /// A Credential Set Query object
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2>
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialSetQuery {
     /// REQUIRED. A non-empty array where each value is a list of Credential Query
@@ -349,7 +349,7 @@ impl DcqlCredentialSetQuery {
 }
 
 /// A Claims Query object
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3>
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlCredentialClaimsQuery {
     /// REQUIRED if `claim_sets` is present in the Credential Query; OPTIONAL otherwise.

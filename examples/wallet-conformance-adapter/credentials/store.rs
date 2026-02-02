@@ -45,7 +45,7 @@ pub struct CredentialStore {
 impl CredentialStore {
     /// Create a store with embedded mock credentials
     pub fn with_mock_credentials() -> Self {
-        let json = include_str!("../../credentials.json");
+        let json = include_str!("../credentials.json");
         let file: CredentialsFile =
             serde_json::from_str(json).expect("Failed to parse embedded credentials.json");
 

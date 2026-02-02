@@ -20,7 +20,7 @@ ngrok http 3000
 ### 2. Run the wallet adapter
 
 ```bash
-cargo run -p oid4vp-wallet-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app
+cargo run --example wallet-conformance-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app
 ```
 
 ### 3. Verify
@@ -50,7 +50,7 @@ Go to https://demo.certification.openid.net/ and create a new test plan.
   "alias": "my-wallet-oid4vp1",
   "description": "OID4VP 1.0 Final wallet conformance - headless SD-JWT VC, redirect_uri, request_uri_unsigned, direct_post",
   "server": {
-    "authorization_endpoint": "https://44299586d955.ngrok-free.app/authorize"
+    "authorization_endpoint": "YOUR_NGROK_URL.ngrok-free.app/authorize"
   },
   "client": {
     "client_id_prefix": "redirect_uri",
@@ -111,5 +111,5 @@ After starting a test, open the authorization URL in Firefox (not Chrome - it ma
 
 ```bash
 # Debug logging
-RUST_LOG=debug cargo run -p oid4vp-wallet-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app
+RUST_LOG=debug cargo run --example wallet-conformance-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app
 ```

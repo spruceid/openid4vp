@@ -21,10 +21,10 @@ ngrok http 3000
 
 ```bash
 # For direct_post (unencrypted)
-cargo run -p oid4vp-verifier-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app
+cargo run --example verifier-conformance-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app
 
 # For direct_post.jwt (encrypted)
-cargo run -p oid4vp-verifier-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app --response-mode direct_post.jwt
+cargo run --example verifier-conformance-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app --response-mode direct_post.jwt
 ```
 
 The adapter prints the signing key configuration on startup - you'll need this for the OIDF test setup.
@@ -132,10 +132,10 @@ Go back to the OIDF conformance tool and check if the test passed.
 
 ```bash
 # Debug logging
-RUST_LOG=debug cargo run -p oid4vp-verifier-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app
+RUST_LOG=debug cargo run --example verifier-conformance-adapter -- --public-url https://YOUR_NGROK_URL.ngrok-free.app
 
 # With encrypted responses
-RUST_LOG=debug cargo run -p oid4vp-verifier-adapter -- \
+RUST_LOG=debug cargo run --example verifier-conformance-adapter -- \
   --public-url https://YOUR_NGROK_URL.ngrok-free.app \
   --response-mode direct_post.jwt
 ```

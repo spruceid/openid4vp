@@ -1,38 +1,43 @@
 //! Key management for SD-JWT key binding
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use josekit::jwk::alg::ec::EcKeyPair;
+use p256::ecdsa::{Signature, SigningKey, signature::Signer};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::LazyLock;
 
 /// The holder key pair - matches the cnf.jwk in mock SD-JWT credentials
-static HOLDER_KEY: LazyLock<EcKeyPair> = LazyLock::new(|| {
-    let jwk_json = json!({
-        "kty": "EC",
-        "crv": "P-256",
-        "x": "CwNSKWddEnzdysuBW0aiQ2rvJl8UDL6o51qXeuw1goY",
-        "y": "ENlE62SxzskwGMu3Poq0SDNRCxR7P4thyoxdURDonHs",
-        "d": "DVt4adukimqmbPWT2g8amdJWUCBRuDOHorjeNQ0xTZk"
-    });
+static HOLDER_KEY: LazyLock<SigningKey> = LazyLock::new(|| {
+    // d parameter from the JWK (base64url-decoded to 32 bytes)
+    let d_b64 = "DVt4adukimqmbPWT2g8amdJWUCBRuDOHorjeNQ0xTZk";
+    let d_bytes = URL_SAFE_NO_PAD.decode(d_b64).expect("Failed to decode d parameter");
 
-    EcKeyPair::from_jwk(&josekit::jwk::Jwk::from_bytes(jwk_json.to_string().as_bytes()).unwrap())
-        .expect("Failed to create holder key")
+    let d_array: [u8; 32] = d_bytes.as_slice()
+        .try_into()
+        .expect("Invalid key length - expected 32 bytes");
+
+    SigningKey::from_bytes(&d_array.into())
+        .expect("Failed to create signing key")
 });
 
 /// Get the public JWK for the JWKS endpoint
 pub fn public_jwk() -> Value {
-    let jwk = HOLDER_KEY.to_jwk_public_key();
-    let mut jwk_value: Value = serde_json::from_str(&jwk.to_string()).unwrap_or(json!({}));
+    use p256::PublicKey;
+    use p256::elliptic_curve::sec1::ToEncodedPoint;
 
-    if let Some(obj) = jwk_value.as_object_mut() {
-        obj.insert("kid".to_string(), json!("holder-key"));
-        obj.insert("use".to_string(), json!("sig"));
-        obj.insert("alg".to_string(), json!("ES256"));
-    }
+    let public_key: PublicKey = HOLDER_KEY.verifying_key().into();
+    let encoded_point = public_key.to_encoded_point(false);
 
-    jwk_value
+    json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "x": URL_SAFE_NO_PAD.encode(encoded_point.x().unwrap()),
+        "y": URL_SAFE_NO_PAD.encode(encoded_point.y().unwrap()),
+        "kid": "holder-key",
+        "use": "sig",
+        "alg": "ES256"
+    })
 }
 
 /// Create a Key Binding JWT for SD-JWT VC
@@ -56,14 +61,9 @@ pub fn create_key_binding_jwt(
     let payload_b64 = URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let signing_input = format!("{}.{}", header_b64, payload_b64);
 
-    let signer = josekit::jws::ES256
-        .signer_from_jwk(&HOLDER_KEY.to_jwk_key_pair())
-        .context("Failed to create signer")?;
-
-    let signature = signer
-        .sign(signing_input.as_bytes())
-        .context("Failed to sign")?;
-    let signature_b64 = URL_SAFE_NO_PAD.encode(&signature);
+    // Sign using p256
+    let signature: Signature = HOLDER_KEY.sign(signing_input.as_bytes());
+    let signature_b64 = URL_SAFE_NO_PAD.encode(signature.to_bytes());
 
     Ok(format!("{}.{}.{}", header_b64, payload_b64, signature_b64))
 }

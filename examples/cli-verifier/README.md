@@ -21,7 +21,7 @@ A minimal command-line verifier for testing OID4VP v1.0 protocol with mobile wal
 ngrok http 3000
 
 # Run the verifier with your ngrok URL
-cargo run -p cli-verifier -- --public-url https://your-url.ngrok.io
+cargo run --example cli-verifier -- --public-url https://your-url.ngrok.io
 ```
 
 ### CLI Options
@@ -48,7 +48,7 @@ cargo run -p cli-verifier -- --public-url https://your-url.ngrok.io
 ### Request a single mDL
 
 ```bash
-cargo run -p cli-verifier -- --public-url https://abc.ngrok.io -c mdl
+cargo run --example cli-verifier -- --public-url https://abc.ngrok.io -c mdl
 ```
 
 ### Request multiple credentials (AND logic)
@@ -56,7 +56,7 @@ cargo run -p cli-verifier -- --public-url https://abc.ngrok.io -c mdl
 All credentials are required:
 
 ```bash
-cargo run -p cli-verifier -- --public-url https://abc.ngrok.io -c mdl,jwt_vc
+cargo run --example cli-verifier -- --public-url https://abc.ngrok.io -c mdl,jwt_vc
 ```
 
 This creates:
@@ -70,7 +70,7 @@ Wallet must present **both** credentials.
 Accept either LDP VC or mDL:
 
 ```bash
-cargo run -p cli-verifier -- --public-url https://abc.ngrok.io -c ldp_or_mdl
+cargo run --example cli-verifier -- --public-url https://abc.ngrok.io -c ldp_or_mdl
 ```
 
 This creates:
@@ -81,7 +81,7 @@ Wallet can present **either** credential.
 ### Combine OR and AND logic
 
 ```bash
-cargo run -p cli-verifier -- --public-url https://abc.ngrok.io -c ldp_or_mdl,jwt_vc
+cargo run --example cli-verifier -- --public-url https://abc.ngrok.io -c ldp_or_mdl,jwt_vc
 ```
 
 This creates:

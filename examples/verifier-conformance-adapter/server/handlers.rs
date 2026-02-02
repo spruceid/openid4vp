@@ -21,7 +21,7 @@ use crate::crypto::decrypt_jwe;
 pub async fn health() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "ok",
-        "service": "oid4vp-verifier-adapter"
+        "service": "verifier-conformance-adapter"
     }))
 }
 

@@ -4,8 +4,10 @@
 [![Docs.rs](https://docs.rs/openid4vp/badge.svg)](https://docs.rs/openid4vp)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-### Rust implementation of the OpenID for Verifiable Presentations (OID4VP) specification.
+Rust implementation of the OpenID for Verifiable Presentations (OID4VP) specification.
 
+<!-- cargo-rdme start -->
+<!-- cargo-rdme end -->
 
 ## Install
 
@@ -24,34 +26,39 @@ cargo add openid4vp
 
 ## Testing
 
-Ensure the `/tests/presentation-exchange` submodule is initialized, run the following in the root of the project:
+Ensure the `/tests/presentation-exchange` submodule is initialized by running the following in the root of the project:
 
 ```shell
 git submodule init --recursive
 ```
 
-
-## Presentation Exchange Overview
+## Protocol Flow Diagram
 
 ```mermaid
 sequenceDiagram
-    participant Holder
+    participant Wallet
     participant Verifier
     participant Issuer
 
-    Verifier->>Holder: 1. Request Presentation (with Presentation Definition)
-    Note over Holder: 2. User consents to share credentials
-    Holder->>Holder: 3. Select appropriate credentials
-    Holder->>Holder: 4. Create Verifiable Presentation
-    Holder->>Holder: 5. Create Presentation Submission
-    Holder->>Verifier: 6. Send VP Token (VP + Presentation Submission)
-    Verifier->>Verifier: 7. Validate VP Token
+    Verifier->>Wallet: 1. Authorization Request (Presentation Definition/DCQL)
+    Note over Wallet: 2. User consents to share credentials
+    Wallet->>Wallet: 3. Select appropriate credentials
+    Wallet->>Wallet: 4. Create Verifiable Presentation
+    Wallet->>Wallet: 5. Create Presentation Submission
+    Wallet->>Verifier: 6. Authorization Response (VP Token + Submission)
+    Verifier->>Verifier: 7. Validate VP Token signatures
     Verifier->>Issuer: 8. (Optional) Verify credential status
     Issuer-->>Verifier: 9. (Optional) Credential status response
-    Verifier->>Verifier: 10. Check claims against Presentation Definition
-    Verifier->>Holder: 11. Grant or deny access based on verification
+    Verifier->>Verifier: 10. Verify claims against Presentation Definition
+    Verifier->>Wallet: 11. Grant or deny access based on verification
 ```
 
+## Examples
+
+Check the [`examples`](examples/) directory for complete implementations:
+- [`cli-verifier`](examples/cli-verifier/): Command-line verifier for testing OID4VP flows
+- [`verifier-conformance-adapter`](examples/verifier-conformance-adapter/): Conformance testing adapter
+- [`oid4vp-wallet-adapter`](examples/oid4vp-wallet-adapter/): Headless wallet adapter
 
 ## License
 

@@ -9,7 +9,7 @@ pub fn decrypt_jwe(jwe: &str, private_key_jwk: &JWK) -> Result<Value> {
     let jwk_str = serde_json::to_string(private_key_jwk)?;
     let jwk = Jwk::from_bytes(jwk_str.as_bytes()).context("Invalid private key JWK")?;
 
-    let decrypter = ECDH_ES
+    let decrypter: josekit::jwe::alg::ecdh_es::EcdhEsJweDecrypter<p256::NistP256> = ECDH_ES
         .decrypter_from_jwk(&jwk)
         .context("Failed to create ECDH-ES decrypter")?;
 

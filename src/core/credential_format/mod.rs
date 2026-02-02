@@ -21,7 +21,7 @@ pub type CredentialType = String;
 
 /// Credential Format with associated metadata.
 ///
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B>
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ClaimFormat {
     /// W3C Verifiable Credential secured with JWT (OID4VP v1.0 Section B.1.3.1)
@@ -112,7 +112,7 @@ impl ClaimFormatPayload {
 
 /// Credential Format Identifiers.
 ///
-/// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B>
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ClaimFormatDesignation {
     /// W3C Verifiable Credential secured with JWT (OID4VP v1.0 Section B.1.3.1)
