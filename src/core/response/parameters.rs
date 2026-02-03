@@ -59,7 +59,7 @@ impl VpToken {
         self.0.len()
     }
 
-    pub fn iter(&self) -> std::slice::Iter<VpTokenItem> {
+    pub fn iter(&self) -> std::slice::Iter<'_, VpTokenItem> {
         self.0.iter()
     }
 }
