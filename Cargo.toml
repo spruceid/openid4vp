@@ -33,7 +33,7 @@ serde_json = "1.0.107"
 serde_json_path = "0.7.1"
 serde_urlencoded = "0.7.1"
 sha2 = "0.10"
-ssi = { version = "0.12", features = ["secp256r1"] }
+ssi = { version = "0.14", features = ["secp256r1"] }
 thiserror = "1.0.65"
 tokio = "1.32.0"
 tracing = "0.1.37"
@@ -47,7 +47,7 @@ axum = { version = "0.7", features = ["macros"] }
 base64 = "0.21"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.4", features = ["derive", "env"] }
-did-method-key = "0.3"
+did-method-key = "0.4"
 hex = "0.4"
 http = "1.1"
 p256 = { version = "0.13", features = ["jwk", "ecdsa"] }
