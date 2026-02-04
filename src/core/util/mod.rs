@@ -12,7 +12,7 @@ pub trait AsyncHttpClient {
 }
 
 pub(crate) fn base_request() -> http::request::Builder {
-    Request::builder().header("Prefer", "OID4VP-0.0.20")
+    Request::builder().header("Prefer", "OID4VP-1.0.0")
 }
 
 #[derive(Debug, Clone)]

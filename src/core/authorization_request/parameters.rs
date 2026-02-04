@@ -1,15 +1,10 @@
 use std::{fmt, ops::Deref};
 
 use crate::core::{
-    metadata::parameters::verifier::{
-        AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
-        AuthorizationSignedResponseAlg, JWKs, VpFormats,
-    },
-    object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
-    util::{base_request, AsyncHttpClient},
+    metadata::parameters::verifier::{EncryptedResponseEncValuesSupported, JWKs, VpFormats},
+    object::{TypedParameter, UntypedObject},
 };
-use anyhow::{anyhow, bail, Context, Error, Ok};
+use anyhow::{anyhow, bail, Error, Ok};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use url::Url;
@@ -20,20 +15,26 @@ use super::AuthorizationRequestObject;
 pub struct ClientId(pub String);
 
 impl ClientId {
-    /// Retrieves the `client_id_scheme` from the authorization request object.
+    /// Extracts the Client Identifier Prefix from the client_id.
     ///
-    /// If the `client_id_scheme` is not present, it will be inferred from the `client_id`.
-    pub fn resolve_scheme(&self, value: &UntypedObject) -> Result<Option<ClientIdScheme>, Error> {
-        let client_id_scheme = value.get::<ClientIdScheme>();
-        if client_id_scheme.is_some() {
-            return client_id_scheme.transpose();
+    /// Per OID4VP v1.0 Section 5.9.1, the Client Identifier Prefix is the part
+    /// before the first `:` in the client_id.
+    ///
+    /// Per Section 5.9.2, if no `:` is present, the client is treated as
+    /// pre-registered and this method returns `None`.
+    ///
+    /// Example: `x509_san_dns:example.com` -> returns `Some(ClientIdScheme("x509_san_dns"))`
+    /// Example: `pre-registered-client` -> returns `None` (pre-registered)
+    pub fn resolve_prefix(&self) -> Option<ClientIdScheme> {
+        if self.0.contains(':') {
+            self.0
+                .split(':')
+                .next()
+                .map(|s| ClientIdScheme(s.to_string()))
+        } else {
+            // Per Section 5.9.2: If no ':' is present, treat as pre-registered
+            None
         }
-
-        Ok(self
-            .0
-            .split(':')
-            .next()
-            .map(|s| ClientIdScheme(s.to_string())))
     }
 }
 impl TypedParameter for ClientId {
@@ -54,13 +55,13 @@ impl From<ClientId> for Json {
     }
 }
 
+/// Client Identifier Prefix per OID4VP v1.0 Section 5.9.
+///
+/// The prefix is extracted from the `client_id` parameter (before the first `:`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClientIdScheme(pub String);
 
-impl TypedParameter for ClientIdScheme {
-    const KEY: &'static str = "client_id_scheme";
-}
-
+// JSON conversions needed for wallet metadata (client_id_schemes_supported)
 impl TryFrom<Json> for ClientIdScheme {
     type Error = Error;
 
@@ -76,16 +77,37 @@ impl From<ClientIdScheme> for Json {
 }
 
 impl ClientIdScheme {
-    pub const DID: &str = "did";
-    /// Deprecated, use `https` instead.
-    pub const ENTITY_ID: &str = "entity_id";
-    pub const HTTPS: &str = "https";
+    /// Client Identifier is a Decentralized Identifier (DID).
+    /// The request MUST be signed with a private key associated with the DID.
+    pub const DECENTRALIZED_IDENTIFIER: &str = "decentralized_identifier";
+
+    /// Client Identifier is an Entity Identifier per OpenID Federation.
+    pub const OPENID_FEDERATION: &str = "openid_federation";
+
+    /// No explicit scheme. client_id is pre-registered with the Wallet.
     pub const PREREGISTERED: &str = "pre-registered";
+
+    /// Client Identifier is the Verifier's Redirect URI.
+    /// Requests using this scheme cannot be signed.
     pub const REDIRECT_URI: &str = "redirect_uri";
+
+    /// Client authenticates using a Verifier Attestation JWT.
+    /// The request MUST be signed with the private key corresponding to
+    /// the public key in the `cnf` claim in the Verifier attestation JWT.
     pub const VERIFIER_ATTESTATION: &str = "verifier_attestation";
-    pub const WEB_ORIGIN: &str = "web-origin";
+
+    /// Client Identifier is a DNS name from X.509 Subject Alternative Name.
+    /// The request MUST be signed with the private key corresponding to
+    /// the public key in the leaf X.509 certificate.
     pub const X509_SAN_DNS: &str = "x509_san_dns";
-    pub const X509_SAN_URI: &str = "x509_san_uri";
+
+    /// Client Identifier is the base64url-encoded SHA-256 hash of the
+    /// DER-encoded leaf X.509 certificate.
+    pub const X509_HASH: &str = "x509_hash";
+
+    /// Reserved for Digital Credentials API.
+    /// The Wallet MUST NOT accept this Client Identifier Prefix in requests.
+    pub const ORIGIN: &str = "origin";
 }
 
 impl Deref for ClientIdScheme {
@@ -101,18 +123,18 @@ impl Deref for ClientIdScheme {
 /// client_metadata: OPTIONAL. A JSON object containing the Verifier metadata values.
 /// It MUST be UTF-8 encoded. The following metadata parameters MAY be used:
 ///
-/// jwks: OPTIONAL. A JWKS as defined in [RFC7591]. It MAY contain one or more public keys, such as those used by the Wallet as an input to a key agreement that may be used for encryption of the Authorization Response (see Section 7.3), or where the Wallet will require the public key of the Verifier to generate the Verifiable Presentation. This allows the Verifier to pass ephemeral keys specific to this Authorization Request. Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
+/// jwks: OPTIONAL. A JWKS as defined in RFC7591. It MAY contain one or more public keys, such as those used by the Wallet as an input to a key agreement that may be used for encryption of the Authorization Response (see Section 7.3), or where the Wallet will require the public key of the Verifier to generate the Verifiable Presentation. This allows the Verifier to pass ephemeral keys specific to this Authorization Request. Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
 /// vp_formats: REQUIRED when not available to the Wallet via another mechanism. As defined in Section 10.1.
-/// authorization_signed_response_alg: OPTIONAL. As defined in [JARM].
-/// authorization_encrypted_response_alg: OPTIONAL. As defined in [JARM].
-/// authorization_encrypted_response_enc: OPTIONAL. As defined in [JARM].
+/// authorization_signed_response_alg: OPTIONAL. As defined in JARM.
+/// authorization_encrypted_response_alg: OPTIONAL. As defined in JARM.
+/// authorization_encrypted_response_enc: OPTIONAL. As defined in JARM.
 /// Authoritative data the Wallet is able to obtain about the Client from other sources,
 /// for example those from an OpenID Federation Entity Statement, take precedence over the
 /// values passed in client_metadata. Other metadata parameters MUST be ignored unless a
 /// profile of this specification explicitly defines them as usable in the client_metadata parameter.
 ///
 ///
-/// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.4
+/// See reference: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.4>
 ///
 #[derive(Debug, Clone)]
 pub struct ClientMetadata(pub UntypedObject);
@@ -138,44 +160,14 @@ impl TryFrom<Json> for ClientMetadata {
 impl ClientMetadata {
     /// Resolves the client metadata from the Authorization Request Object.
     ///
-    /// If the client metadata is not passed by reference or value if the Authorization Request Object,
-    /// then this function will return an error.
-    pub async fn resolve<H: AsyncHttpClient>(
-        request: &AuthorizationRequestObject,
-        http_client: &H,
-    ) -> Result<Self, Error> {
+    /// If the client metadata is not passed inline in the Authorization Request Object,
+    /// then this function will return a default empty metadata object.
+    pub fn resolve(request: &AuthorizationRequestObject) -> Result<Self, Error> {
         if let Some(metadata) = request.get() {
             return metadata;
         }
 
-        if let Some(metadata_uri) = request.get::<ClientMetadataUri>() {
-            let uri = metadata_uri.parsing_error()?.0;
-            let request = base_request()
-                .method("GET")
-                .uri(uri.to_string())
-                .body(vec![])
-                .context("failed to build client metadata request")?;
-
-            let response = http_client
-                .execute(request)
-                .await
-                .context(format!("failed to make client metadata request at {uri}"))?;
-
-            let status = response.status();
-
-            if !status.is_success() {
-                bail!("client metadata request was unsuccessful (status: {status})")
-            }
-
-            return serde_json::from_slice::<Json>(response.body())
-                .context(format!(
-                "failed to parse client metadata response as JSON from {uri} (status: {status})"
-            ))?
-                .try_into()
-                .context("failed to parse client metadata from JSON");
-        }
-
-        tracing::warn!("the client metadata was not passed by reference or value");
+        tracing::warn!("the client metadata was not passed in the request");
         Ok(ClientMetadata(UntypedObject::default()))
     }
 
@@ -191,11 +183,11 @@ impl ClientMetadata {
     /// Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
     ///
     ///
-    /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.1
+    /// See reference: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.1>
     ///
     /// The jwks_uri or jwks metadata parameters can be used by clients to register their public encryption keys.
     ///
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-4
+    /// See: <https://openid.net/specs/oauth-v2-jarm-final.html#section-3-4>
     ///
     pub fn jwks(&self) -> Option<Result<JWKs, Error>> {
         self.0.get()
@@ -207,7 +199,7 @@ impl ClientMetadata {
     ///
     /// As defined in [Section 10.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#client_metadata_parameters).
     ///
-    /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.2
+    /// See reference: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.2>
     pub fn vp_formats(&self) -> Result<VpFormats, Error> {
         self.0.get().ok_or(anyhow!("missing vp_formats"))?
     }
@@ -223,93 +215,22 @@ impl ClientMetadata {
     ///
     /// If unspecified, the default algorithm to use for signing authorization responses is RS256.
     ///
-    /// The algorithm none is not allowed.
+    /// Returns the supported content encryption algorithms for encrypted responses.
     ///
-    ///  A list of defined ["alg" values](https://datatracker.ietf.org/doc/html/rfc7518#section-3.1)
-    /// for this use can be found in the IANA "JSON Web Signature and Encryption Algorithms" registry established
-    /// by [JWA](https://www.rfc-editor.org/rfc/rfc7515.html#ref-JWA); the initial contents of this registry are the values
-    /// defined in Section 3.1 of [JWA](https://www.rfc-editor.org/rfc/rfc7515.html#ref-JWA).
+    /// Per OID4VP v1.0 Section 5.1, this is specified via `encrypted_response_enc_values_supported`.
+    /// If not specified, defaults to `["A128GCM"]` per Section 8.3.
     ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.3
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.2.1
-    /// See: https://datatracker.ietf.org/doc/html/rfc7518#section-3.1
+    /// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1>
+    /// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3>
     ///
-    pub fn authorization_signed_response_alg(
+    pub fn encrypted_response_enc_values_supported(
         &self,
-    ) -> Result<AuthorizationSignedResponseAlg, Error> {
-        self.0.get().unwrap_or(Ok(AuthorizationSignedResponseAlg(
-            ssi::crypto::Algorithm::RS256,
-        )))
-    }
-
-    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
-    ///
-    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
-    ///
-    /// The JWE [RFC7516](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7516)
-    /// `alg` algorithm REQUIRED for encrypting authorization responses.
-    ///
-    /// If both signing and encryption are requested, the response will be signed then encrypted,
-    /// with the result being a Nested JWT, as defined in JWT
-    /// [RFC7519](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7519).
-    ///
-    /// The default, if omitted, is that no encryption is performed.
-    ///
-    ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.4
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.4.1
-    ///
-    pub fn authorization_encrypted_response_alg(
-        &self,
-    ) -> Option<Result<AuthorizationEncryptedResponseAlg, Error>> {
-        self.0.get()
-    }
-
-    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
-    ///
-    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
-    ///
-    /// The JWE [RFC7516](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7516) `enc` algorithm
-    /// REQUIRED for encrypting authorization responses.
-    ///
-    /// If `authorization_encrypted_response_alg` is specified, the default for this value is `A128CBC-HS256`.
-    ///
-    /// When `authorization_encrypted_response_enc` is included, authorization_encrypted_response_alg MUST also be provided.
-    ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.5
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.6.1
-    ///
-    pub fn authorization_encrypted_response_enc(
-        &self,
-    ) -> Option<Result<AuthorizationEncryptedResponseEnc, Error>> {
-        match self.0.get() {
-            Some(enc) => Some(enc),
-            None => self
-                .authorization_encrypted_response_alg()
-                .map(|_| Ok(AuthorizationEncryptedResponseEnc("A128CBC-HS256".into()))),
-        }
-    }
-}
-
-/// `client_metadata_uri` field in the Authorization Request.
-#[derive(Debug, Clone)]
-pub struct ClientMetadataUri(pub Url);
-
-impl TypedParameter for ClientMetadataUri {
-    const KEY: &'static str = "client_metadata_uri";
-}
-
-impl From<ClientMetadataUri> for Json {
-    fn from(cmu: ClientMetadataUri) -> Self {
-        cmu.0.to_string().into()
-    }
-}
-
-impl TryFrom<Json> for ClientMetadataUri {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(serde_json::from_value(value).map(ClientMetadataUri)?)
+    ) -> Result<EncryptedResponseEncValuesSupported, Error> {
+        self.0
+            .get()
+            .transpose()?
+            .map(Ok)
+            .unwrap_or_else(|| Ok(EncryptedResponseEncValuesSupported::default()))
     }
 }
 
@@ -439,10 +360,11 @@ const DIRECT_POST_JWT: &str = "direct_post.jwt";
 const DC_API: &str = "dc_api";
 const DC_API_JWT: &str = "dc_api.jwt";
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(into = "String", from = "String")]
 pub enum ResponseMode {
     /// The `direct_post` response mode as defined in OID4VP.
+    #[default]
     DirectPost,
     /// The `direct_post.jwt` response mode as defined in OID4VP.
     DirectPostJwt,
@@ -507,12 +429,6 @@ impl fmt::Display for ResponseMode {
             ResponseMode::Unsupported(u) => u,
         }
         .fmt(f)
-    }
-}
-
-impl Default for ResponseMode {
-    fn default() -> Self {
-        Self::Unsupported("fragment".into())
     }
 }
 
@@ -600,103 +516,6 @@ impl From<State> for Json {
 }
 
 #[derive(Debug, Clone)]
-pub struct PresentationDefinition {
-    raw: Json,
-    parsed: PresentationDefinitionParsed,
-}
-
-impl PresentationDefinition {
-    pub fn into_parsed(self) -> PresentationDefinitionParsed {
-        self.parsed
-    }
-
-    pub fn parsed(&self) -> &PresentationDefinitionParsed {
-        &self.parsed
-    }
-}
-
-impl TryFrom<PresentationDefinitionParsed> for PresentationDefinition {
-    type Error = Error;
-
-    fn try_from(parsed: PresentationDefinitionParsed) -> Result<Self, Self::Error> {
-        let raw = serde_json::to_value(parsed.clone())?;
-        Ok(Self { raw, parsed })
-    }
-}
-
-impl TypedParameter for PresentationDefinition {
-    const KEY: &'static str = "presentation_definition";
-}
-
-impl TryFrom<Json> for PresentationDefinition {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        let parsed = serde_json::from_value(value.clone())?;
-        Ok(Self { raw: value, parsed })
-    }
-}
-
-impl From<PresentationDefinition> for Json {
-    fn from(value: PresentationDefinition) -> Self {
-        value.raw
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PresentationDefinitionUri(pub Url);
-
-impl TypedParameter for PresentationDefinitionUri {
-    const KEY: &'static str = "presentation_definition_uri";
-}
-
-impl TryFrom<Json> for PresentationDefinitionUri {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(serde_json::from_value(value).map(Self)?)
-    }
-}
-
-impl From<PresentationDefinitionUri> for Json {
-    fn from(value: PresentationDefinitionUri) -> Self {
-        value.0.to_string().into()
-    }
-}
-
-impl PresentationDefinitionUri {
-    pub async fn resolve<H: AsyncHttpClient>(
-        &self,
-        http_client: &H,
-    ) -> Result<PresentationDefinition, Error> {
-        let url = self.0.to_string();
-
-        let request = base_request()
-            .method("GET")
-            .uri(&url)
-            .body(vec![])
-            .context("failed to build presentation definition request")?;
-
-        let response = http_client.execute(request).await.context(format!(
-            "failed to make presentation definition request at {url}"
-        ))?;
-
-        let status = response.status();
-
-        if !status.is_success() {
-            bail!("presentation definition request was unsuccessful (status: {status})")
-        }
-
-        serde_json::from_slice::<Json>(response.body())
-            .context(format!(
-            "failed to parse presentation definition response as JSON from {url} (status: {status})"
-        ))?
-            .try_into()
-            .context("failed to parse presentation definition from JSON")
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct ExpectedOrigins(pub Vec<String>);
 
 impl TypedParameter for ExpectedOrigins {
@@ -714,5 +533,220 @@ impl TryFrom<Json> for ExpectedOrigins {
 impl From<ExpectedOrigins> for Json {
     fn from(value: ExpectedOrigins) -> Self {
         json!(value.0)
+    }
+}
+
+/// `transaction_data` field in the Authorization Request.
+///
+/// OPTIONAL. A non-empty array of strings, where each string is a base64url-encoded
+/// JSON object that contains a typed parameter set with details about the transaction
+/// that the Verifier is requesting the End-User to authorize.
+///
+/// Each transaction data object MUST contain:
+/// - `type`: String identifying the transaction data type
+/// - `credential_ids`: Non-empty array of strings referencing requested Credentials
+///
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1>
+#[derive(Debug, Clone)]
+pub struct TransactionData(pub Vec<String>);
+
+impl TypedParameter for TransactionData {
+    const KEY: &'static str = "transaction_data";
+}
+
+impl TryFrom<Json> for TransactionData {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(serde_json::from_value(value).map(Self)?)
+    }
+}
+
+impl From<TransactionData> for Json {
+    fn from(value: TransactionData) -> Self {
+        json!(value.0)
+    }
+}
+
+/// `verifier_info` field in the Authorization Request.
+///
+/// OPTIONAL. A non-empty array of attestations about the Verifier relevant to
+/// the Credential Request. These attestations MAY include Verifier metadata,
+/// policies, trust status, or authorizations.
+///
+/// Each attestation object MUST contain:
+/// - `format`: String identifying the attestation format
+/// - `data`: Object or string containing the attestation
+/// - `credential_ids`: Optional array of referenced Credential identifiers
+///
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1>
+#[derive(Debug, Clone)]
+pub struct VerifierInfo(pub Vec<Json>);
+
+impl TypedParameter for VerifierInfo {
+    const KEY: &'static str = "verifier_info";
+}
+
+impl TryFrom<Json> for VerifierInfo {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(serde_json::from_value(value).map(Self)?)
+    }
+}
+
+impl From<VerifierInfo> for Json {
+    fn from(value: VerifierInfo) -> Self {
+        json!(value.0)
+    }
+}
+
+/// `request_uri_method` field in the Authorization Request.
+///
+/// OPTIONAL. A String value that specifies the HTTP method to be used when
+/// dereferencing the `request_uri`. Valid values are "get" and "post".
+/// If omitted, the default value is "get".
+///
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.4>
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum RequestUriMethod {
+    #[default]
+    Get,
+    Post,
+}
+
+impl TypedParameter for RequestUriMethod {
+    const KEY: &'static str = "request_uri_method";
+}
+
+impl TryFrom<Json> for RequestUriMethod {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        let s: String = serde_json::from_value(value)?;
+        match s.as_str() {
+            "get" => Ok(RequestUriMethod::Get),
+            "post" => Ok(RequestUriMethod::Post),
+            _ => bail!("invalid request_uri_method: {}", s),
+        }
+    }
+}
+
+impl From<RequestUriMethod> for Json {
+    fn from(value: RequestUriMethod) -> Self {
+        Json::String(match value {
+            RequestUriMethod::Get => "get".to_string(),
+            RequestUriMethod::Post => "post".to_string(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_id_prefix_x509_san_dns() {
+        let client_id = ClientId("x509_san_dns:example.com".to_string());
+        let scheme = client_id.resolve_prefix().unwrap();
+        assert_eq!(scheme.0, "x509_san_dns");
+    }
+
+    #[test]
+    fn client_id_prefix_decentralized_identifier() {
+        let client_id = ClientId("decentralized_identifier:did:key:z123456".to_string());
+        let scheme = client_id.resolve_prefix().unwrap();
+        assert_eq!(scheme.0, "decentralized_identifier");
+    }
+
+    #[test]
+    fn client_id_prefix_redirect_uri() {
+        let client_id = ClientId("redirect_uri:https://verifier.example.com/callback".to_string());
+        let scheme = client_id.resolve_prefix().unwrap();
+        assert_eq!(scheme.0, "redirect_uri");
+    }
+
+    #[test]
+    fn client_id_prefix_openid_federation() {
+        let client_id = ClientId("openid_federation:https://federation.example.com".to_string());
+        let scheme = client_id.resolve_prefix().unwrap();
+        assert_eq!(scheme.0, "openid_federation");
+    }
+
+    #[test]
+    fn client_id_prefix_verifier_attestation() {
+        let client_id = ClientId("verifier_attestation:some-attestation-id".to_string());
+        let scheme = client_id.resolve_prefix().unwrap();
+        assert_eq!(scheme.0, "verifier_attestation");
+    }
+
+    #[test]
+    fn client_id_prefix_x509_hash() {
+        let client_id = ClientId("x509_hash:abc123hash".to_string());
+        let scheme = client_id.resolve_prefix().unwrap();
+        assert_eq!(scheme.0, "x509_hash");
+    }
+
+    #[test]
+    fn client_id_prefix_origin_reserved() {
+        // origin: is reserved for DC API and wallet MUST reject
+        let client_id = ClientId("origin:https://example.com".to_string());
+        let scheme = client_id.resolve_prefix().unwrap();
+        assert_eq!(scheme.0, "origin");
+    }
+
+    #[test]
+    fn client_id_no_prefix_is_preregistered() {
+        // Per v1 Section 5.9.2: if no colon, treat as pre-registered client
+        // resolve_prefix() returns None when there's no ':' in the client_id
+        let client_id = ClientId("pre-registered-client".to_string());
+        let prefix = client_id.resolve_prefix();
+        assert!(prefix.is_none());
+    }
+
+    #[test]
+    fn response_mode_default_is_direct_post() {
+        let default = ResponseMode::default();
+        assert!(matches!(default, ResponseMode::DirectPost));
+    }
+
+    #[test]
+    fn response_mode_parsing() {
+        assert!(matches!(
+            ResponseMode::from("direct_post".to_string()),
+            ResponseMode::DirectPost
+        ));
+        assert!(matches!(
+            ResponseMode::from("direct_post.jwt".to_string()),
+            ResponseMode::DirectPostJwt
+        ));
+        assert!(matches!(
+            ResponseMode::from("dc_api".to_string()),
+            ResponseMode::DcApi
+        ));
+        assert!(matches!(
+            ResponseMode::from("dc_api.jwt".to_string()),
+            ResponseMode::DcApiJwt
+        ));
+        assert!(
+            matches!(ResponseMode::from("unknown".to_string()), ResponseMode::Unsupported(s) if s == "unknown")
+        );
+    }
+
+    #[test]
+    fn request_uri_method_parsing() {
+        let get: RequestUriMethod = Json::String("get".to_string()).try_into().unwrap();
+        assert_eq!(get, RequestUriMethod::Get);
+
+        let post: RequestUriMethod = Json::String("post".to_string()).try_into().unwrap();
+        assert_eq!(post, RequestUriMethod::Post);
+
+        let invalid: Result<RequestUriMethod, _> = Json::String("invalid".to_string()).try_into();
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn request_uri_method_default_is_get() {
+        assert_eq!(RequestUriMethod::default(), RequestUriMethod::Get);
     }
 }

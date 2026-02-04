@@ -79,15 +79,15 @@ impl From<ResponseTypesSupported> for Json {
     }
 }
 
-// TODO: Client ID scheme types?
+/// Client ID prefixes supported by the wallet.
 #[derive(Debug, Clone)]
-pub struct ClientIdSchemesSupported(pub Vec<ClientIdScheme>);
+pub struct ClientIdPrefixesSupported(pub Vec<ClientIdScheme>);
 
-impl TypedParameter for ClientIdSchemesSupported {
-    const KEY: &'static str = "client_id_schemes_supported";
+impl TypedParameter for ClientIdPrefixesSupported {
+    const KEY: &'static str = "client_id_prefixes_supported";
 }
 
-impl TryFrom<Json> for ClientIdSchemesSupported {
+impl TryFrom<Json> for ClientIdPrefixesSupported {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
@@ -101,13 +101,13 @@ impl TryFrom<Json> for ClientIdSchemesSupported {
     }
 }
 
-impl From<ClientIdSchemesSupported> for Json {
-    fn from(value: ClientIdSchemesSupported) -> Json {
+impl From<ClientIdPrefixesSupported> for Json {
+    fn from(value: ClientIdPrefixesSupported) -> Json {
         Json::Array(value.0.into_iter().map(Json::from).collect())
     }
 }
 
-impl Default for ClientIdSchemesSupported {
+impl Default for ClientIdPrefixesSupported {
     fn default() -> Self {
         Self(vec![ClientIdScheme(
             ClientIdScheme::PREREGISTERED.to_string(),
@@ -230,9 +230,9 @@ mod test {
                 "mso_mdoc": {
                 }
             },
-            "client_id_schemes_supported": [
+            "client_id_prefixes_supported": [
                 "redirect_uri",
-                "x509_san_uri"
+                "x509_san_dns"
             ],
             "request_object_signing_alg_values_supported": [
               "ES256"
@@ -271,12 +271,12 @@ mod test {
     }
 
     #[test]
-    fn client_id_schemes_supported() {
+    fn client_id_prefixes_supported() {
         let exp = [
             ClientIdScheme(ClientIdScheme::REDIRECT_URI.to_string()),
-            ClientIdScheme(ClientIdScheme::X509_SAN_URI.to_string()),
+            ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string()),
         ];
-        let ClientIdSchemesSupported(v) = metadata().get().unwrap().unwrap();
+        let ClientIdPrefixesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));
         assert!(v.iter().all(|x| exp.contains(x)));
     }

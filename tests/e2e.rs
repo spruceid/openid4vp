@@ -3,16 +3,20 @@ use openid4vp::{
     core::{
         authorization_request::parameters::{ClientMetadata, Nonce, ResponseMode, ResponseType},
         credential_format::*,
-        input_descriptor::*,
+        dcql_query::{
+            DcqlCredentialClaimsQuery, DcqlCredentialClaimsQueryPath, DcqlCredentialQuery,
+            DcqlQuery,
+        },
         object::UntypedObject,
-        presentation_definition::*,
-        presentation_submission::*,
-        response::{AuthorizationResponse, UnencodedAuthorizationResponse},
+        response::{
+            parameters::{VpToken, VpTokenItem},
+            AuthorizationResponse, UnencodedAuthorizationResponse,
+        },
     },
+    utils::NonEmptyVec,
     verifier::session::{Outcome, Status},
     wallet::Wallet,
 };
-use ssi::jwk::Algorithm;
 
 mod jwt_vc;
 mod jwt_vp;
@@ -21,48 +25,22 @@ mod jwt_vp;
 async fn w3c_vc_did_client_direct_post() {
     let (wallet, verifier) = jwt_vc::wallet_verifier().await;
 
-    let presentation_definition = PresentationDefinition::new(
-        "did-key-id-proof".into(),
-        InputDescriptor::new(
-            "did-key-id".into(),
-            Constraints::new()
-                .add_constraint(
-                    // Add a constraint fields to check if the credential
-                    // conforms to a specific path.
-                    ConstraintsField::new("$.credentialSubject.id".parse().unwrap())
-                        // Add alternative path(s) to check multiple potential formats.
-                        .add_path(
-                            "$.vp.verifiableCredential.vc.credentialSubject.id"
-                                .parse()
-                                .unwrap(),
-                        )
-                        .add_path(
-                            "$.vp.verifiableCredential[0].vc.credentialSubject.id"
-                                .parse()
-                                .unwrap(),
-                        )
-                        .set_name("Verify Identity Key".into())
-                        .set_purpose("Check whether your identity key has been verified.".into())
-                        .set_filter(&serde_json::json!({
-                            "type": "string",
-                            "pattern": "did:key:.*"
-                        }))
-                        .expect("Failed to set filter, invalid validation schema.")
-                        .set_predicate(Predicate::Required),
-                )
-                .set_limit_disclosure(ConstraintsLimitDisclosure::Required),
-        )
-        .set_name("DID Key Identity Verification".into())
-        .set_purpose("Check whether your identity key has been verified.".into())
-        .set_format({
-            let mut map = ClaimFormatMap::new();
-            map.insert(
-                ClaimFormatDesignation::JwtVcJson,
-                ClaimFormatPayload::Alg(vec![Algorithm::ES256.to_string()]),
-            );
-            map
-        }),
-    );
+    // Create a DCQL query for JWT VC credentials
+    let mut credential_query =
+        DcqlCredentialQuery::new("did-key-id".into(), ClaimFormatDesignation::JwtVcJson);
+
+    // Add claims query for credentialSubject.id
+    let claims = NonEmptyVec::new(DcqlCredentialClaimsQuery::new(
+        vec![
+            DcqlCredentialClaimsQueryPath::String("credentialSubject".into()),
+            DcqlCredentialClaimsQueryPath::String("id".into()),
+        ]
+        .try_into()
+        .unwrap(),
+    ));
+    credential_query.set_claims(Some(claims));
+
+    let dcql_query = DcqlQuery::new(NonEmptyVec::new(credential_query));
 
     let client_metadata = UntypedObject::default();
 
@@ -70,7 +48,7 @@ async fn w3c_vc_did_client_direct_post() {
 
     let (id, request) = verifier
         .build_authorization_request()
-        .with_presentation_definition(presentation_definition.clone())
+        .with_dcql_query(dcql_query.clone())
         .with_request_parameter(ResponseMode::DirectPost)
         .with_request_parameter(ResponseType::VpToken)
         .with_request_parameter(nonce)
@@ -81,72 +59,33 @@ async fn w3c_vc_did_client_direct_post() {
 
     let request = wallet.validate_request(request).await.unwrap();
 
-    let parsed_presentation_definition = request
-        .resolve_presentation_definition(wallet.http_client())
-        .await
-        .unwrap()
-        .unwrap();
-
+    // Verify DCQL query is present
+    let parsed_dcql = request.dcql_query().unwrap().unwrap();
     assert_eq!(
-        presentation_definition.id(),
-        parsed_presentation_definition.parsed().id()
+        dcql_query.credentials().len(),
+        parsed_dcql.credentials().len()
+    );
+    assert_eq!(
+        dcql_query.credentials()[0].id(),
+        parsed_dcql.credentials()[0].id()
     );
 
     assert_eq!(&ResponseType::VpToken, request.response_type());
-
     assert_eq!(&ResponseMode::DirectPost, request.response_mode());
 
-    let descriptor_map = parsed_presentation_definition
-        .parsed()
-        .input_descriptors()
-        .iter()
-        .map(|descriptor| {
-            // NOTE: the input descriptor constraint field path is relative to the path
-            // of the descriptor map matching the input descriptor id.
-            DescriptorMap::new(
-                descriptor.id.clone(),
-                // NOTE: Since the input descriptor may support several different
-                // claim format types. This value should not be hardcoded in production
-                // code, but should be selected from available formats in the presentation definition
-                // input descriptor.
-                //
-                // In practice, this format will be determined by the VDC collection's credential format.
-                ClaimFormatDesignation::JwtVpJson,
-                // Starts at the top level path of the verifiable submission, which contains a `vp` key
-                // for verifiable presentations, which include the verifiable credentials under the `verifiableCredentials`
-                // field.
-                "$".parse().unwrap(),
-            )
-            .set_path_nested(DescriptorMap::new(
-                // Descriptor map id must be the same as the parent descriptor map id.
-                descriptor.id.clone(),
-                ClaimFormatDesignation::JwtVcJson,
-                // This nested path is relative to the resolved path of the parent descriptor map.
-                // In this case, the parent descriptor map resolved to the `vp` key.
-                // The nested path is relative to the `vp` key.
-                //
-                // See: https://identity.foundation/presentation-exchange/spec/v2.0.0/#processing-of-submission-entries
-                "$.vp.verifiableCredential[0]".parse().unwrap(),
-            ))
-        })
-        .collect();
-
-    let presentation_submission = PresentationSubmission::new(
-        uuid::Uuid::new_v4(),
-        parsed_presentation_definition.parsed().id().clone(),
-        descriptor_map,
-    );
-
+    // The vp_token is a JSON object mapping credential query IDs
+    // (from dcql_query) to arrays of Verifiable Presentations.
     let vp = create_test_verifiable_presentation()
         .await
         .expect("failed to create verifiable presentation");
 
-    let response = AuthorizationResponse::Unencoded(UnencodedAuthorizationResponse {
-        vp_token: vp.into(),
-        presentation_submission: presentation_submission.try_into().unwrap(),
-        state: None,
-        should_strip_quotes: false,
-    });
+    // Create vp_token with the credential query ID from the DCQL query
+    let vp_token = VpToken::with_credential(
+        "did-key-id", // This matches the credential query ID in dcql_query
+        vec![VpTokenItem::from(vp)],
+    );
+
+    let response = AuthorizationResponse::Unencoded(UnencodedAuthorizationResponse::new(vp_token));
 
     let status = verifier.poll_status(id).await.unwrap();
     assert_eq!(Status::SentRequest, status);

@@ -105,11 +105,8 @@ impl Verifier {
     ///     .await?;
     /// ```
     ///
-    /// If using the `fragment` response mode, the wallet will submit the authorization response to
-    /// `GET https://verifier.example.com/some/sub/path/<reference>#<authorization_response>`.
-    ///
-    /// If using the `direct_post` response mode, the wallet will submit the authorization response
-    /// to `POST https://verifier.example.com/some/sub/path/<reference>`.
+    /// For `direct_post` or `direct_post.jwt` response modes, the wallet will submit the
+    /// authorization response to `POST https://verifier.example.com/some/sub/path/<reference>`.
     ///
     /// This will update the presentation status.
     pub async fn verify_response<F, Fut>(
@@ -190,21 +187,21 @@ impl VerifierBuilder {
     /// [AuthorizationRequest](crate::core::authorization_request::AuthorizationRequest) will
     /// contain.
     ///
-    /// 'client_id' and 'client_id_scheme' are always overridden by the
-    /// [Client](crate::verifier::client::Client).
+    /// Note: `client_id` is always set by the [Client],
+    /// which embeds the Client Identifier Prefix per OID4VP v1.0 Section 5.9.
     pub fn with_default_request_parameter<T: TypedParameter>(mut self, t: T) -> Self {
         self.default_request_params.insert(t);
         self
     }
 
-    /// Set the [Client](crate::verifier::client::Client) that the [Verifier] will use to identify
+    /// Set the [Client] that the [Verifier] will use to identify
     /// itself to the Wallet.
     pub fn with_client(mut self, client: Arc<dyn Client + Send + Sync>) -> Self {
         self.client = Some(client);
         self
     }
 
-    /// Set the [SessionStore](crate::verifier::session_store::SessionStore) that the [Verifier]
+    /// Set the [`SessionStore`] that the [`Verifier`]
     /// will use to maintain session state across transactions.
     pub fn with_session_store(
         mut self,

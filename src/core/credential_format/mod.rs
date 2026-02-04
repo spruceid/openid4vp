@@ -3,17 +3,12 @@ use std::{borrow::Cow, collections::HashMap, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-const FORMAT_JWT: &str = "jwt";
-const FORMAT_JWT_VC: &str = "jwt_vc";
-const FORMAT_JWT_VP: &str = "jwt_vp";
+// Credential Format Identifiers
+// See Appendix B: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B
 const FORMAT_JWT_VC_JSON: &str = "jwt_vc_json";
-const FORMAT_JWT_VP_JSON: &str = "jwt_vp_json";
-const FORMAT_LDP: &str = "ldp";
 const FORMAT_LDP_VC: &str = "ldp_vc";
-const FORMAT_LDP_VP: &str = "ldp_vp";
-const FORMAT_AC_VC: &str = "ac_vc";
-const FORMAT_AC_VP: &str = "ac_vp";
 const FORMAT_MSO_MDOC: &str = "mso_mdoc";
+const FORMAT_DC_SD_JWT: &str = "dc+sd-jwt";
 
 /// A Json object of claim formats.
 pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
@@ -24,96 +19,46 @@ pub type ClaimFormatMap = HashMap<ClaimFormatDesignation, ClaimFormatPayload>;
 // a new type with associative methods, e.g., to parse various credential types, etc.
 pub type CredentialType = String;
 
-/// The Presentation Definition MAY include a format property. The value MUST be an object with one or
-/// more properties matching the registered [ClaimFormatDesignation] (e.g., jwt, jwt_vc, jwt_vp, etc.).
-/// The properties inform the Holder of the Claim format configurations the Verifier can process.
-/// The value for each claim format property MUST be an object composed as follows:
+/// Credential Format with associated metadata.
 ///
-/// The object MUST include a format-specific property (i.e., alg, proof_type) that expresses which
-/// algorithms the Verifier supports for the format. Its value MUST be an array of one or more
-/// format-specific algorithmic identifier references, as noted in the [ClaimFormatDesignation].
-///
-/// See [https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#presentation-definition)
-/// for an example schema.
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B>
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ClaimFormat {
-    #[serde(rename = "jwt")]
-    Jwt {
-        /// The algorithm used to sign the JWT.
-        alg: Vec<String>,
-    },
-    #[serde(rename = "jwt_vc")]
-    JwtVc {
-        /// The algorithm used to sign the JWT verifiable credential.
-        alg: Vec<String>,
-    },
-    #[serde(rename = "jwt_vp")]
-    JwtVp {
-        /// The algorithm used to sign the JWT verifiable presentation.
-        alg: Vec<String>,
-    },
+    /// W3C Verifiable Credential secured with JWT (OID4VP v1.0 Section B.1.3.1)
+    ///
+    /// Covers both credentials AND presentations per spec.
     #[serde(rename = "jwt_vc_json")]
     JwtVcJson {
-        /// Used in the OID4VP specification for wallet methods supported.
+        /// Algorithms supported for JWT-secured credentials/presentations.
         alg_values_supported: Vec<String>,
     },
-    #[serde(rename = "jwt_vp_json")]
-    JwtVpJson {
-        /// Used in the OID4VP specification for wallet methods supported.
-        alg_values_supported: Vec<String>,
-    },
-    #[serde(rename = "ldp")]
-    Ldp {
-        /// The proof type used to sign the linked data proof.
-        /// e.g., "JsonWebSignature2020", "Ed25519Signature2018", "EcdsaSecp256k1Signature2019", "RsaSignature2018"
-        proof_type: Vec<String>,
-    },
+    /// W3C Verifiable Credential secured with Data Integrity (OID4VP v1.0 Section B.1.3.2)
+    ///
+    /// Covers both credentials AND presentations per spec.
     #[serde(rename = "ldp_vc")]
     LdpVc {
-        /// The proof type used to sign the linked data proof verifiable credential.
+        /// Proof types supported for Data Integrity credentials/presentations.
         proof_type: Vec<String>,
     },
-    #[serde(rename = "ldp_vp")]
-    LdpVp {
-        /// The proof type used to sign the linked data proof verifiable presentation.
-        proof_type: Vec<String>,
-    },
-    #[serde(rename = "ac_vc")]
-    AcVc {
-        /// The proof type used to sign the anoncreds verifiable credential.
-        proof_type: Vec<String>,
-    },
-    #[serde(rename = "ac_vp")]
-    AcVp {
-        /// The proof type used to sign the anoncreds verifiable presentation.
-        proof_type: Vec<String>,
-    },
+    /// ISO/IEC 18013-5 mDOC (OID4VP v1.0 Section B.2)
     #[serde(rename = "mso_mdoc")]
     MsoMDoc(serde_json::Value),
+    /// IETF SD-JWT VC (OID4VP v1.0 Section B.3)
+    #[serde(rename = "dc+sd-jwt")]
+    DcSdJwt(serde_json::Value),
     /// Support for non-standard claim formats.
-    // NOTE: a `format` property will be included within the serialized
-    // type. This will help for identifying the claim format designation type.
     #[serde(untagged)]
     Other(serde_json::Value),
 }
 
 impl ClaimFormat {
     /// Returns the designated format of the claim.
-    ///
-    /// e.g., jwt, jwt_vc, jwt_vp, ldp, ldp_vc, ldp_vp, ac_vc, ac_vp, mso_mdoc
     pub fn designation(&self) -> ClaimFormatDesignation {
         match self {
-            ClaimFormat::Jwt { .. } => ClaimFormatDesignation::Jwt,
-            ClaimFormat::JwtVc { .. } => ClaimFormatDesignation::JwtVc,
             ClaimFormat::JwtVcJson { .. } => ClaimFormatDesignation::JwtVcJson,
-            ClaimFormat::JwtVp { .. } => ClaimFormatDesignation::JwtVp,
-            ClaimFormat::JwtVpJson { .. } => ClaimFormatDesignation::JwtVpJson,
-            ClaimFormat::Ldp { .. } => ClaimFormatDesignation::Ldp,
             ClaimFormat::LdpVc { .. } => ClaimFormatDesignation::LdpVc,
-            ClaimFormat::LdpVp { .. } => ClaimFormatDesignation::LdpVp,
-            ClaimFormat::AcVc { .. } => ClaimFormatDesignation::AcVc,
-            ClaimFormat::AcVp { .. } => ClaimFormatDesignation::AcVp,
             ClaimFormat::MsoMDoc(_) => ClaimFormatDesignation::MsoMDoc,
+            ClaimFormat::DcSdJwt(_) => ClaimFormatDesignation::DcSdJwt,
             ClaimFormat::Other(value) => {
                 // Parse the format from the first key found in the value map.
                 let format = value
@@ -128,18 +73,19 @@ impl ClaimFormat {
     }
 }
 
-/// Claim format payload
+/// Claim format payload per OID4VP v1.0 Appendix B.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ClaimFormatPayload {
-    #[serde(rename = "alg")]
-    Alg(Vec<String>),
-    /// This variant is primarily used for `jwt_vc_json` and `jwt_vp_json`
-    /// claim presentation algorithm types supported by a wallet.
-    #[serde(rename = "alg_values_supported")]
-    AlgValuesSupported(Vec<String>),
-    /// This variant is primarily used for `ldp`, `ldp_vc`, `ldp_vp`, `ac_vc`, and `ac_vp`
-    #[serde(rename = "proof_type")]
-    ProofType(Vec<String>),
+    /// Algorithms supported for JWT-based credentials (jwt_vc_json, jwt_vp_json).
+    /// Per OID4VP v1.0 Section B.1.3.1.3.
+    #[serde(rename = "alg_values")]
+    AlgValues(Vec<String>),
+    /// Cryptographic suites supported for Data Integrity credentials (ldp_vc, ldp_vp).
+    /// Per OID4VP v1.0 Section B.1.3.2.3.
+    #[serde(rename = "proof_type_values")]
+    ProofTypeValues(Vec<String>),
+    /// Catch-all for other formats (mso_mdoc, dc+sd-jwt, etc.)
+    /// which may have different or multiple metadata parameters.
     #[serde(untagged)]
     Other(serde_json::Value),
 }
@@ -147,87 +93,53 @@ pub enum ClaimFormatPayload {
 impl ClaimFormatPayload {
     /// Adds an algorithm value to the list of supported algorithms.
     ///
-    /// This method is a no-op if self is not of type `AlgValuesSupported` or `Alg`.
+    /// This method is a no-op if self is not of type `AlgValues`.
     pub fn add_alg(&mut self, alg: String) {
-        if let Self::Alg(algs) | Self::AlgValuesSupported(algs) = self {
+        if let Self::AlgValues(algs) = self {
             algs.push(alg);
         }
     }
 
     /// Adds a proof type to the list of supported proof types.
     ///
-    /// This method is a no-op if self is not of type `ProofType`.
+    /// This method is a no-op if self is not of type `ProofTypeValues`.
     pub fn add_proof_type(&mut self, proof_type: String) {
-        if let Self::ProofType(proof_types) = self {
+        if let Self::ProofTypeValues(proof_types) = self {
             proof_types.push(proof_type);
         }
     }
 }
 
-/// The claim format designation type is used in the input description object to specify the format of the claim.
+/// Credential Format Identifiers.
 ///
-/// Registry of claim format type: https://identity.foundation/claim-format-registry/#registry
-///
-/// Documentation based on the [DIF Presentation Exchange Specification v2.0](https://identity.foundation/presentation-exchange/spec/v2.0.0/#claim-format-designations)
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B>
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ClaimFormatDesignation {
-    /// The format is a JSON Web Token (JWT) as defined by [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519)
-    /// that will be submitted in the form of a JWT encoded string. Expression of
-    /// supported algorithms in relation to this format MUST be conveyed using an `alg`
-    /// property paired with values that are identifiers from the JSON Web Algorithms
-    /// registry [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518).
-    Jwt,
-
-    /// These formats are JSON Web Tokens (JWTs) [RFC7519](https://identity.foundation/claim-format-registry/#ref:RFC7519)
-    /// that will be submitted in the form of a JWT-encoded string, with a payload extractable from it defined according to the
-    /// JSON Web Token (JWT) [section] of the W3C [VC-DATA-MODEL](https://identity.foundation/claim-format-registry/#term:vc-data-model)
-    /// specification. Expression of supported algorithms in relation to these formats MUST be conveyed using an JWT alg
-    /// property paired with values that are identifiers from the JSON Web Algorithms registry in
-    /// [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518) Section 3.
-    JwtVc,
-
-    /// See [JwtVc](JwtVc) for more information.
-    JwtVp,
-
+    /// W3C Verifiable Credential secured with JWT (OID4VP v1.0 Section B.1.3.1)
+    ///
+    /// Per Section B.1.3.1.1:
+    /// > "The Credential Format Identifier is `jwt_vc_json` to request a W3C Verifiable
+    /// > Credential... or a Verifiable Presentation of such a Credential."
     JwtVcJson,
 
-    JwtVpJson,
-
-    /// The format is a Linked-Data Proof that will be submitted as an object.
-    /// Expression of supported algorithms in relation to these formats MUST be
-    /// conveyed using a proof_type property with values that are identifiers from
-    /// the Linked Data Cryptographic Suite Registry [LDP-Registry](https://identity.foundation/claim-format-registry/#term:ldp-registry).
-    Ldp,
-
-    /// Verifiable Credentials or Verifiable Presentations signed with Linked Data Proof formats.
-    /// These are descriptions of formats normatively defined in the W3C Verifiable Credentials
-    /// specification [VC-DATA-MODEL](https://identity.foundation/claim-format-registry/#term:vc-data-model),
-    /// and will be submitted in the form of a JSON object. Expression of supported algorithms in relation to
-    /// these formats MUST be conveyed using a proof_type property paired with values that are identifiers from the
-    /// Linked Data Cryptographic Suite Registry (LDP-Registry).
+    /// W3C Verifiable Credential secured with Data Integrity (OID4VP v1.0 Section B.1.3.2)
+    ///
+    /// Per Section B.1.3.2.1:
+    /// > "The Credential Format Identifier is `ldp_vc` to request a W3C Verifiable
+    /// > Credential... or a Verifiable Presentation of such a Credential."
     LdpVc,
 
-    /// See [LdpVc](LdpVc) for more information.
-    LdpVp,
-
-    /// This format is for Verifiable Credentials using AnonCreds.
-    /// AnonCreds is a VC format that adds important
-    /// privacy-protecting ZKP (zero-knowledge proof) capabilities
-    /// to the core VC assurances.
-    AcVc,
-
-    /// This format is for Verifiable Presentations using AnonCreds.
-    /// AnonCreds is a VC format that adds important privacy-protecting ZKP
-    /// (zero-knowledge proof) capabilities to the core VC assurances.
-    AcVp,
-
-    /// The format is defined by ISO/IEC 18013-5:2021 [ISO.18013-5](https://identity.foundation/claim-format-registry/#term:iso.18013-5)
-    /// which defines a mobile driving license (mDL) Credential in the mobile document (mdoc) format.
-    /// Although ISO/IEC 18013-5:2021 ISO.18013-5 is specific to mobile driving licenses (mDLs),
-    /// the Credential format can be utilized with any type of Credential (or mdoc document types).
+    /// ISO/IEC 18013-5 mDOC format (OID4VP v1.0 Section B.2)
+    ///
+    /// Used for mobile driving licenses (mDL) and other mobile documents.
     MsoMDoc,
 
-    /// Other claim format designations not covered by the above.
+    /// IETF SD-JWT VC format (OID4VP v1.0 Section B.3)
+    ///
+    /// The Credential Format Identifier is `dc+sd-jwt` per Section B.3.1.
+    DcSdJwt,
+
+    /// Other claim format designations not defined in OID4VP v1.0.
     ///
     /// The value of this variant is the name of the claim format designation.
     Other(String),
@@ -236,51 +148,30 @@ pub enum ClaimFormatDesignation {
 impl ClaimFormatDesignation {
     pub fn from_name(name: Cow<str>) -> Self {
         match name.as_ref() {
-            FORMAT_JWT => Self::Jwt,
-            FORMAT_JWT_VC => Self::JwtVc,
-            FORMAT_JWT_VP => Self::JwtVp,
             FORMAT_JWT_VC_JSON => Self::JwtVcJson,
-            FORMAT_JWT_VP_JSON => Self::JwtVpJson,
-            FORMAT_LDP => Self::Ldp,
             FORMAT_LDP_VC => Self::LdpVc,
-            FORMAT_LDP_VP => Self::LdpVp,
-            FORMAT_AC_VC => Self::AcVc,
-            FORMAT_AC_VP => Self::AcVp,
             FORMAT_MSO_MDOC => Self::MsoMDoc,
+            FORMAT_DC_SD_JWT => Self::DcSdJwt,
             _ => Self::Other(name.into_owned()),
         }
     }
 
     fn name(&self) -> &str {
         match self {
-            Self::Jwt => FORMAT_JWT,
-            Self::JwtVc => FORMAT_JWT_VC,
-            Self::JwtVp => FORMAT_JWT_VP,
             Self::JwtVcJson => FORMAT_JWT_VC_JSON,
-            Self::JwtVpJson => FORMAT_JWT_VP_JSON,
-            Self::Ldp => FORMAT_LDP,
             Self::LdpVc => FORMAT_LDP_VC,
-            Self::LdpVp => FORMAT_LDP_VP,
-            Self::AcVc => FORMAT_AC_VC,
-            Self::AcVp => FORMAT_AC_VP,
             Self::MsoMDoc => FORMAT_MSO_MDOC,
+            Self::DcSdJwt => FORMAT_DC_SD_JWT,
             Self::Other(other) => other,
         }
     }
 
     fn into_name(self) -> Cow<'static, str> {
         match self {
-            Self::Jwt => Cow::Borrowed(FORMAT_JWT),
-            Self::JwtVc => Cow::Borrowed(FORMAT_JWT_VC),
-            Self::JwtVp => Cow::Borrowed(FORMAT_JWT_VP),
             Self::JwtVcJson => Cow::Borrowed(FORMAT_JWT_VC_JSON),
-            Self::JwtVpJson => Cow::Borrowed(FORMAT_JWT_VP_JSON),
-            Self::Ldp => Cow::Borrowed(FORMAT_LDP),
             Self::LdpVc => Cow::Borrowed(FORMAT_LDP_VC),
-            Self::LdpVp => Cow::Borrowed(FORMAT_LDP_VP),
-            Self::AcVc => Cow::Borrowed(FORMAT_AC_VC),
-            Self::AcVp => Cow::Borrowed(FORMAT_AC_VP),
             Self::MsoMDoc => Cow::Borrowed(FORMAT_MSO_MDOC),
+            Self::DcSdJwt => Cow::Borrowed(FORMAT_DC_SD_JWT),
             Self::Other(other) => Cow::Owned(other),
         }
     }
@@ -344,40 +235,43 @@ mod tests {
 
     #[test]
     fn test_credential_format_serialization() {
+        // OID4VP v1.0 compliant vp_formats_supported
         let value = json!({
-          "claim_formats_supported": {
-            "jwt_vc": {
-              "alg": ["ES256", "EdDSA"],
-              "proof_type": ["JsonWebSignature2020"]
+          "vp_formats_supported": {
+            "jwt_vc_json": {
+              "alg_values": ["ES256", "EdDSA"]
             },
             "ldp_vc": {
-              "proof_type": ["Ed25519Signature2018", "EcdsaSecp256k1Signature2019"]
+              "proof_type_values": ["Ed25519Signature2018", "ecdsa-rdfc-2019"]
             },
-            "sd_jwt_vc": {
-              "alg": ["ES256", "ES384"],
-              "kb_jwt_alg": ["ES256"]
-            },
-            "com.example.custom_vc": {
-              "version": "1.0",
-              "encryption": ["AES-GCM"],
-              "signature": ["ED25519"]
+            "mso_mdoc": {},
+            "dc+sd-jwt": {
+              "sd-jwt_alg_values": ["ES256"],
+              "kb-jwt_alg_values": ["ES256"]
             }
           }
         });
 
         let claim_format_map: ClaimFormatMap =
-            serde_json::from_value(value["claim_formats_supported"].clone())
+            serde_json::from_value(value["vp_formats_supported"].clone())
                 .expect("Failed to parse claim format map");
 
-        assert!(claim_format_map.contains_key(&ClaimFormatDesignation::JwtVc));
+        assert!(claim_format_map.contains_key(&ClaimFormatDesignation::JwtVcJson));
         assert!(claim_format_map.contains_key(&ClaimFormatDesignation::LdpVc));
-        assert!(
-            claim_format_map.contains_key(&ClaimFormatDesignation::Other("sd_jwt_vc".to_string()))
-        );
-        assert!(
-            claim_format_map.contains_key(&ClaimFormatDesignation::Other(
-                "com.example.custom_vc".to_string()
-            ))
-        );
+        assert!(claim_format_map.contains_key(&ClaimFormatDesignation::MsoMDoc));
+        assert!(claim_format_map.contains_key(&ClaimFormatDesignation::DcSdJwt));
+    }
+
+    #[test]
+    fn test_format_covers_both_credentials_and_presentations() {
+        assert_eq!(ClaimFormatDesignation::JwtVcJson.name(), "jwt_vc_json");
+        assert_eq!(ClaimFormatDesignation::LdpVc.name(), "ldp_vc");
+
+        // Non-standard formats should be parsed as Other
+        let jwt_vp_json: ClaimFormatDesignation = "jwt_vp_json".into();
+        assert!(matches!(jwt_vp_json, ClaimFormatDesignation::Other(_)));
+
+        let ldp_vp: ClaimFormatDesignation = "ldp_vp".into();
+        assert!(matches!(ldp_vp, ClaimFormatDesignation::Other(_)));
     }
 }

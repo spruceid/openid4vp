@@ -24,7 +24,7 @@ use super::request_signer::RequestSigner;
 pub trait Client: Debug {
     fn id(&self) -> &ClientId;
 
-    fn scheme(&self) -> ClientIdScheme;
+    fn prefix(&self) -> ClientIdScheme;
 
     async fn generate_request_object_jwt(
         &self,
@@ -32,7 +32,8 @@ pub trait Client: Debug {
     ) -> Result<String>;
 }
 
-/// A [Client] with the `did` Client Identifier.
+/// A [Client] with the `decentralized_identifier` Client Identifier prefix.
+/// See: <https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.9.3>
 #[derive(Debug, Clone)]
 pub struct DIDClient {
     id: ClientId,
@@ -61,28 +62,30 @@ impl DIDClient {
             )
         }
 
+        // Per OID4VP v1.0 Section 5.9.3, client_id for decentralized_identifier prefix
+        // must be "decentralized_identifier:<DID>"
+        let prefixed_id = format!("{}:{}", ClientIdScheme::DECENTRALIZED_IDENTIFIER, id);
         Ok(Self {
-            id: ClientId(id.to_string()),
+            id: ClientId(prefixed_id),
             vm,
             signer,
         })
     }
 }
 
-/// A [Client] with the `x509_san_dns` or `x509_san_uri` Client Identifier.
+/// A [Client] with the `x509_san_dns` Client Identifier.
+/// See: Section 5.9.3
 #[derive(Debug, Clone)]
-pub struct X509SanClient {
+pub struct X509SanDnsClient {
     id: ClientId,
     x5c: Vec<Certificate>,
     signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
-    variant: X509SanVariant,
 }
 
-impl X509SanClient {
+impl X509SanDnsClient {
     pub fn new(
         x5c: Vec<Certificate>,
         signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
-        variant: X509SanVariant,
     ) -> Result<Self> {
         let leaf = &x5c[0];
         let id = if let Some(san) = leaf
@@ -96,17 +99,10 @@ impl X509SanClient {
                 }
             })
             .flatten()
-            .filter_map(|general_name| match (general_name, variant) {
-                (GeneralName::DnsName(uri), X509SanVariant::Dns) => Some(uri.to_string()),
-                (gn, X509SanVariant::Dns) => {
+            .filter_map(|general_name| match general_name {
+                GeneralName::DnsName(dns) => Some(dns.to_string()),
+                gn => {
                     debug!("found non-DNS SAN: {gn:?}");
-                    None
-                }
-                (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Uri) => {
-                    Some(uri.to_string())
-                }
-                (gn, X509SanVariant::Uri) => {
-                    debug!("found non-URI SAN: {gn:?}");
                     None
                 }
             })
@@ -114,29 +110,16 @@ impl X509SanClient {
         {
             san
         } else {
-            bail!("x509 certificate does not contain Subject Alternative Name");
+            bail!("x509 certificate does not contain DNS Subject Alternative Name");
         };
-        Ok(X509SanClient {
-            id: ClientId(id),
+        // Per OID4VP v1.0 Section 5.9.3, client_id for x509_san_dns prefix
+        // must be "x509_san_dns:<DNS SAN>"
+        let prefixed_id = format!("{}:{}", ClientIdScheme::X509_SAN_DNS, id);
+        Ok(X509SanDnsClient {
+            id: ClientId(prefixed_id),
             x5c,
             signer,
-            variant,
         })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum X509SanVariant {
-    Uri,
-    Dns,
-}
-
-impl X509SanVariant {
-    pub fn to_scheme(&self) -> ClientIdScheme {
-        match self {
-            X509SanVariant::Uri => ClientIdScheme(ClientIdScheme::X509_SAN_URI.to_string()),
-            X509SanVariant::Dns => ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string()),
-        }
     }
 }
 
@@ -146,8 +129,8 @@ impl Client for DIDClient {
         &self.id
     }
 
-    fn scheme(&self) -> ClientIdScheme {
-        ClientIdScheme(ClientIdScheme::DID.to_string())
+    fn prefix(&self) -> ClientIdScheme {
+        ClientIdScheme(ClientIdScheme::DECENTRALIZED_IDENTIFIER.to_string())
     }
 
     async fn generate_request_object_jwt(
@@ -168,13 +151,13 @@ impl Client for DIDClient {
 }
 
 #[async_trait]
-impl Client for X509SanClient {
+impl Client for X509SanDnsClient {
     fn id(&self) -> &ClientId {
         &self.id
     }
 
-    fn scheme(&self) -> ClientIdScheme {
-        self.variant.to_scheme()
+    fn prefix(&self) -> ClientIdScheme {
+        ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string())
     }
 
     async fn generate_request_object_jwt(
