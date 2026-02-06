@@ -4,6 +4,7 @@ use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::{json, Value as Json};
+use sha2::{Digest, Sha256};
 use ssi::jwk::JWKResolver;
 
 use tracing::debug;
@@ -123,6 +124,36 @@ impl X509SanDnsClient {
     }
 }
 
+/// A [Client] with the `x509_hash` Client Identifier.
+/// See: Section 5.9.3
+#[derive(Debug, Clone)]
+pub struct X509HashClient {
+    id: ClientId,
+    x5c: Vec<Certificate>,
+    signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
+}
+
+impl X509HashClient {
+    pub fn new(
+        x5c: Vec<Certificate>,
+        signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
+    ) -> Result<Self> {
+        let leaf = &x5c[0];
+        let leaf_der = leaf
+            .to_der()
+            .context("failed to DER-encode leaf certificate")?;
+        let hash = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(&leaf_der));
+        // Per OID4VP v1.0 Section 5.9.3, client_id for x509_hash prefix
+        // must be "x509_hash:<base64url SHA-256 hash of DER-encoded leaf cert>"
+        let prefixed_id = format!("{}:{}", ClientIdScheme::X509_HASH, hash);
+        Ok(Self {
+            id: ClientId(prefixed_id),
+            x5c,
+            signer,
+        })
+    }
+}
+
 #[async_trait]
 impl Client for DIDClient {
     fn id(&self) -> &ClientId {
@@ -158,6 +189,39 @@ impl Client for X509SanDnsClient {
 
     fn prefix(&self) -> ClientIdScheme {
         ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string())
+    }
+
+    async fn generate_request_object_jwt(
+        &self,
+        body: &AuthorizationRequestObject,
+    ) -> Result<String> {
+        let algorithm = self
+            .signer
+            .alg()
+            .context("failed to retrieve signing algorithm")?;
+        let x5c: Vec<String> = self
+            .x5c
+            .iter()
+            .map(|x509| x509.to_der())
+            .map(|der| Ok(BASE64_STANDARD.encode(der?)))
+            .collect::<Result<_>>()?;
+        let header = json!({
+            "alg": algorithm,
+            "x5c": x5c,
+            "typ": "oauth-authz-req+jwt"
+        });
+        make_jwt(header, body, self.signer.as_ref()).await
+    }
+}
+
+#[async_trait]
+impl Client for X509HashClient {
+    fn id(&self) -> &ClientId {
+        &self.id
+    }
+
+    fn prefix(&self) -> ClientIdScheme {
+        ClientIdScheme(ClientIdScheme::X509_HASH.to_string())
     }
 
     async fn generate_request_object_jwt(
