@@ -71,7 +71,7 @@ impl JwsSigner for P256Signer {
 
         let key_id = self.jwk.key_id.clone();
 
-        Ok(JwsSignerInfo { algorithm, key_id })
+        Ok(JwsSignerInfo::new(key_id, algorithm))
     }
 
     async fn sign_bytes(
