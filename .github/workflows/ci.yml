@@ -10,14 +10,28 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-      with:
-        submodules: recursive
-    - name: Build
-      run: cargo build
-    - name: Test
-      run: cargo test --all-features
-    - name: Fmt
-      run: cargo fmt -- --check
-    - name: Clippy
-      run: cargo clippy
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Build
+        run: cargo build
+      - name: Test
+        run: cargo test --all-features
+      - name: Fmt
+        run: cargo fmt -- --check
+      - name: Clippy
+        run: cargo clippy
+
+      - name: Unused dependencies
+        run: cargo machete
+
+      - name: Check dependencies licences are compatible
+        run: cargo deny check licenses
