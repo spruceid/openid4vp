@@ -27,8 +27,5 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .with_state(state)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::with_status_code(
-            axum::http::StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(30),
-        ))
+        .layer(TimeoutLayer::new(Duration::from_secs(30)))
 }

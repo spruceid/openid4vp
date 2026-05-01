@@ -39,10 +39,7 @@ pub fn create_router(state: AppState) -> Router {
         // Middleware
         .layer(cors)
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::with_status_code(
-            http::StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(30),
-        ))
+        .layer(TimeoutLayer::new(Duration::from_secs(30)))
         .layer(RequestBodyLimitLayer::new(1024 * 1024)) // 1MB max
         // State
         .with_state(state)
