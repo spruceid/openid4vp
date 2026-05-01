@@ -199,7 +199,10 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
             .ok_or_else(|| anyhow::anyhow!("'jwks' is required for encrypted responses"))?
             .map_err(|e| anyhow::anyhow!("failed to parse 'jwks': {e}"))?;
 
-        // Find encryption keys (use="enc") and extract their alg values
+        // Find encryption keys and extract their alg values.
+        // Per OID4VP v1.0 §8.3, `alg` MUST be present; `use` is optional. A JWK
+        // with no `use` is acceptable (the alg itself disambiguates intent),
+        // and a JWK with an explicit non-"enc" use (e.g. "sig") is excluded.
         let encryption_algs: Vec<String> = jwks
             .keys
             .iter()
@@ -207,7 +210,7 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
                 k.get("use")
                     .and_then(|v| v.as_str())
                     .map(|s| s == "enc")
-                    .unwrap_or(false)
+                    .unwrap_or(true)
             })
             .filter_map(|k| k.get("alg").and_then(|v| v.as_str()).map(String::from))
             .collect();
