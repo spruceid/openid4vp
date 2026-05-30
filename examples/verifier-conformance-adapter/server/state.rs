@@ -13,7 +13,7 @@ use openid4vp::{
         dcql_query::{DcqlCredentialQuery, DcqlQuery},
         metadata::{
             parameters::{
-                verifier::JWKs,
+                verifier::{EncryptedResponseEncValuesSupported, JWKs},
                 wallet::{AuthorizationEndpoint, ClientIdPrefixesSupported, VpFormatsSupported},
             },
             WalletMetadata,
@@ -22,7 +22,7 @@ use openid4vp::{
     },
     utils::NonEmptyVec,
     verifier::{
-        client::{Client, X509SanDnsClient},
+        client::{Client, X509HashClient, X509SanDnsClient},
         request_signer::P256Signer,
         session::MemoryStore,
         Verifier,
@@ -47,6 +47,10 @@ pub struct OidfConfig {
     pub d: String,
     pub x5c: String,
     pub client_id: String,
+    /// PEM of the root CA that signed the leaf. Paste this into the conformance
+    /// suite's "Request Object Trust Anchor" field so it can validate the x5c
+    /// chain of the signed request object.
+    pub trust_anchor_pem: String,
 }
 
 pub struct AppState {
@@ -61,14 +65,21 @@ pub struct AppState {
 struct CachedCredentials {
     /// Domain this certificate was generated for
     domain: String,
-    /// DER-encoded certificate (base64)
+    /// DER-encoded leaf certificate (base64)
     cert_der_b64: String,
-    /// PKCS#8 private key (base64)
+    /// DER-encoded root CA certificate (base64). Not sent in x5c, but used as
+    /// the trust anchor for the request object's certificate chain.
+    ca_cert_der_b64: String,
+    /// PKCS#8 private key of the leaf (base64)
     key_pkcs8_b64: String,
 }
 
 impl AppState {
-    pub async fn new(public_url: Url, use_encrypted_response: bool) -> Result<Self> {
+    pub async fn new(
+        public_url: Url,
+        use_encrypted_response: bool,
+        client_id_prefix: &str,
+    ) -> Result<Self> {
         let wallet_authorization_endpoint: Url = WALLET_AUTHORIZATION_ENDPOINT.parse()?;
 
         let domain = public_url
@@ -78,15 +89,23 @@ impl AppState {
 
         info!("Initializing verifier for domain: {}", domain);
 
-        let (signing_key, cert, cert_der) = get_or_generate_cert(&domain)?;
+        let (signing_key, cert, cert_der, ca_der) = get_or_generate_cert(&domain)?;
 
-        let oidf_config = build_oidf_config(&signing_key, &cert_der, &domain);
+        let oidf_config = build_oidf_config(&signing_key, &cert_der, &ca_der, &domain);
 
         let signer = Arc::new(P256Signer::new(signing_key)?);
 
-        let client = Arc::new(X509SanDnsClient::new(vec![cert], signer)?);
+        let client: Arc<dyn Client + Send + Sync> = match client_id_prefix {
+            "x509_hash" => Arc::new(X509HashClient::new(vec![cert], signer)?),
+            "x509_san_dns" => Arc::new(X509SanDnsClient::new(vec![cert], signer)?),
+            other => anyhow::bail!("unsupported client_id_prefix: {other}"),
+        };
 
-        info!("Created X509SanDnsClient with client_id: {}", client.id().0);
+        info!(
+            "Created client ({}) with client_id: {}",
+            client_id_prefix,
+            client.id().0
+        );
 
         let session_store = Arc::new(MemoryStore::default());
 
@@ -118,6 +137,8 @@ impl AppState {
             .with_default_request_parameter(ResponseType::VpToken)
             .with_default_request_parameter(response_mode)
             .with_default_request_parameter(client_metadata)
+            // The request object `aud` (OID4VP §5.8) is defaulted by the library
+            // to "https://self-issued.me/v2" for static Wallet metadata.
             .build()
             .await?;
 
@@ -152,8 +173,8 @@ impl AppState {
     }
 }
 
-/// Get cached certificate or generate a new one for the given domain
-fn get_or_generate_cert(domain: &str) -> Result<(SigningKey, Certificate, Vec<u8>)> {
+/// Get cached certificate material or generate new material for the given domain.
+fn get_or_generate_cert(domain: &str) -> Result<(SigningKey, Certificate, Vec<u8>, Vec<u8>)> {
     let cache_dir = PathBuf::from(CACHE_DIR);
     let cache_file = cache_dir.join(format!("{}.json", domain.replace('.', "_")));
 
@@ -168,25 +189,26 @@ fn get_or_generate_cert(domain: &str) -> Result<(SigningKey, Certificate, Vec<u8
 
     // Generate new certificate
     info!("Generating new certificate for domain: {}", domain);
-    let (signing_key, cert, key_pkcs8) = generate_cert(domain)?;
+    let (signing_key, cert, ca_cert, key_pkcs8) = generate_cert(domain)?;
 
     // Get cert DER for return
     use x509_cert::der::Encode;
     let cert_der = cert.to_der()?;
+    let ca_der = ca_cert.to_der()?;
 
     // Cache it
-    if let Err(e) = save_cert_to_cache(&cache_file, domain, &cert, &key_pkcs8) {
+    if let Err(e) = save_cert_to_cache(&cache_file, domain, &cert, &ca_cert, &key_pkcs8) {
         tracing::warn!("Failed to cache certificate: {}", e);
     }
 
-    Ok((signing_key, cert, cert_der))
+    Ok((signing_key, cert, cert_der, ca_der))
 }
 
-/// Load certificate from cache file
+/// Load certificate material from cache file
 fn load_cached_cert(
     cache_file: &PathBuf,
     expected_domain: &str,
-) -> Result<(SigningKey, Certificate, Vec<u8>)> {
+) -> Result<(SigningKey, Certificate, Vec<u8>, Vec<u8>)> {
     let content = fs::read_to_string(cache_file)?;
     let cached: CachedCredentials = serde_json::from_str(&content)?;
 
@@ -202,14 +224,17 @@ fn load_cached_cert(
     let cert_der = BASE64_STANDARD.decode(&cached.cert_der_b64)?;
     let cert = Certificate::from_der(&cert_der)?;
 
+    let ca_der = BASE64_STANDARD.decode(&cached.ca_cert_der_b64)?;
+
     info!("Successfully loaded cached certificate");
-    Ok((signing_key, cert, cert_der))
+    Ok((signing_key, cert, cert_der, ca_der))
 }
 
 fn save_cert_to_cache(
     cache_file: &PathBuf,
     domain: &str,
     cert: &Certificate,
+    ca_cert: &Certificate,
     key_pkcs8: &[u8],
 ) -> Result<()> {
     use base64::prelude::*;
@@ -222,6 +247,7 @@ fn save_cert_to_cache(
     let cached = CachedCredentials {
         domain: domain.to_string(),
         cert_der_b64: BASE64_STANDARD.encode(cert.to_der()?),
+        ca_cert_der_b64: BASE64_STANDARD.encode(ca_cert.to_der()?),
         key_pkcs8_b64: BASE64_STANDARD.encode(key_pkcs8),
     };
 
@@ -232,42 +258,89 @@ fn save_cert_to_cache(
     Ok(())
 }
 
-fn generate_cert(domain: &str) -> Result<(SigningKey, Certificate, Vec<u8>)> {
+/// Generate a leaf certificate and its issuing CA for the given domain.
+///
+/// Returns the leaf signing key, the leaf certificate, the CA certificate, and
+/// the leaf's PKCS#8 private key.
+fn generate_cert(domain: &str) -> Result<(SigningKey, Certificate, Certificate, Vec<u8>)> {
     use p256::pkcs8::DecodePrivateKey;
+    use rcgen::{BasicConstraints, IsCa};
 
-    let key_pair = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)
-        .context("Failed to generate key pair")?;
+    // 1. Self-signed CA used only to sign the leaf (acts as the trust anchor).
+    let ca_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)
+        .context("Failed to generate CA key pair")?;
 
-    let mut params = CertificateParams::default();
-    params
+    let mut ca_params = CertificateParams::default();
+    ca_params
         .distinguished_name
-        .push(DnType::CommonName, "OID4VP Verifier");
-    params
+        .push(DnType::CommonName, "OID4VP Conformance Test CA");
+    ca_params
         .distinguished_name
         .push(DnType::OrganizationName, "Conformance Test");
-    params.distinguished_name.push(DnType::CountryName, "BR");
+    ca_params.distinguished_name.push(DnType::CountryName, "BR");
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
 
-    params.subject_alt_names = vec![SanType::DnsName(domain.to_string().try_into()?)];
+    let ca_cert_rcgen = ca_params
+        .self_signed(&ca_key)
+        .context("Failed to generate CA certificate")?;
 
-    let cert_rcgen = params
-        .self_signed(&key_pair)
-        .context("Failed to generate self-signed certificate")?;
+    // 2. Leaf certificate signed by the CA (not self-signed).
+    let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)
+        .context("Failed to generate leaf key pair")?;
 
-    let cert_der = cert_rcgen.der().to_vec();
+    let mut leaf_params = CertificateParams::default();
+    leaf_params
+        .distinguished_name
+        .push(DnType::CommonName, "OID4VP Verifier");
+    leaf_params
+        .distinguished_name
+        .push(DnType::OrganizationName, "Conformance Test");
+    leaf_params
+        .distinguished_name
+        .push(DnType::CountryName, "BR");
+    leaf_params.subject_alt_names = vec![SanType::DnsName(domain.to_string().try_into()?)];
 
-    let cert = Certificate::from_der(&cert_der).context("Failed to parse generated certificate")?;
+    let leaf_cert_rcgen = leaf_params
+        .signed_by(&leaf_key, &ca_cert_rcgen, &ca_key)
+        .context("Failed to generate leaf certificate")?;
 
-    let key_pkcs8 = key_pair.serialize_der();
+    let leaf_der = leaf_cert_rcgen.der().to_vec();
+    let ca_der = ca_cert_rcgen.der().to_vec();
+
+    let leaf_cert =
+        Certificate::from_der(&leaf_der).context("Failed to parse generated leaf certificate")?;
+    let ca_cert =
+        Certificate::from_der(&ca_der).context("Failed to parse generated CA certificate")?;
+
+    let key_pkcs8 = leaf_key.serialize_der();
 
     let signing_key = SigningKey::from_pkcs8_der(&key_pkcs8)
-        .context("Failed to create signing key from generated key")?;
+        .context("Failed to create signing key from leaf key")?;
 
-    info!("Generated self-signed certificate for domain: {}", domain);
+    info!(
+        "Generated CA-signed leaf certificate for domain: {}",
+        domain
+    );
 
-    Ok((signing_key, cert, key_pkcs8))
+    Ok((signing_key, leaf_cert, ca_cert, key_pkcs8))
 }
 
-fn build_oidf_config(signing_key: &SigningKey, cert_der: &[u8], domain: &str) -> OidfConfig {
+fn der_to_pem(der: &[u8]) -> String {
+    let b64 = BASE64_STANDARD.encode(der);
+    let mut body = String::new();
+    for chunk in b64.as_bytes().chunks(64) {
+        body.push_str(std::str::from_utf8(chunk).unwrap());
+        body.push('\n');
+    }
+    format!("-----BEGIN CERTIFICATE-----\n{body}-----END CERTIFICATE-----\n")
+}
+
+fn build_oidf_config(
+    signing_key: &SigningKey,
+    cert_der: &[u8],
+    ca_der: &[u8],
+    domain: &str,
+) -> OidfConfig {
     let point = signing_key.verifying_key().to_encoded_point(false);
 
     OidfConfig {
@@ -276,6 +349,7 @@ fn build_oidf_config(signing_key: &SigningKey, cert_der: &[u8], domain: &str) ->
         d: BASE64_URL_SAFE_NO_PAD.encode(signing_key.to_bytes()),
         x5c: BASE64_STANDARD.encode(cert_der),
         client_id: domain.to_string(),
+        trust_anchor_pem: der_to_pem(ca_der),
     }
 }
 
@@ -327,6 +401,13 @@ fn build_client_metadata(
             keys: vec![public_jwk.clone()],
         };
         inner.insert(jwks);
+
+        // HAIP Section 5: Verifiers MUST list both A128GCM and A256GCM in
+        // `encrypted_response_enc_values_supported`.
+        inner.insert(EncryptedResponseEncValuesSupported(vec![
+            "A128GCM".to_string(),
+            "A256GCM".to_string(),
+        ]));
     }
 
     ClientMetadata(inner)
@@ -345,9 +426,10 @@ fn create_wallet_metadata(authorization_endpoint: Url) -> Result<WalletMetadata>
         None,
     );
 
-    metadata.insert(ClientIdPrefixesSupported(vec![ClientIdScheme(
-        ClientIdScheme::X509_SAN_DNS.to_string(),
-    )]));
+    metadata.insert(ClientIdPrefixesSupported(vec![
+        ClientIdScheme(ClientIdScheme::X509_SAN_DNS.to_string()),
+        ClientIdScheme(ClientIdScheme::X509_HASH.to_string()),
+    ]));
 
     Ok(metadata)
 }

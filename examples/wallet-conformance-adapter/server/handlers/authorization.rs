@@ -1,22 +1,35 @@
+use anyhow::Context as _;
+use async_trait::async_trait;
 use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Form, Json,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use openid4vp::core::{
     authorization_request::{
-        parameters::{ResponseMode, State as RequestState},
+        parameters::{ClientIdScheme, ResponseMode, State as RequestState, TransactionData},
+        verification::{verifier::P256Verifier, x509_hash, RequestVerifier},
         AuthorizationRequest, AuthorizationRequestObject,
     },
+    credential_format::{ClaimFormatDesignation, ClaimFormatMap, ClaimFormatPayload},
     dcql_query::DcqlQuery,
-    jwe::{find_encryption_jwk, EncryptionJwkInfo, JweBuilder},
-    object::ParsingErrorContext,
-    response::{parameters::VpToken, UnencodedAuthorizationResponse},
+    jwe::build_encrypted_response,
+    metadata::{
+        parameters::wallet::{
+            AuthorizationEncryptionAlgValuesSupported, AuthorizationEncryptionEncValuesSupported,
+            AuthorizationEndpoint, ClientIdPrefixesSupported,
+            RequestObjectSigningAlgValuesSupported, VpFormatsSupported,
+        },
+        WalletMetadata,
+    },
+    response::{parameters::VpToken, AuthorizationResponse, UnencodedAuthorizationResponse},
     util::ReqwestClient,
 };
+use openid4vp::wallet::Wallet;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::server::AppState;
@@ -118,33 +131,45 @@ async fn process_authorization_request(state: AppState, params: AuthorizationPar
             }
         };
 
-    // 3. Resolve the request (fetch request_uri if needed, decode JWT)
-    let http_client = match ReqwestClient::new() {
-        Ok(client) => client,
+    // 3. Resolve and verify the request.
+    let wallet = match ConformanceWallet::new(state.config.authorization_endpoint.clone()) {
+        Ok(w) => w,
         Err(e) => {
-            error!("Failed to create HTTP client: {}", e);
+            error!("Failed to build wallet for verification: {}", e);
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "server_error",
-                &format!("Failed to create HTTP client: {}", e),
+                &format!("Failed to build wallet: {}", e),
                 params.state.as_deref(),
             );
         }
     };
-    let (request_object, _jwt) = match auth_request.resolve_request(&http_client).await {
-        Ok(result) => result,
+    let request_object = match auth_request.validate(&wallet).await {
+        Ok(aro) => aro,
         Err(e) => {
-            error!("Failed to resolve authorization request: {}", e);
+            error!("Authorization request validation failed: {:#}", e);
             return error_response(
                 StatusCode::BAD_REQUEST,
                 "invalid_request",
-                &format!("Failed to resolve request: {}", e),
+                &format!("{e:#}"),
                 params.state.as_deref(),
             );
         }
     };
 
-    debug!("Authorization request resolved successfully");
+    debug!("Authorization request resolved and verified successfully");
+
+    // 3c. Reject requests carrying transaction_data with an unrecognized type
+    // (OID4VP §5.1 / §8.4). This wallet supports no transaction_data types.
+    if let Err(e) = validate_transaction_data(&request_object) {
+        error!("transaction_data validation failed: {}", e);
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_transaction_data",
+            &e,
+            params.state.as_deref(),
+        );
+    }
 
     // 4. Extract DCQL query using the dedicated method
     let dcql_query: DcqlQuery = match request_object.dcql_query() {
@@ -420,57 +445,21 @@ async fn submit_direct_post_jwt(
     vp_token: VpToken,
     original_state: Option<String>,
 ) -> Response {
-    // Build the payload to encrypt
-    let mut payload = json!({
-        "vp_token": vp_token,
-    });
-
-    if let Some(ref state_val) = original_state {
-        payload["state"] = Value::String(state_val.clone());
-    }
-
-    // Get verifier's public key from client_metadata
-    let jwk_info = match get_verifier_encryption_key(request_object) {
-        Ok(info) => info,
-        Err(e) => {
-            error!("Failed to get verifier encryption key: {}", e);
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid_client_metadata",
-                &format!("Missing encryption key: {}", e),
-                original_state.as_deref(),
-            );
-        }
-    };
-
-    // Convert JWK to JSON Value for the builder
-    let verifier_jwk: Value = match serde_json::to_value(&jwk_info.jwk) {
-        Ok(v) => v,
-        Err(e) => {
-            error!("Failed to serialize JWK: {}", e);
+    // Build the JWE-encrypted response per OID4VP §8.3.
+    let state_param = original_state.as_ref().map(|s| RequestState(s.clone()));
+    let jwe = match build_encrypted_response(request_object, &vp_token, state_param.as_ref()) {
+        Ok(AuthorizationResponse::Jwt(jwt)) => jwt.response,
+        Ok(_) => {
+            error!("encrypted response was unexpectedly not a JWT");
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "encryption_error",
-                &e.to_string(),
+                "unexpected response form",
                 original_state.as_deref(),
             );
         }
-    };
-
-    // Build JWE per OID4VP v1.0 §8.3 (alg from JWK, enc default A128GCM)
-    let mut builder = JweBuilder::new().payload(payload).alg(&jwk_info.alg);
-
-    if let Some(ref kid) = jwk_info.kid {
-        builder = builder.kid(kid);
-    }
-
-    let jwe = match builder
-        .recipient_key_json(&verifier_jwk)
-        .and_then(|b| b.build())
-    {
-        Ok(jwe) => jwe,
         Err(e) => {
-            error!("JWE encryption failed: {}", e);
+            error!("JWE encryption failed: {:#}", e);
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "encryption_error",
@@ -548,15 +537,119 @@ async fn submit_direct_post_jwt(
     }
 }
 
-/// Get verifier's encryption key from client_metadata
-fn get_verifier_encryption_key(
-    request: &AuthorizationRequestObject,
-) -> anyhow::Result<EncryptionJwkInfo> {
-    let client_metadata = request.client_metadata().parsing_error()?;
-    let jwks = client_metadata.jwks().parsing_error()?;
-    let keys: Vec<_> = jwks.keys.iter().collect();
+/// A minimal [`Wallet`]/[`RequestVerifier`] used to validate incoming requests
+/// through the library: the dispatch in `verify_request` rejects unsupported
+/// client_id prefixes (via the wallet metadata and the default `bail!`ing trait
+/// methods) and verifies the request object signature for `x509_hash`.
+struct ConformanceWallet {
+    metadata: WalletMetadata,
+    http_client: ReqwestClient,
+}
 
-    find_encryption_jwk(keys.into_iter())
+impl ConformanceWallet {
+    fn new(authorization_endpoint: url::Url) -> anyhow::Result<Self> {
+        Ok(Self {
+            metadata: build_verification_metadata(authorization_endpoint),
+            http_client: ReqwestClient::new()?,
+        })
+    }
+}
+
+#[async_trait]
+impl RequestVerifier for ConformanceWallet {
+    /// `x509_hash` (HAIP): verify the request object signature against the `x5c`
+    /// leaf and that `client_id == x509_hash:<sha256(leaf)>`.
+    async fn x509_hash(
+        &self,
+        decoded_request: &AuthorizationRequestObject,
+        request_jwt: Option<String>,
+    ) -> anyhow::Result<()> {
+        let jwt = request_jwt.context("x509_hash request object must be a signed JWT")?;
+        x509_hash::validate::<P256Verifier>(self.metadata(), decoded_request, jwt, None)
+    }
+
+    /// `redirect_uri` (unsigned base profile): nothing to verify here; the
+    /// response_uri/client_id match is checked later in the handler.
+    async fn redirect_uri(
+        &self,
+        _decoded_request: &AuthorizationRequestObject,
+        _request_jwt: Option<String>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    // All other prefixes (including unknown ones via `other`) keep the default
+    // implementations, which reject the request.
+}
+
+#[async_trait]
+impl Wallet for ConformanceWallet {
+    type HttpClient = ReqwestClient;
+
+    fn metadata(&self) -> &WalletMetadata {
+        &self.metadata
+    }
+
+    fn http_client(&self) -> &Self::HttpClient {
+        &self.http_client
+    }
+}
+
+/// Build the wallet metadata used to validate incoming requests. It advertises
+/// the prefixes (`x509_hash`, `redirect_uri`) and crypto the conformance plans
+/// use, so the library's metadata check passes for valid requests and rejects
+/// unsupported prefixes.
+fn build_verification_metadata(authorization_endpoint: url::Url) -> WalletMetadata {
+    let mut vp_formats = ClaimFormatMap::new();
+    vp_formats.insert(
+        ClaimFormatDesignation::Other("dc+sd-jwt".to_string()),
+        ClaimFormatPayload::Other(serde_json::json!({})),
+    );
+
+    let mut metadata = WalletMetadata::new(
+        AuthorizationEndpoint(authorization_endpoint),
+        VpFormatsSupported(vp_formats),
+        None,
+    );
+    metadata.insert(ClientIdPrefixesSupported(vec![
+        ClientIdScheme(ClientIdScheme::X509_HASH.to_string()),
+        ClientIdScheme(ClientIdScheme::REDIRECT_URI.to_string()),
+    ]));
+    metadata.insert(RequestObjectSigningAlgValuesSupported(vec![
+        "ES256".to_string()
+    ]));
+    metadata.insert(AuthorizationEncryptionAlgValuesSupported(vec![
+        "ECDH-ES".to_string()
+    ]));
+    metadata.insert(AuthorizationEncryptionEncValuesSupported(vec![
+        "A256GCM".to_string(),
+        "A128GCM".to_string(),
+    ]));
+    metadata
+}
+
+/// Reject `transaction_data` entries whose `type` the wallet does not support.
+///
+/// Per OID4VP §5.1/§8.4 the wallet MUST error if a `transaction_data` entry has
+/// an unrecognized type. This headless wallet supports no transaction_data
+/// types, so any entry is rejected. Entries are base64url-encoded JSON objects.
+fn validate_transaction_data(request_object: &AuthorizationRequestObject) -> Result<(), String> {
+    let Some(td) = request_object.get::<TransactionData>() else {
+        return Ok(());
+    };
+    let td = td.map_err(|e| format!("invalid transaction_data: {e}"))?;
+
+    for entry in &td.0 {
+        // Best-effort decode to name the offending type in the error.
+        let typ = URL_SAFE_NO_PAD
+            .decode(entry)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|json| json.get("type").and_then(|t| t.as_str()).map(String::from))
+            .unwrap_or_else(|| "<unparseable>".to_string());
+        return Err(format!("unsupported transaction_data type: '{typ}'"));
+    }
+    Ok(())
 }
 
 /// Create an error response
