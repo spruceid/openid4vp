@@ -34,6 +34,10 @@ struct Args {
     /// Response mode: "direct_post" or "direct_post.jwt"
     #[arg(long, default_value = "direct_post", env = "RESPONSE_MODE")]
     response_mode: String,
+
+    /// Client Identifier Prefix: "x509_san_dns" or "x509_hash" (HAIP requires x509_hash)
+    #[arg(long, default_value = "x509_san_dns", env = "CLIENT_ID_PREFIX")]
+    client_id_prefix: String,
 }
 
 #[tokio::main]
@@ -50,7 +54,14 @@ async fn main() -> Result<()> {
 
     let use_encrypted_response = args.response_mode == "direct_post.jwt";
 
-    let state = Arc::new(AppState::new(args.public_url.clone(), use_encrypted_response).await?);
+    let state = Arc::new(
+        AppState::new(
+            args.public_url.clone(),
+            use_encrypted_response,
+            &args.client_id_prefix,
+        )
+        .await?,
+    );
 
     print_startup_banner(&args, &state.oidf_config);
 
@@ -96,5 +107,12 @@ fn print_startup_banner(args: &Args, oidf: &OidfConfig) {
     println!("  \"x5c\": [\"{}\"]", oidf.x5c);
     println!("}}");
     println!();
+    println!("  Add this property to your JSON test configuration");
+    println!("  (the \\n escapes are required - it is a JSON string value):");
+    println!();
+    println!(
+        "  \"request_object_trust_anchor_pem\": \"{}\"",
+        oidf.trust_anchor_pem.trim_end().replace('\n', "\\n")
+    );
     println!();
 }

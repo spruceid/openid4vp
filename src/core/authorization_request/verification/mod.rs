@@ -1,5 +1,6 @@
 use crate::{
     core::{
+        jwe::find_encryption_jwk,
         metadata::parameters::{
             verifier::{EncryptedResponseEncValuesSupported, JWKs},
             wallet::{
@@ -199,35 +200,20 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
             .ok_or_else(|| anyhow::anyhow!("'jwks' is required for encrypted responses"))?
             .map_err(|e| anyhow::anyhow!("failed to parse 'jwks': {e}"))?;
 
-        // Find encryption keys (use="enc") and extract their alg values
-        let encryption_algs: Vec<String> = jwks
-            .keys
-            .iter()
-            .filter(|k| {
-                k.get("use")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s == "enc")
-                    .unwrap_or(false)
-            })
-            .filter_map(|k| k.get("alg").and_then(|v| v.as_str()).map(String::from))
-            .collect();
+        // Collect the `alg` values of the candidate encryption keys per OID4VP v1.0 Section 8.3.
+        let jwk_info = find_encryption_jwk(jwks.keys.iter()).map_err(|e| {
+            anyhow::anyhow!("no usable encryption key in jwks per OID4VP v1.0 Section 8.3: {e}")
+        })?;
 
-        if encryption_algs.is_empty() {
-            bail!(
-                "no encryption key with 'alg' found in jwks (required per OID4VP v1.0 Section 8.3)"
-            )
-        }
-
-        // Validate alg against wallet supported values
+        // Validate the selected key's alg against wallet supported values
         if let Some(supported_algs) =
             wallet_metadata.get::<AuthorizationEncryptionAlgValuesSupported>()
         {
             let supported = supported_algs?;
-            let has_supported_alg = encryption_algs.iter().any(|alg| supported.0.contains(alg));
-            if !has_supported_alg {
+            if !supported.0.contains(&jwk_info.alg) {
                 bail!(
-                    "none of the encryption algorithms in jwks ({:?}) are supported by the wallet ({:?})",
-                    encryption_algs,
+                    "encryption algorithm '{}' in jwks is not supported by the wallet ({:?})",
+                    jwk_info.alg,
                     supported.0
                 )
             }

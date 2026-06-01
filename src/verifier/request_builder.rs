@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::{
     core::{
         authorization_request::{
-            parameters::{ResponseMode, ResponseType, ResponseUri},
+            parameters::{Audience, ResponseMode, ResponseType, ResponseUri},
             AuthorizationRequest, AuthorizationRequestObject, RequestIndirection,
         },
         dcql_query::DcqlQuery,
@@ -113,6 +113,15 @@ impl<'a> RequestBuilder<'a> {
                 "the wallet does not support Client Identifier Prefix '{}'",
                 client_id_prefix.0
             )
+        }
+
+        // Per OID4VP 1.0 Section 5.8, a Request Object MUST carry an `aud` claim.
+        // Default to the SIOPv2 symbolic value used with static Wallet metadata;
+        // callers performing Dynamic Discovery can override it (`aud` = `iss`)
+        // via `with_request_parameter`.
+        if self.request_parameters.get::<Audience>().is_none() {
+            self.request_parameters
+                .insert(Audience("https://self-issued.me/v2".to_string()));
         }
 
         let authorization_request_object: AuthorizationRequestObject =

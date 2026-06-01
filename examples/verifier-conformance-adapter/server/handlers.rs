@@ -6,13 +6,22 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use base64::prelude::*;
 use openid4vp::{
-    core::{authorization_request::parameters::Nonce, response::AuthorizationResponse},
-    verifier::session::{Outcome, Status},
+    core::{
+        authorization_request::parameters::Nonce,
+        response::{parameters::VpTokenItem, AuthorizationResponse},
+    },
+    verifier::session::{Outcome, Session, Status},
 };
 use serde::{Deserialize, Serialize};
+use ssi::claims::jws::{decode_unverified, decode_verify};
+use ssi::claims::sd_jwt::{KbJwtPayload, SdAlg, SdJwt};
+use ssi::claims::{DateTimeProvider, ValidateClaims};
+use ssi::jwk::JWK;
 use tracing::{debug, error, info};
 use uuid::Uuid;
+use x509_cert::{der::Decode, Certificate};
 
 use super::AppState;
 use crate::crypto::decrypt_jwe;
@@ -143,72 +152,45 @@ pub async fn receive_response(
 
     info!("Parsed authorization response successfully");
 
-    // Clone the encryption key for use in the closure
+    // Clone the encryption key for use in the closure.
     let encryption_key = state.encryption_key_jwk.clone();
+
+    // The validator runs inside `verify_response`, but its `Outcome` is only
+    // stored in the session. We capture the rejection reason here so the HTTP
+    // handler can return a 4xx, as required by OID4VP 1.0 Section 8.2.
+    let rejection: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
+    let rejection_cb = rejection.clone();
 
     state
         .verifier
-        .verify_response(uuid, authorization_response, |session, response| {
+        .verify_response(uuid, authorization_response, move |session, response| {
             Box::pin(async move {
-                // For conformance testing, we do basic validation
-                // In production, you would verify signatures, check claims, etc.
                 info!("Validating response for session: {}", session.uuid);
 
-                match &response {
+                let result = match &response {
                     AuthorizationResponse::Unencoded(unencoded) => {
-                        let vp_token = &unencoded.vp_token;
-                        info!(
-                            "Received unencoded vp_token with {} credential(s)",
-                            vp_token.0.len()
-                        );
-
-                        for (query_id, presentations) in &vp_token.0 {
-                            info!(
-                                "Query '{}': {} presentation(s)",
-                                query_id,
-                                presentations.len()
-                            );
-                        }
-
-                        Outcome::Success {
-                            info: serde_json::json!({
-                                "message": "Verification successful",
-                                "credentials_received": vp_token.0.len()
-                            }),
-                        }
+                        verify_string_presentations(&session, &unencoded.vp_token.0)
                     }
                     AuthorizationResponse::Jwt(jwt_response) => {
-                        // For direct_post.jwt mode - decrypt the JWE
                         info!("Received encrypted JWT response (JARM)");
-                        debug!("JWE: {}", jwt_response.response);
-
                         match decrypt_jwe(&jwt_response.response, &encryption_key) {
-                            Ok(decrypted) => {
-                                info!("Successfully decrypted JARM response");
-                                debug!("Decrypted payload: {:?}", decrypted);
-
-                                // Extract vp_token from decrypted payload
-                                if let Some(vp_token) = decrypted.get("vp_token") {
-                                    info!(
-                                        "Extracted vp_token from decrypted response: {:?}",
-                                        vp_token
-                                    );
-                                }
-
-                                Outcome::Success {
-                                    info: serde_json::json!({
-                                        "message": "JARM response decrypted and verified",
-                                        "decrypted_payload": decrypted
-                                    }),
-                                }
-                            }
-                            Err(e) => {
-                                error!("Failed to decrypt JARM response: {}", e);
-                                Outcome::Error {
-                                    cause: format!("Failed to decrypt JARM: {}", e),
-                                }
-                            }
+                            Ok(decrypted) => verify_decrypted_vp_token(&session, &decrypted),
+                            Err(e) => Err(format!("failed to decrypt JARM response: {e}")),
                         }
+                    }
+                };
+
+                match result {
+                    Ok(count) => Outcome::Success {
+                        info: serde_json::json!({
+                            "message": "Verification successful",
+                            "credentials_verified": count
+                        }),
+                    },
+                    Err(reason) => {
+                        error!("Rejecting response: {}", reason);
+                        *rejection_cb.lock().unwrap() = Some(reason.clone());
+                        Outcome::Failure { reason }
                     }
                 }
             })
@@ -219,9 +201,191 @@ pub async fn receive_response(
             AppError::Internal(format!("Verification failed: {}", e))
         })?;
 
+    if let Some(reason) = rejection.lock().unwrap().take() {
+        return Err(AppError::BadRequest(reason));
+    }
+
     info!("Authorization response verified successfully");
 
     Ok(Json(serde_json::json!({})))
+}
+
+/// Verify every string presentation in an unencoded `vp_token`.
+///
+/// Returns the number of verified credentials, or a rejection reason.
+fn verify_string_presentations(
+    session: &Session,
+    vp_token: &std::collections::HashMap<String, Vec<VpTokenItem>>,
+) -> Result<usize, String> {
+    let (nonce, aud) = request_binding(session);
+    let mut count = 0;
+    for (query_id, presentations) in vp_token {
+        for item in presentations {
+            let VpTokenItem::String(sd_jwt) = item else {
+                return Err(format!(
+                    "query '{query_id}': unsupported presentation format"
+                ));
+            };
+            verify_sd_jwt_vc(sd_jwt, &nonce, &aud)?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// Verify the string presentations carried in a decrypted (JARM) `vp_token`.
+fn verify_decrypted_vp_token(
+    session: &Session,
+    decrypted: &serde_json::Value,
+) -> Result<usize, String> {
+    let (nonce, aud) = request_binding(session);
+    let vp_token = decrypted
+        .get("vp_token")
+        .and_then(|v| v.as_object())
+        .ok_or("decrypted response has no vp_token object")?;
+    let mut count = 0;
+    for (query_id, presentations) in vp_token {
+        let arr = presentations
+            .as_array()
+            .ok_or_else(|| format!("query '{query_id}': presentations is not an array"))?;
+        for item in arr {
+            let sd_jwt = item
+                .as_str()
+                .ok_or_else(|| format!("query '{query_id}': unsupported presentation format"))?;
+            verify_sd_jwt_vc(sd_jwt, &nonce, &aud)?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// Extract the expected `nonce` and `aud` (client_id) from the request session.
+fn request_binding(session: &Session) -> (String, String) {
+    let nonce = session.authorization_request_object.nonce().to_string();
+    let aud = session
+        .authorization_request_object
+        .client_id()
+        .map(|c| c.0.clone())
+        .unwrap_or_default();
+    (nonce, aud)
+}
+
+/// Minimal SD-JWT VC + Key Binding JWT verification using `ssi`.
+///
+/// Checks the essentials needed to reject forged or mis-bound presentations:
+/// - the credential is a well-formed SD-JWT VC ending in a Key Binding JWT;
+/// - the issuer JWT signature is valid against the public key in its `x5c` leaf
+///   certificate (this is what the `invalid-credential-signature` test corrupts);
+/// - the KB-JWT signature is valid against the holder key in the issuer JWT's
+///   `cnf` claim (this is what the `invalid-kb-jwt-signature` test corrupts);
+/// - the KB-JWT `nonce` and `aud` match the Authorization Request.
+fn verify_sd_jwt_vc(
+    presentation: &str,
+    expected_nonce: &str,
+    expected_aud: &str,
+) -> Result<(), String> {
+    let sd_jwt = SdJwt::new(presentation).map_err(|e| format!("invalid SD-JWT: {e}"))?;
+    let issuer_jwt = sd_jwt.jwt().as_str();
+
+    // Decode the issuer JWT header (for the x5c key) and verify its signature.
+    let (header, _) =
+        decode_unverified(issuer_jwt).map_err(|e| format!("failed to decode issuer JWT: {e}"))?;
+    let issuer_key = issuer_key_from_x5c(&header.x509_certificate_chain)?;
+    let (_, payload) = decode_verify(issuer_jwt, &issuer_key)
+        .map_err(|e| format!("issuer SD-JWT signature verification failed: {e}"))?;
+
+    // Recover the holder key from the issuer JWT's `cnf.jwk`.
+    let claims: serde_json::Value = serde_json::from_slice(&payload)
+        .map_err(|e| format!("issuer JWT payload not JSON: {e}"))?;
+    let cnf_jwk = claims
+        .get("cnf")
+        .and_then(|c| c.get("jwk"))
+        .ok_or("issuer JWT has no cnf.jwk (holder key)")?;
+    let holder_key: JWK =
+        serde_json::from_value(cnf_jwk.clone()).map_err(|e| format!("invalid cnf.jwk: {e}"))?;
+
+    // Verify the KB-JWT signature against the holder key, then deserialize the
+    // typed KB-JWT payload (ssi `KbJwtPayload`).
+    let kb_jwt = sd_jwt.kb().ok_or("Key Binding JWT is missing")?.as_str();
+    let (_, kb_payload) = decode_verify(kb_jwt, &holder_key)
+        .map_err(|e| format!("Key Binding JWT signature verification failed: {e}"))?;
+    let kb: KbJwtPayload = serde_json::from_slice(&kb_payload)
+        .map_err(|e| format!("KB-JWT is not a valid Key Binding JWT: {e}"))?;
+
+    // Ensure the KB-JWT binds to this transaction.
+    if kb.nonce.0 != expected_nonce {
+        return Err("KB-JWT nonce does not match the request".into());
+    }
+    if kb.aud != expected_aud {
+        return Err("KB-JWT aud does not match the client_id".into());
+    }
+
+    // Verify the `sd_hash` against the presented SD-JWT using ssi (hashes the
+    // SD-JWT up to and including the last '~' before the KB-JWT).
+    if !kb.sd_hash.verify(SdAlg::Sha256, sd_jwt) {
+        return Err("KB-JWT sd_hash does not match the presented SD-JWT".into());
+    }
+
+    // Validate the KB-JWT time claims via its own `ValidateClaims` impl
+    // (rejects `iat` in the future, plus `exp`/`nbf` when present).
+    kb.validate_claims(&Now, &())
+        .map_err(|e| format!("KB-JWT time claims are invalid: {e}"))?;
+
+    // `ssi` only checks that `iat` is not in the future. The maximum age ("iat too
+    // far in the past") is verifier policy, so we enforce it here.
+    const MAX_AGE_SECS: f64 = 300.0;
+    let iat = kb.iat.0.as_seconds();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("system clock error: {e}"))?
+        .as_secs() as f64;
+    if iat < now - MAX_AGE_SECS {
+        return Err("KB-JWT iat is too far in the past".into());
+    }
+
+    Ok(())
+}
+
+/// Minimal [`DateTimeProvider`] supplying the current time so `ssi` can validate
+/// the KB-JWT time claims against "now".
+struct Now;
+
+impl DateTimeProvider for Now {
+    fn date_time(&self) -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc::now()
+    }
+}
+
+/// Build a P-256 JWK from the leaf certificate of a JWS `x5c` header.
+fn issuer_key_from_x5c(x5c: &Option<Vec<String>>) -> Result<JWK, String> {
+    let leaf_b64 = x5c
+        .as_ref()
+        .and_then(|chain| chain.first())
+        .ok_or("issuer JWT header has no x5c certificate")?;
+    let der = BASE64_STANDARD
+        .decode(leaf_b64)
+        .map_err(|e| format!("invalid base64 in x5c: {e}"))?;
+    let cert =
+        Certificate::from_der(&der).map_err(|e| format!("invalid x5c certificate DER: {e}"))?;
+
+    // For an EC key the SPKI subject public key is the SEC1 uncompressed point:
+    // 0x04 || X(32) || Y(32).
+    let point = cert
+        .tbs_certificate
+        .subject_public_key_info
+        .subject_public_key
+        .raw_bytes();
+    if point.len() != 65 || point[0] != 0x04 {
+        return Err("unsupported issuer key (expected uncompressed P-256 point)".into());
+    }
+
+    let jwk = serde_json::json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "x": BASE64_URL_SAFE_NO_PAD.encode(&point[1..33]),
+        "y": BASE64_URL_SAFE_NO_PAD.encode(&point[33..65]),
+    });
+    serde_json::from_value(jwk).map_err(|e| format!("failed to build issuer JWK: {e}"))
 }
 
 /// GET /status/:session_id
