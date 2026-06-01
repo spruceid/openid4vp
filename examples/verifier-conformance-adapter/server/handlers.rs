@@ -17,6 +17,7 @@ use openid4vp::{
 use serde::{Deserialize, Serialize};
 use ssi::claims::jws::{decode_unverified, decode_verify};
 use ssi::claims::sd_jwt::{KbJwtPayload, SdAlg, SdJwt};
+use ssi::claims::{DateTimeProvider, ValidateClaims};
 use ssi::jwk::JWK;
 use tracing::{debug, error, info};
 use uuid::Uuid;
@@ -325,24 +326,34 @@ fn verify_sd_jwt_vc(
         return Err("KB-JWT sd_hash does not match the presented SD-JWT".into());
     }
 
-    // The KB-JWT must be fresh: `iat` cannot be in the future (beyond clock
-    // skew) nor too far in the past. The window is intentionally generous; tune
-    // it if the conformance suite uses a smaller offset.
-    const CLOCK_SKEW_SECS: f64 = 60.0;
+    // Validate the KB-JWT time claims via its own `ValidateClaims` impl
+    // (rejects `iat` in the future, plus `exp`/`nbf` when present).
+    kb.validate_claims(&Now, &())
+        .map_err(|e| format!("KB-JWT time claims are invalid: {e}"))?;
+
+    // `ssi` only checks that `iat` is not in the future. The maximum age ("iat too
+    // far in the past") is verifier policy, so we enforce it here.
     const MAX_AGE_SECS: f64 = 300.0;
     let iat = kb.iat.0.as_seconds();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| format!("system clock error: {e}"))?
         .as_secs() as f64;
-    if iat > now + CLOCK_SKEW_SECS {
-        return Err("KB-JWT iat is in the future".into());
-    }
     if iat < now - MAX_AGE_SECS {
         return Err("KB-JWT iat is too far in the past".into());
     }
 
     Ok(())
+}
+
+/// Minimal [`DateTimeProvider`] supplying the current time so `ssi` can validate
+/// the KB-JWT time claims against "now".
+struct Now;
+
+impl DateTimeProvider for Now {
+    fn date_time(&self) -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc::now()
+    }
 }
 
 /// Build a P-256 JWK from the leaf certificate of a JWS `x5c` header.
