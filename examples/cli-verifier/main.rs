@@ -339,6 +339,40 @@ fn build_vcdm2_sd_jwt_credential_query() -> DcqlCredentialQuery {
     // No specific claims - accepts any claims from the credential
 }
 
+fn build_ssa_credential_query() -> DcqlCredentialQuery {
+    let mut credential_query =
+        DcqlCredentialQuery::new("ssa_0".to_string(), ClaimFormatDesignation::MsoMDoc);
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "doctype_value".to_string(),
+        serde_json::json!("gov.ca.dmv.wallet.ssa_reader_authorization"),
+    );
+    credential_query.set_meta(meta);
+
+    let namespace = "gov.ca.dmv.wallet.ssa_reader_authorization";
+    let claims = NonEmptyVec::try_from(vec![
+        DcqlCredentialClaimsQuery::new(
+            NonEmptyVec::try_from(vec![
+                DcqlCredentialClaimsQueryPath::String(namespace.to_string()),
+                DcqlCredentialClaimsQueryPath::String("email".to_string()),
+            ])
+            .unwrap(),
+        ),
+        DcqlCredentialClaimsQuery::new(
+            NonEmptyVec::try_from(vec![
+                DcqlCredentialClaimsQueryPath::String(namespace.to_string()),
+                DcqlCredentialClaimsQueryPath::String("fullname".to_string()),
+            ])
+            .unwrap(),
+        ),
+    ])
+    .unwrap();
+
+    credential_query.set_claims(Some(claims));
+
+    credential_query
+}
+
 /// Build a credential query for mDL
 fn build_mdl_credential_query() -> DcqlCredentialQuery {
     let mut credential_query =
@@ -392,6 +426,11 @@ fn build_dcql_query_for_types(types: &[String]) -> Result<(DcqlQuery, String)> {
 
     for cred_type in types {
         match cred_type.as_str() {
+            "ssa" => {
+                queries.push(build_ssa_credential_query());
+                descriptions.push("SSA");
+                credential_sets.push(vec![vec!["ssa_0".to_string()]]);
+            }
             "mdl" => {
                 queries.push(build_mdl_credential_query());
                 descriptions.push("mDL");
@@ -471,7 +510,7 @@ fn build_client_metadata(credential_types: &[String]) -> ClientMetadata {
 
     for cred_type in credential_types {
         match cred_type.as_str() {
-            "mdl" => {
+            "ssa" | "mdl" => {
                 // For mso_mdoc, we accept any algorithm (empty object)
                 vp_formats.insert(
                     ClaimFormatDesignation::MsoMDoc,
