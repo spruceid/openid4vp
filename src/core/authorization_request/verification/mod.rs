@@ -256,7 +256,7 @@ pub(crate) mod test_util {
     };
 
     use p256::pkcs8::DecodePrivateKey;
-    use rcgen::{DistinguishedName, SignatureAlgorithm};
+    use rcgen::{DistinguishedName, KeyUsagePurpose::KeyCertSign, SignatureAlgorithm};
     use serde_json::json;
     // to_x509, issued_chain, make_jwt, x5c_header, self_signed_cert, wallet
     pub enum SigningKey {
@@ -305,6 +305,7 @@ pub(crate) mod test_util {
         let root_key = KeyPair::generate_for(&algs.first().unwrap()).unwrap();
         let mut root_params = CertificateParams::new(vec!["root.example".into()]).unwrap();
         root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        root_params.key_usages = vec![KeyCertSign];
         let root_cert = root_params.self_signed(&root_key).unwrap();
 
         let mut chain = vec![to_x509(&root_cert)]; // root ends up last after inserts
@@ -335,6 +336,7 @@ pub(crate) mod test_util {
             params.distinguished_name = dn;
             if !is_leaf {
                 params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+                params.key_usages = vec![KeyCertSign];
             }
             let cert = params.signed_by(&key, &issuer, &issuer_key).unwrap();
 

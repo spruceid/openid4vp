@@ -5,11 +5,12 @@ use const_oid::db::rfc5912::{
     SHA_384_WITH_RSA_ENCRYPTION, SHA_512_WITH_RSA_ENCRYPTION,
 };
 use serde_json::{Map, Value as Json};
+use time::OffsetDateTime;
 use tracing::debug;
 use x509_cert::{
     certificate::CertificateInner,
     der::{referenced::OwnedToRef, Decode, Encode},
-    ext::pkix::BasicConstraints,
+    ext::pkix::{BasicConstraints, KeyUsage},
     Certificate,
 };
 
@@ -96,6 +97,7 @@ pub fn validate_chain_and_signature<V: Verifier>(
 
     if let Some(trusted_roots) = trusted_roots {
         let mut chain_refs: Vec<&Certificate> = chain.iter().collect();
+        // Check if last provided certificate is a root
         let top = chain.last().expect("chain is non-empty");
         let self_signed = top.tbs_certificate.issuer == top.tbs_certificate.subject;
         let is_ca = top
@@ -115,12 +117,12 @@ pub fn validate_chain_and_signature<V: Verifier>(
             // The chain has no root, append the first trusted root that is a valid issuer of the top certificate.
             let root = trusted_roots
                 .iter()
-                .find(|&root| test_chain_step_validity(top, root).is_empty())
+                .find(|&root| validate_chain_steps(top, root).is_empty())
                 .context("no trusted root is a valid issuer of the certificate chain")?;
             chain_refs.push(root);
         }
 
-        verify_chain(&chain_refs)?;
+        validate_full_chain(&chain_refs)?;
     }
 
     let verifier = V::from_spki(
@@ -147,10 +149,18 @@ pub fn validate_chain_and_signature<V: Verifier>(
 }
 
 /// Split certificate chain into pairs to check signature validity
-fn verify_chain(chain: &[&Certificate]) -> Result<()> {
+fn validate_full_chain(chain: &[&Certificate]) -> Result<()> {
+    // check leaf cert's validity period, issuers are checked in validate_chain_steps
+    let errors = check_cert_validity_period(chain[0]);
+    if !errors.is_empty() {
+        bail!(
+            "certificate chain validation failed at leaf: {}",
+            errors.join(", ")
+        );
+    }
     for window in chain.windows(2) {
         let &[child, parent] = window else { continue };
-        let errors = test_chain_step_validity(child, parent);
+        let errors = validate_chain_steps(child, parent);
         if !errors.is_empty() {
             bail!("certificate chain validation failed: {}", errors.join(", "));
         }
@@ -158,10 +168,7 @@ fn verify_chain(chain: &[&Certificate]) -> Result<()> {
     Ok(())
 }
 
-pub fn test_chain_step_validity(
-    subject: &Certificate,
-    candidate_issuer: &Certificate,
-) -> Vec<String> {
+pub fn validate_chain_steps(subject: &Certificate, candidate_issuer: &Certificate) -> Vec<String> {
     let mut errors: Vec<String> = Vec::new();
 
     if subject.tbs_certificate.issuer != candidate_issuer.tbs_certificate.subject {
@@ -171,6 +178,49 @@ pub fn test_chain_step_validity(
     if !signed_using_supported_algorithm(candidate_issuer, subject) {
         errors.push(String::from("issuer did not sign subject"));
     }
+
+    let is_ca = candidate_issuer
+        .tbs_certificate
+        .get::<BasicConstraints>()
+        .ok()
+        .flatten()
+        .map(|(_crit, bc)| bc.ca)
+        .unwrap_or(false);
+    if !is_ca {
+        errors.push(String::from("issuing certificate is not a CA"));
+    }
+    let key_cert_sign = candidate_issuer
+        .tbs_certificate
+        .get::<KeyUsage>()
+        .ok()
+        .flatten()
+        .map(|(_crit, bc)| bc.key_cert_sign())
+        .unwrap_or(false);
+    if !key_cert_sign {
+        errors.push(String::from(
+            "issuing certificate's public key is not authorized to sign",
+        ));
+    }
+
+    // leaf validity was tested previously, verify intermediates + root
+    errors.extend(check_cert_validity_period(candidate_issuer));
+
+    errors
+}
+
+fn check_cert_validity_period(certificate: &Certificate) -> Vec<String> {
+    let validity = certificate.tbs_certificate.validity;
+    let mut errors: Vec<String> = Vec::new();
+    if validity.not_after.to_unix_duration().as_secs()
+        < OffsetDateTime::now_utc().unix_timestamp() as u64
+    {
+        errors.push(String::from("certificate is expired"));
+    };
+    if validity.not_before.to_unix_duration().as_secs()
+        > OffsetDateTime::now_utc().unix_timestamp() as u64
+    {
+        errors.push(String::from("certificate is not yet valid"));
+    };
 
     errors
 }
@@ -224,7 +274,7 @@ fn verify_issuer_signature(candidate_issuer: &Certificate, subject: &Certificate
 mod tests {
     use super::*;
     use crate::core::authorization_request::verification::test_util::*;
-    use rcgen::{DistinguishedName, SignatureAlgorithm};
+    use rcgen::{DistinguishedName, KeyUsagePurpose::KeyCertSign, SignatureAlgorithm};
     use serde_json::json;
 
     struct Leaf {
@@ -242,6 +292,7 @@ mod tests {
         dn.push(DnType::CommonName, common_name);
         params.distinguished_name = dn;
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        params.key_usages = vec![KeyCertSign];
         let cert = params.self_signed(&key_pair).unwrap();
 
         let key = SigningKey::from_pkcs8_der(&key_pair.serialize_der()).unwrap();
@@ -431,11 +482,13 @@ mod tests {
         let root_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
         let mut root_params = CertificateParams::new(vec!["root.example".into()]).unwrap();
         root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        root_params.key_usages = vec![KeyCertSign];
         let root_cert = root_params.self_signed(&root_key).unwrap();
 
         let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
         let mut leaf_params = CertificateParams::new(vec!["leaf.example".into()]).unwrap();
         leaf_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        leaf_params.key_usages = vec![KeyCertSign];
         let leaf_cert = leaf_params
             .signed_by(&leaf_key, &root_cert, &root_key)
             .unwrap();
@@ -443,6 +496,7 @@ mod tests {
         let inter_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
         let mut inter_params = CertificateParams::new(vec!["inter.example".into()]).unwrap();
         inter_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        inter_params.key_usages = vec![KeyCertSign];
         let inter_cert = inter_params
             .signed_by(&inter_key, &leaf_cert, &leaf_key)
             .unwrap();
@@ -472,13 +526,106 @@ mod tests {
     }
 
     #[test]
+    // Include postdated leaf - should fail early
+    fn postdated_leaf() {
+        use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
+        use time::Duration;
+
+        let root_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut root_params = CertificateParams::new(vec!["root.example".into()]).unwrap();
+        root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        root_params.key_usages = vec![KeyCertSign];
+        let root_cert = root_params.self_signed(&root_key).unwrap();
+
+        let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut leaf_params = CertificateParams::new(vec!["leaf.example".into()]).unwrap();
+
+        // Valid 10 days from now
+        let now = OffsetDateTime::now_utc();
+        leaf_params.not_before = now + Duration::days(10);
+        leaf_params.not_after = now + Duration::days(375);
+        let leaf_cert = leaf_params
+            .signed_by(&leaf_key, &root_cert, &root_key)
+            .unwrap();
+
+        let key = SigningKey::from_pkcs8_der(&leaf_key.serialize_der()).unwrap();
+        let x509_chain = [&to_x509(&leaf_cert), &to_x509(&root_cert)];
+
+        let jwt = make_jwt(x5c_header("ES256", &x509_chain), &key);
+
+        assert!(validate_chain_and_signature::<P256Verifier>(
+            &[x509_chain[0].clone(), x509_chain[1].clone(),],
+            Some(&[to_x509(&root_cert)]),
+            "ES256".into(),
+            jwt
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("certificate chain validation failed at leaf: certificate is not yet valid"));
+    }
+
+    #[test]
+    // Include expired certificate in chai
+    fn expired_cert() {
+        use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
+        use time::Duration;
+
+        let root_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut root_params = CertificateParams::new(vec!["root.example".into()]).unwrap();
+        root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        root_params.key_usages = vec![KeyCertSign];
+        let root_cert = root_params.self_signed(&root_key).unwrap();
+
+        let inter_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut inter_params = CertificateParams::new(vec!["inter.example".into()]).unwrap();
+        inter_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        inter_params.key_usages = vec![KeyCertSign];
+        // Expired yesterday
+        let now = OffsetDateTime::now_utc();
+        inter_params.not_before = now - Duration::days(10);
+        inter_params.not_after = now - Duration::days(1);
+        let inter_cert = inter_params
+            .signed_by(&inter_key, &root_cert, &root_key)
+            .unwrap();
+
+        let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let leaf_params = CertificateParams::new(vec!["leaf.example".into()]).unwrap();
+        let leaf_cert = leaf_params
+            .signed_by(&leaf_key, &inter_cert, &inter_key)
+            .unwrap();
+
+        let key = SigningKey::from_pkcs8_der(&leaf_key.serialize_der()).unwrap();
+        let x509_chain = [
+            &to_x509(&leaf_cert),
+            &to_x509(&inter_cert),
+            &to_x509(&root_cert),
+        ];
+
+        let jwt = make_jwt(x5c_header("ES256", &x509_chain), &key);
+
+        assert!(validate_chain_and_signature::<P256Verifier>(
+            &[
+                x509_chain[0].clone(),
+                x509_chain[1].clone(),
+                x509_chain[2].clone(),
+            ],
+            Some(&[to_x509(&root_cert)]),
+            "ES256".into(),
+            jwt
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("certificate chain validation failed: certificate is expired"));
+    }
+
+    #[test]
     // Test valid signature between pair of certificates (root and leaf)
     fn step_issuer_subject_success() {
         let (chain, _key) = issued_chain(&[
             &rcgen::PKCS_ECDSA_P256_SHA256,
             &rcgen::PKCS_ECDSA_P256_SHA256,
         ]);
-        assert!(test_chain_step_validity(&chain[0], &chain.last().unwrap()).is_empty());
+        assert!(validate_chain_steps(&chain[0], &chain.last().unwrap()).is_empty());
     }
 
     #[test]
@@ -486,7 +633,7 @@ mod tests {
     fn reject_dn_mismatch() {
         let cert1 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "cert1").cert;
         let cert2 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "cert2").cert;
-        let errors = test_chain_step_validity(&cert1, &cert2);
+        let errors = validate_chain_steps(&cert1, &cert2);
         assert!(errors
             .iter()
             .any(|e| e.contains("distinguished names do not match")));
@@ -503,9 +650,53 @@ mod tests {
             &rcgen::PKCS_ECDSA_P256_SHA256,
             &rcgen::PKCS_ECDSA_P256_SHA256,
         ]);
-        let errors = test_chain_step_validity(&chain[0], &unrelated_chain.last().unwrap());
+        let errors = validate_chain_steps(&chain[0], &unrelated_chain.last().unwrap());
         assert!(errors
             .iter()
             .any(|e| e.contains("issuer did not sign subject")));
+    }
+
+    #[test]
+    // Reject issuers that are not CA
+    fn reject_not_ca() {
+        use rcgen::{CertificateParams, KeyPair};
+
+        let root_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut root_params = CertificateParams::new(vec!["root.example".into()]).unwrap();
+        root_params.key_usages = vec![KeyCertSign];
+        let root_cert = root_params.self_signed(&root_key).unwrap();
+
+        let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let leaf_params = CertificateParams::new(vec!["leaf.example".into()]).unwrap();
+        let leaf_cert = leaf_params
+            .signed_by(&leaf_key, &root_cert, &root_key)
+            .unwrap();
+
+        let errors = validate_chain_steps(&to_x509(&leaf_cert), &to_x509(&root_cert));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("issuing certificate is not a CA")));
+    }
+
+    #[test]
+    // Reject issuers that are not authorized to sign other certificates
+    fn reject_not_authorized_to_sign() {
+        use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
+
+        let root_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut root_params = CertificateParams::new(vec!["root.example".into()]).unwrap();
+        root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let root_cert = root_params.self_signed(&root_key).unwrap();
+
+        let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let leaf_params = CertificateParams::new(vec!["leaf.example".into()]).unwrap();
+        let leaf_cert = leaf_params
+            .signed_by(&leaf_key, &root_cert, &root_key)
+            .unwrap();
+
+        let errors = validate_chain_steps(&to_x509(&leaf_cert), &to_x509(&root_cert));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("issuing certificate's public key is not authorized to sign")));
     }
 }
