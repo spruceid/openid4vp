@@ -258,7 +258,6 @@ pub(crate) mod test_util {
     use p256::pkcs8::DecodePrivateKey;
     use rcgen::{DistinguishedName, KeyUsagePurpose::KeyCertSign, SignatureAlgorithm};
     use serde_json::json;
-    // to_x509, issued_chain, make_jwt, x5c_header, self_signed_cert, wallet
     pub enum SigningKey {
         P256(p256::ecdsa::SigningKey),
         P384(p384::ecdsa::SigningKey),

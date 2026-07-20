@@ -95,7 +95,7 @@ pub fn validate_chain_and_signature<V: Verifier>(
 ) -> Result<()> {
     let leaf_cert = chain.first().context("'x5c' certificate chain was empty")?;
 
-    if let Some(trusted_roots) = trusted_roots {
+    if let Some(trusted_roots) = trusted_roots.filter(|roots| !roots.is_empty()) {
         let mut chain_refs: Vec<&Certificate> = chain.iter().collect();
         // Check if last provided certificate is a root
         let top = chain.last().expect("chain is non-empty");
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn no_trusted_roots_success_es256() {
-        // Test if signature validation completes without trusted roots provided
+        // Test if signature validation completes without trusted roots provided (None)
         let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf");
         let jwt = make_jwt(x5c_header("ES256", &[&leaf.cert]), &leaf.key);
         validate_chain_and_signature::<P256Verifier>(
@@ -377,11 +377,12 @@ mod tests {
 
     #[test]
     fn no_trusted_roots_success_es384() {
+        // Test if signature validation completes without trusted roots provided (empty slice)
         let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P384_SHA384, "leaf");
         let jwt = make_jwt(x5c_header("ES384", &[&leaf.cert]), &leaf.key);
         validate_chain_and_signature::<P384Verifier>(
             &[leaf.cert.clone()],
-            None,
+            Some(&[]),
             "ES384".into(),
             jwt,
         )
@@ -419,12 +420,12 @@ mod tests {
     #[test]
     // No trusted roots provided
     fn root_not_in_trusted_roots() {
-        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf"); // self-signed CA-ish cert acts as top-of-chain
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf"); 
+        let trusted_root = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "root").cert; 
         let jwt = make_jwt(x5c_header("ES256", &[&leaf.cert]), &leaf.key);
-        // trusted_roots present but empty -> root not trusted
         let err = validate_chain_and_signature::<P256Verifier>(
             &[leaf.cert.clone()],
-            Some(&[]),
+            Some(&[trusted_root]),
             "ES256".into(),
             jwt,
         )
