@@ -7,7 +7,10 @@ use const_oid::db::rfc5912::{
 use serde_json::{Map, Value as Json};
 use tracing::debug;
 use x509_cert::{
-    Certificate, certificate::CertificateInner, der::{Decode, Encode, referenced::OwnedToRef}, ext::pkix::BasicConstraints,
+    certificate::CertificateInner,
+    der::{referenced::OwnedToRef, Decode, Encode},
+    ext::pkix::BasicConstraints,
+    Certificate,
 };
 
 use crate::core::{
@@ -17,10 +20,12 @@ use crate::core::{
 
 use super::verifier::{P256Verifier, P384Verifier, RsaVerifier, Verifier};
 
+/// Shared functionality from x509_san.rs and x509_hash.rs to check whether the JWT header contains an `x5c` array and valid `alg`
+/// Validates and decodes certificate chain
 pub fn get_header_certificate(
     wallet_metadata: &WalletMetadata,
     request_jwt: &str,
-) -> Result<(Vec<CertificateInner>,String)> {
+) -> Result<(Vec<CertificateInner>, String)> {
     let (headers_b64, _body_b64, _sig_b64) = ssi::claims::jws::split_jws(request_jwt)?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
@@ -80,6 +85,7 @@ pub fn get_header_certificate(
     Ok((chain, alg))
 }
 
+/// Ensure certificate chain is anchored with trusted root and each certificate signature is valid
 pub fn validate_chain_and_signature<V: Verifier>(
     chain: &[Certificate],
     trusted_roots: Option<&[Certificate]>,
@@ -90,7 +96,6 @@ pub fn validate_chain_and_signature<V: Verifier>(
 
     if let Some(trusted_roots) = trusted_roots {
         let mut chain_refs: Vec<&Certificate> = chain.iter().collect();
-
         let top = chain.last().expect("chain is non-empty");
         let self_signed = top.tbs_certificate.issuer == top.tbs_certificate.subject;
         let is_ca = top
@@ -141,6 +146,7 @@ pub fn validate_chain_and_signature<V: Verifier>(
     Ok(())
 }
 
+/// Split certificate chain into pairs to check signature validity
 fn verify_chain(chain: &[&Certificate]) -> Result<()> {
     for window in chain.windows(2) {
         let &[child, parent] = window else { continue };
@@ -169,7 +175,7 @@ pub fn test_chain_step_validity(
     errors
 }
 
-fn signed_using_supported_algorithm(candidate_issuer: &Certificate,subject: &Certificate) -> bool {
+fn signed_using_supported_algorithm(candidate_issuer: &Certificate, subject: &Certificate) -> bool {
     match verify_issuer_signature(candidate_issuer, subject) {
         Ok(()) => true,
         Err(e) => {
@@ -179,15 +185,23 @@ fn signed_using_supported_algorithm(candidate_issuer: &Certificate,subject: &Cer
     }
 }
 
-fn verify_issuer_signature(candidate_issuer: &Certificate,subject: &Certificate) -> Result<()> {
-    let spki = candidate_issuer.tbs_certificate.subject_public_key_info.owned_to_ref();
-    let tbs = subject.tbs_certificate.to_der().context("failed to encode subject TBS certificate")?;
+fn verify_issuer_signature(candidate_issuer: &Certificate, subject: &Certificate) -> Result<()> {
+    let spki = candidate_issuer
+        .tbs_certificate
+        .subject_public_key_info
+        .owned_to_ref();
+    let tbs = subject
+        .tbs_certificate
+        .to_der()
+        .context("failed to encode subject TBS certificate")?;
     let sig = subject.signature.raw_bytes();
     let oid = subject.signature_algorithm.oid;
 
     if oid == ECDSA_WITH_SHA_256 {
         let verifier = P256Verifier::from_spki(spki, String::from("ES256"))?;
-        let raw = p256::ecdsa::Signature::from_der(sig).context("failed to parse P-256 certificate signature")?.to_bytes();
+        let raw = p256::ecdsa::Signature::from_der(sig)
+            .context("failed to parse P-256 certificate signature")?
+            .to_bytes();
         verifier.verify(&tbs, raw.as_slice())
     } else if oid == ECDSA_WITH_SHA_384 {
         let verifier = P384Verifier::from_spki(spki, String::from("ES384"))?;
@@ -204,5 +218,294 @@ fn verify_issuer_signature(candidate_issuer: &Certificate,subject: &Certificate)
     } else {
         bail!("unsupported certificate signature algorithm: {oid}")
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::authorization_request::verification::test_util::*;
+    use rcgen::{DistinguishedName, SignatureAlgorithm};
+    use serde_json::json;
+
+    struct Leaf {
+        cert: Certificate,
+        key: SigningKey,
+    }
+
+    /// Self-signed P-256 CA cert + its signing key
+    fn self_signed_cert(alg: &'static SignatureAlgorithm, common_name: &str) -> Leaf {
+        use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair};
+
+        let key_pair = KeyPair::generate_for(alg).unwrap();
+        let mut params = CertificateParams::new(vec!["leaf.example".into()]).unwrap();
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, common_name);
+        params.distinguished_name = dn;
+        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let cert = params.self_signed(&key_pair).unwrap();
+
+        let key = SigningKey::from_pkcs8_der(&key_pair.serialize_der()).unwrap();
+        Leaf {
+            cert: to_x509(&cert),
+            key,
+        }
+    }
+
+    #[test]
+    fn decode_multi_cert_chain() {
+        // Test get_header_certificate ability to decode multi certificate chain and extract alg from header
+        let (chain, key) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
+
+        let jwt = make_jwt(
+            x5c_header(
+                "ES256",
+                &[&chain[0].clone(), &chain.last().unwrap().clone()],
+            ),
+            &key,
+        );
+
+        let (chain, alg) = get_header_certificate(&wallet(), &jwt).unwrap();
+        assert_eq!(alg, "ES256");
+        assert_eq!(chain.len(), 2);
+    }
+
+    #[test]
+    fn header_missing_alg() {
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf");
+        let jwt = make_jwt(json!({ "x5c": [] }), &leaf.key);
+        let err = get_header_certificate(&wallet(), &jwt).unwrap_err();
+        assert!(err.to_string().contains("'alg' was missing"));
+    }
+
+    #[test]
+    fn header_rejects_unsupported_alg() {
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf");
+        let jwt = make_jwt(x5c_header("ES384", &[&leaf.cert]), &leaf.key);
+        assert!(get_header_certificate(&wallet(), &jwt)
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported algorithm"));
+    }
+
+    #[test]
+    fn header_missing_x5c() {
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf");
+        let jwt = make_jwt(json!({ "alg": "ES256" }), &leaf.key);
+        assert!(get_header_certificate(&wallet(), &jwt)
+            .unwrap_err()
+            .to_string()
+            .contains("'x5c' was missing"));
+    }
+
+    #[test]
+    fn header_rejects_empty_x5c() {
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf");
+        let jwt = make_jwt(json!({ "alg": "ES256", "x5c": [] }), &leaf.key);
+        assert!(get_header_certificate(&wallet(), &jwt)
+            .unwrap_err()
+            .to_string()
+            .contains("empty array"));
+    }
+
+    #[test]
+    fn no_trusted_roots_success_es256() {
+        // Test if signature validation completes without trusted roots provided
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf");
+        let jwt = make_jwt(x5c_header("ES256", &[&leaf.cert]), &leaf.key);
+        validate_chain_and_signature::<P256Verifier>(
+            &[leaf.cert.clone()],
+            None,
+            "ES256".into(),
+            jwt,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn no_trusted_roots_success_es384() {
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P384_SHA384, "leaf");
+        let jwt = make_jwt(x5c_header("ES384", &[&leaf.cert]), &leaf.key);
+        validate_chain_and_signature::<P384Verifier>(
+            &[leaf.cert.clone()],
+            None,
+            "ES384".into(),
+            jwt,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    // JWT signature is signed by the wrong key (not leaf certificate's key)
+    fn invalid_jwt_signature() {
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "cert");
+        let other = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "cert");
+        let jwt = make_jwt(x5c_header("ES256", &[&leaf.cert]), &other.key);
+        assert!(validate_chain_and_signature::<P256Verifier>(
+            &[leaf.cert.clone()],
+            None,
+            "ES256".into(),
+            jwt,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn empty_chain_is_rejected() {
+        assert!(validate_chain_and_signature::<P256Verifier>(
+            &[],
+            None,
+            "ES256".into(),
+            "a.b.c".into(),
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("chain was empty"));
+    }
+
+    #[test]
+    // No trusted roots provided
+    fn root_not_in_trusted_roots() {
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf"); // self-signed CA-ish cert acts as top-of-chain
+        let jwt = make_jwt(x5c_header("ES256", &[&leaf.cert]), &leaf.key);
+        // trusted_roots present but empty -> root not trusted
+        let err = validate_chain_and_signature::<P256Verifier>(
+            &[leaf.cert.clone()],
+            Some(&[]),
+            "ES256".into(),
+            jwt,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("not in the trusted roots"));
+    }
+
+    #[test]
+    // x5c carries only the leaf; the issuing root lives in trusted_roots
+    fn accepts_chain_when_root_appended_from_trusted_roots() {
+        let (chain, key) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P384_SHA384,
+        ]);
+        let jwt = make_jwt(x5c_header("ES384", &[&chain[0].clone()]), &key);
+        validate_chain_and_signature::<P384Verifier>(
+            &[chain[0].clone(), chain[1].clone()],
+            Some(&[chain.last().unwrap().clone()]),
+            "ES384".into(),
+            jwt,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    // Root on x5c is not included in trusted roots
+    fn rejects_with_untrusted_root() {
+        let (chain, key) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
+        let trusted_root_1 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "trusted_root_1");
+        let trusted_root_2 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "trusted_root_2");
+        let jwt = make_jwt(x5c_header("ES256", &[&chain[0].clone()]), &key);
+
+        let formatted_chain = [chain[0].clone(), chain[1].clone()];
+        let formatted_trusted_roots = [trusted_root_1.cert, trusted_root_2.cert];
+        assert!(validate_chain_and_signature::<P256Verifier>(
+            &formatted_chain,
+            Some(&formatted_trusted_roots),
+            "ES256".into(),
+            jwt,
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("root is not in the trusted roots list"));
+    }
+
+    #[test]
+    // Root is trusted, but leaf certificate signs intermediate cert
+    fn rejects_with_leaf_as_issuer() {
+        use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
+
+        let root_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut root_params = CertificateParams::new(vec!["root.example".into()]).unwrap();
+        root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let root_cert = root_params.self_signed(&root_key).unwrap();
+
+        let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut leaf_params = CertificateParams::new(vec!["leaf.example".into()]).unwrap();
+        leaf_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let leaf_cert = leaf_params
+            .signed_by(&leaf_key, &root_cert, &root_key)
+            .unwrap();
+
+        let inter_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut inter_params = CertificateParams::new(vec!["inter.example".into()]).unwrap();
+        inter_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let inter_cert = inter_params
+            .signed_by(&inter_key, &leaf_cert, &leaf_key)
+            .unwrap();
+
+        let key = SigningKey::from_pkcs8_der(&leaf_key.serialize_der()).unwrap();
+        let x509_chain = [
+            &to_x509(&leaf_cert),
+            &to_x509(&inter_cert),
+            &to_x509(&root_cert),
+        ];
+
+        let jwt = make_jwt(x5c_header("ES256", &x509_chain), &key);
+
+        assert!(validate_chain_and_signature::<P256Verifier>(
+            &[
+                x509_chain[0].clone(),
+                x509_chain[1].clone(),
+                x509_chain[2].clone()
+            ],
+            Some(&[to_x509(&root_cert)]),
+            "ES256".into(),
+            jwt
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("issuer did not sign subject"));
+    }
+
+    #[test]
+    // Test valid signature between pair of certificates (root and leaf)
+    fn step_issuer_subject_success() {
+        let (chain, _key) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
+        assert!(test_chain_step_validity(&chain[0], &chain.last().unwrap()).is_empty());
+    }
+
+    #[test]
+    // Reject distinguished names not matching in pair of two self signed certificates
+    fn reject_dn_mismatch() {
+        let cert1 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "cert1").cert;
+        let cert2 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "cert2").cert;
+        let errors = test_chain_step_validity(&cert1, &cert2);
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("distinguished names do not match")));
+    }
+
+    #[test]
+    // Reject when an unrelated cert is not the signer of leaf
+    fn reject_broken_signature() {
+        let (chain, _key) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
+        let (unrelated_chain, _) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
+        let errors = test_chain_step_validity(&chain[0], &unrelated_chain.last().unwrap());
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("issuer did not sign subject")));
+    }
 }

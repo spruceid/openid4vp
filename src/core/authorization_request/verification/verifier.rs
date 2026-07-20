@@ -78,12 +78,15 @@ impl Verifier for RsaVerifier {
     fn verify(&self, payload: &[u8], signature: &[u8]) -> Result<()> {
         let signature = RsaSignature::try_from(signature)?;
         match self.digest {
-            RsaDigest::Sha256 => RsaVerifyingKey::<Sha256>::new(self.key.clone())
-                .verify(payload, &signature),
-            RsaDigest::Sha384 => RsaVerifyingKey::<Sha384>::new(self.key.clone())
-                .verify(payload, &signature),
-            RsaDigest::Sha512 => RsaVerifyingKey::<Sha512>::new(self.key.clone())
-                .verify(payload, &signature),
+            RsaDigest::Sha256 => {
+                RsaVerifyingKey::<Sha256>::new(self.key.clone()).verify(payload, &signature)
+            }
+            RsaDigest::Sha384 => {
+                RsaVerifyingKey::<Sha384>::new(self.key.clone()).verify(payload, &signature)
+            }
+            RsaDigest::Sha512 => {
+                RsaVerifyingKey::<Sha512>::new(self.key.clone()).verify(payload, &signature)
+            }
         }
         .map_err(Error::from)
     }
