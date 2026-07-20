@@ -24,6 +24,7 @@ pub mod did;
 pub mod verifier;
 pub mod x509_hash;
 pub mod x509_san;
+pub mod x509;
 
 /// Verifies Authorization Request Objects based on Client Identifier Prefix.
 ///

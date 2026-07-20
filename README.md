@@ -230,7 +230,8 @@ cargo add openid4vp
 Ensure the `/tests/presentation-exchange` submodule is initialized by running the following in the root of the project:
 
 ```shell
-git submodule init --recursive
+git submodule init
+git submodule update --recursive
 ```
 
 ## Protocol Flow Diagram
