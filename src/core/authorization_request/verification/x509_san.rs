@@ -34,7 +34,8 @@ use super::verifier::Verifier;
 /// * `wallet_metadata` - The wallet's metadata, used to check supported signing algorithms
 /// * `request_object` - The decoded authorization request object
 /// * `request_jwt` - The original JWT string
-/// * `trusted_roots` - Optional trusted root certificates for chain validation - validation is mandatory, this can only be skipped during testing
+/// * `trusted_roots` - Optional trusted root certificates for chain validation - If `None` or empty, chain validation is skipped (intended for tests only)
+/// * `trusted_client_ids` - Optional trusted `client_id` values - If `None` or empty, request_uri check is skipped
 pub fn validate<V: Verifier>(
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
@@ -87,7 +88,7 @@ pub fn validate<V: Verifier>(
     let is_dc = matches!(resp_mode, ResponseMode::DcApi | ResponseMode::DcApiJwt);
 
     if !is_dc {
-        if let Some(trusted_client_ids) = trusted_client_ids {
+        if let Some(trusted_client_ids) = trusted_client_ids.filter(|ids| !ids.is_empty()) {
             let is_client_id_trusted = trusted_client_ids
                 .iter()
                 .filter(|id| id.0.starts_with(x509_san_dns_prefix))
@@ -321,12 +322,13 @@ mod tests {
                 .unwrap()
                 .try_into()
                 .unwrap();
+        let trusted_client_id = ClientId("x509_san_dns:https://mismatch.com/response".to_string());
         let error_msg = validate::<P256Verifier>(
             &wallet(),
             &authorization_request_object,
             jwt,
             Some(&[chain.last().unwrap().clone()]),
-            Some(&[]),
+            Some(&[trusted_client_id]),
         )
         .unwrap_err()
         .to_string();

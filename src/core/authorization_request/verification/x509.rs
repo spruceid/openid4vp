@@ -8,7 +8,6 @@ use serde_json::{Map, Value as Json};
 use time::OffsetDateTime;
 use tracing::debug;
 use x509_cert::{
-    certificate::CertificateInner,
     der::{referenced::OwnedToRef, Decode, Encode},
     ext::pkix::{BasicConstraints, KeyUsage},
     Certificate,
@@ -26,7 +25,7 @@ use super::verifier::{P256Verifier, P384Verifier, RsaVerifier, Verifier};
 pub fn get_header_certificate(
     wallet_metadata: &WalletMetadata,
     request_jwt: &str,
-) -> Result<(Vec<CertificateInner>, String)> {
+) -> Result<(Vec<Certificate>, String)> {
     let (headers_b64, _body_b64, _sig_b64) = ssi::claims::jws::split_jws(request_jwt)?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
@@ -566,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    // Include expired certificate in chai
+    // Include expired certificate in chain
     fn expired_cert() {
         use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
         use time::Duration;
