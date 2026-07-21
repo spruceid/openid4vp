@@ -419,8 +419,8 @@ mod tests {
     #[test]
     // No trusted roots provided
     fn root_not_in_trusted_roots() {
-        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf"); 
-        let trusted_root = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "root").cert; 
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "leaf");
+        let trusted_root = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "root").cert;
         let jwt = make_jwt(x5c_header("ES256", &[&leaf.cert]), &leaf.key);
         let err = validate_chain_and_signature::<P256Verifier>(
             &[leaf.cert.clone()],
