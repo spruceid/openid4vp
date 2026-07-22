@@ -172,26 +172,26 @@ pub fn validate_chain_and_signature<V: Verifier>(
 
 /// Split certificate chain into pairs to check signature validity
 fn validate_full_chain(chain: &[&Certificate]) -> Result<()> {
-    if chain.len() < 1 {
+    if chain.is_empty() {
         bail!("'x5c' certificate chain was empty")
     }
     // check leaf cert's validity period, issuers are checked in validate_chain_steps
-    let _ = check_cert_validity_period(chain[0])?;
+    check_cert_validity_period(chain[0])?;
     for (num_intermediates, window) in chain.windows(2).enumerate() {
         let &[child, parent] = window else { continue };
-        let _ = validate_chain_steps(child, parent, num_intermediates)?;
+        validate_chain_steps(child, parent, num_intermediates)?;
     }
     Ok(())
 }
 
 pub fn is_ca(cert: &Certificate) -> bool {
-    return cert
+    cert
         .tbs_certificate
         .get::<BasicConstraints>()
         .ok()
         .flatten()
         .map(|(_crit, bc)| bc.ca)
-        .unwrap_or(false);
+        .unwrap_or(false)
 }
 
 pub fn path_len(cert: &Certificate) -> Option<u8> {
