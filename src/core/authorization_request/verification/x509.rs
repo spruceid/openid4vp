@@ -185,8 +185,7 @@ fn validate_full_chain(chain: &[&Certificate]) -> Result<()> {
 }
 
 pub fn is_ca(cert: &Certificate) -> bool {
-    cert
-        .tbs_certificate
+    cert.tbs_certificate
         .get::<BasicConstraints>()
         .ok()
         .flatten()
