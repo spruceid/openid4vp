@@ -20,9 +20,8 @@ use crate::core::{
 
 use super::verifier::{P256Verifier, P384Verifier, RsaVerifier, Verifier};
 
-/// Errors that can occur in the chain validation step (validate_chain_steps)
 #[derive(Debug, thiserror::Error, PartialEq)]
-pub enum ChainValidationError {
+pub enum X509VerificationError {
     #[error("distinguished names do not match")]
     DnMismatch,
     #[error("issuer did not sign subject")]
@@ -34,11 +33,21 @@ pub enum ChainValidationError {
     )]
     ExceedPathLenConstraint,
     #[error("issuing certificate's public key is not authorized to sign")]
-    NotAuthorizedToSign,
+    IssuerNotAuthorizedToSign,
     #[error("certificate is expired")]
     Expired,
     #[error("certificate is not yet valid")]
     NotYetValid,
+    #[error("chain's self-signed root is not in the trusted roots list")]
+    UntrustedRoot,
+    #[error("leaf certificate is not authorized to sign (missing digitalSignature key usage)")]
+    LeafNotAuthorizedToSign,
+    #[error("no trusted root is a valid issuer of the certificate chain")]
+    NoValidTrustedRoot,
+    #[error("request signature could not be verified")]
+    SignatureVerificationFailed,
+    #[error("{reason}")]
+    BadRequest { reason: String },
 }
 
 /// Shared functionality from x509_san.rs and x509_hash.rs to check whether the JWT header contains an `x5c` array and valid `alg`
@@ -112,8 +121,10 @@ pub fn validate_chain_and_signature<V: Verifier>(
     trusted_roots: Option<&[Certificate]>,
     alg: String,
     request_jwt: String,
-) -> Result<()> {
-    let leaf_cert = chain.first().context("'x5c' certificate chain was empty")?;
+) -> Result<(), X509VerificationError> {
+    let leaf_cert = chain.first().ok_or(X509VerificationError::BadRequest {
+        reason: ("'x5c' certificate chain was empty".to_string()),
+    })?;
 
     if let Some(trusted_roots) = trusted_roots.filter(|roots| !roots.is_empty()) {
         let mut chain_refs: Vec<&Certificate> = chain.iter().collect();
@@ -125,25 +136,24 @@ pub fn validate_chain_and_signature<V: Verifier>(
         if self_signed && is_ca {
             // Last certificate is a self-signed CA, so it must be a trusted root to be valid
             if !trusted_roots.iter().any(|root| root == top) {
-                bail!("chain's self-signed root is not in the trusted roots list");
+                return Err(X509VerificationError::UntrustedRoot);
             }
         } else {
             // The chain has no root, append the first trusted root that is a valid issuer of the top certificate.
             let root = trusted_roots
                 .iter()
-                .find(|&root| validate_chain_steps(top, root, chain.len() - 1).is_ok())
-                .context("no trusted root is a valid issuer of the certificate chain")?;
+                .find(|&root| validate_chain_steps(top, root).is_ok())
+                .ok_or(X509VerificationError::NoValidTrustedRoot)?;
             chain_refs.push(root);
         }
 
         validate_full_chain(&chain_refs)?;
     }
 
+    // A leaf certificate should have the digitalSignature bit asserted (RFC 5280 §4.2.1.3) in order to verify request object signatures
     if let Some((_crit, ku)) = leaf_cert.tbs_certificate.get::<KeyUsage>().ok().flatten() {
         if !ku.digital_signature() {
-            bail!(
-                "leaf certificate is not authorized to sign (missing digitalSignature key usage)"
-            );
+            return Err(X509VerificationError::LeafNotAuthorizedToSign);
         }
     }
 
@@ -154,37 +164,67 @@ pub fn validate_chain_and_signature<V: Verifier>(
             .owned_to_ref(),
         alg,
     )
-    .context("unable to parse SPKI")?;
+    .map_err(|_| X509VerificationError::BadRequest {
+        reason: ("unable to parse SPKI".to_string()),
+    })?;
 
-    let (headers_b64, body_b64, sig_b64) = ssi::claims::jws::split_jws(&request_jwt)?;
+    let (headers_b64, body_b64, sig_b64) =
+        ssi::claims::jws::split_jws(&request_jwt).map_err(|_| {
+            X509VerificationError::BadRequest {
+                reason: ("request object jwt was malformed".to_string()),
+            }
+        })?;
 
     let payload = [headers_b64.as_bytes(), b".", body_b64.as_bytes()].concat();
-    let signature = BASE64_URL_SAFE_NO_PAD
-        .decode(sig_b64)
-        .context("could not decode base64url encoded jwt signature")?;
+    let signature =
+        BASE64_URL_SAFE_NO_PAD
+            .decode(sig_b64)
+            .map_err(|_| X509VerificationError::BadRequest {
+                reason: ("could not decode base64url encoded jwt signature".to_string()),
+            })?;
 
     verifier
         .verify(&payload, &signature)
-        .context("request signature could not be verified")?;
+        .map_err(|_| X509VerificationError::SignatureVerificationFailed)?;
 
     Ok(())
 }
 
 /// Split certificate chain into pairs to check signature validity
-fn validate_full_chain(chain: &[&Certificate]) -> Result<()> {
+fn validate_full_chain(chain: &[&Certificate]) -> Result<(), X509VerificationError> {
     if chain.is_empty() {
-        bail!("'x5c' certificate chain was empty")
+        return Err(X509VerificationError::BadRequest {
+            reason: ("'x5c' certificate chain was empty".to_string()),
+        });
     }
     // check leaf cert's validity period, issuers are checked in validate_chain_steps
     check_cert_validity_period(chain[0])?;
-    for (num_intermediates, window) in chain.windows(2).enumerate() {
+
+    // pathLenConstraint counts only non-self-issued intermediates (RFC 5280 §4.2.1.9).
+    let mut non_self_issued_below = 0;
+    for (position, window) in chain.windows(2).enumerate() {
         let &[child, parent] = window else { continue };
-        validate_chain_steps(child, parent, num_intermediates)?;
+
+        if position > 0 && !is_self_issued(child) {
+            non_self_issued_below += 1
+        }
+        validate_chain_steps(child, parent)?;
+
+        if let Some(max_path_len) = path_len(parent) {
+            if non_self_issued_below > usize::from(max_path_len) {
+                return Err(X509VerificationError::ExceedPathLenConstraint);
+            }
+        }
     }
     Ok(())
 }
 
-pub fn is_ca(cert: &Certificate) -> bool {
+/// RFC 5280 §3.2: Self-issued certificates are CA certificates in which the issuer and subject are the same entity.
+fn is_self_issued(cert: &Certificate) -> bool {
+    cert.tbs_certificate.subject == cert.tbs_certificate.issuer
+}
+
+fn is_ca(cert: &Certificate) -> bool {
     cert.tbs_certificate
         .get::<BasicConstraints>()
         .ok()
@@ -193,7 +233,7 @@ pub fn is_ca(cert: &Certificate) -> bool {
         .unwrap_or(false)
 }
 
-pub fn path_len(cert: &Certificate) -> Option<u8> {
+fn path_len(cert: &Certificate) -> Option<u8> {
     cert.tbs_certificate
         .get::<BasicConstraints>()
         .ok()
@@ -201,7 +241,7 @@ pub fn path_len(cert: &Certificate) -> Option<u8> {
         .and_then(|(_crit, bc)| bc.path_len_constraint)
 }
 
-pub fn key_cert_sign(cert: &Certificate) -> bool {
+fn key_cert_sign(cert: &Certificate) -> bool {
     cert.tbs_certificate
         .get::<KeyUsage>()
         .ok()
@@ -210,45 +250,36 @@ pub fn key_cert_sign(cert: &Certificate) -> bool {
         .unwrap_or(false)
 }
 
-pub fn validate_chain_steps(
+fn validate_chain_steps(
     subject: &Certificate,
     candidate_issuer: &Certificate,
-    num_intermediates: usize,
-) -> Result<(), ChainValidationError> {
+) -> Result<(), X509VerificationError> {
     if subject.tbs_certificate.issuer != candidate_issuer.tbs_certificate.subject {
-        return Err(ChainValidationError::DnMismatch);
+        return Err(X509VerificationError::DnMismatch);
     } else if !signed_using_supported_algorithm(candidate_issuer, subject) {
-        return Err(ChainValidationError::IssuerSignatureInvalid);
+        return Err(X509VerificationError::IssuerSignatureInvalid);
     }
 
     if !is_ca(candidate_issuer) {
-        return Err(ChainValidationError::IssuerNotCa);
+        return Err(X509VerificationError::IssuerNotCa);
     }
-
-    if let Some(max_path_len) = path_len(candidate_issuer) {
-        if num_intermediates > usize::from(max_path_len) {
-            return Err(ChainValidationError::ExceedPathLenConstraint);
-        }
-    }
-
     if !key_cert_sign(candidate_issuer) {
-        return Err(ChainValidationError::NotAuthorizedToSign);
+        return Err(X509VerificationError::IssuerNotAuthorizedToSign);
     }
-
     // leaf validity was tested previously, verify intermediates + root
     check_cert_validity_period(candidate_issuer)?;
 
     Ok(())
 }
 
-fn check_cert_validity_period(certificate: &Certificate) -> Result<(), ChainValidationError> {
+fn check_cert_validity_period(certificate: &Certificate) -> Result<(), X509VerificationError> {
     let now = OffsetDateTime::now_utc().unix_timestamp() as u64;
     let validity = certificate.tbs_certificate.validity;
     if validity.not_after.to_unix_duration().as_secs() < now {
-        return Err(ChainValidationError::Expired);
+        return Err(X509VerificationError::Expired);
     };
     if validity.not_before.to_unix_duration().as_secs() > now {
-        return Err(ChainValidationError::NotYetValid);
+        return Err(X509VerificationError::NotYetValid);
     };
     Ok(())
 }
@@ -538,10 +569,7 @@ mod tests {
             jwt,
         )
         .unwrap_err();
-        assert_eq!(
-            err.downcast_ref::<ChainValidationError>(),
-            Some(&ChainValidationError::IssuerSignatureInvalid),
-        );
+        assert_eq!(err, X509VerificationError::IssuerSignatureInvalid,);
     }
 
     #[test]
@@ -579,10 +607,7 @@ mod tests {
             jwt,
         )
         .unwrap_err();
-        assert_eq!(
-            err.downcast_ref::<ChainValidationError>(),
-            Some(&ChainValidationError::NotYetValid),
-        );
+        assert_eq!(err, X509VerificationError::NotYetValid,);
     }
 
     #[test]
@@ -636,10 +661,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_eq!(
-            err.downcast_ref::<ChainValidationError>(),
-            Some(&ChainValidationError::Expired),
-        );
+        assert_eq!(err, X509VerificationError::Expired,);
     }
 
     #[test]
@@ -673,7 +695,7 @@ mod tests {
             &rcgen::PKCS_ECDSA_P256_SHA256,
             &rcgen::PKCS_ECDSA_P256_SHA256,
         ]);
-        assert!(validate_chain_steps(&chain[0], &chain.last().unwrap(), 0).is_ok());
+        assert!(validate_chain_steps(&chain[0], &chain.last().unwrap()).is_ok());
     }
 
     #[test]
@@ -682,8 +704,8 @@ mod tests {
         let cert1 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "cert1").cert;
         let cert2 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "cert2").cert;
         assert_eq!(
-            validate_chain_steps(&cert1, &cert2, 0).unwrap_err(),
-            ChainValidationError::DnMismatch
+            validate_chain_steps(&cert1, &cert2).unwrap_err(),
+            X509VerificationError::DnMismatch
         )
     }
 
@@ -699,8 +721,8 @@ mod tests {
             &rcgen::PKCS_ECDSA_P256_SHA256,
         ]);
         assert_eq!(
-            validate_chain_steps(&chain[0], &unrelated_chain.last().unwrap(), 0).unwrap_err(),
-            ChainValidationError::IssuerSignatureInvalid
+            validate_chain_steps(&chain[0], &unrelated_chain.last().unwrap()).unwrap_err(),
+            X509VerificationError::IssuerSignatureInvalid
         )
     }
 
@@ -720,43 +742,61 @@ mod tests {
             .signed_by(&leaf_key, &root_cert, &root_key)
             .unwrap();
         assert_eq!(
-            validate_chain_steps(&to_x509(&leaf_cert), &to_x509(&root_cert), 0).unwrap_err(),
-            ChainValidationError::IssuerNotCa
+            validate_chain_steps(&to_x509(&leaf_cert), &to_x509(&root_cert)).unwrap_err(),
+            X509VerificationError::IssuerNotCa
         );
     }
 
     #[test]
-    // Reject issuers that exceed path length constraint (have more intermediate certs than indicated here)
+    // Reject chains that exceed a CA's pathLenConstraint
     fn reject_exceed_pathlen() {
-        use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
+        use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair};
 
-        // assume this chain is leaf > inter_2 > inter_1 > root
+        // A distinct subject distinguished name is used for each certificate so they can be formed as non-self-issued, hence counting towards the path length constraint
+        fn ca_params(cn: &str, constraint: BasicConstraints) -> CertificateParams {
+            let mut params = CertificateParams::new(vec![format!("{cn}.example")]).unwrap();
+            let mut dn = rcgen::DistinguishedName::new();
+            dn.push(DnType::CommonName, cn);
+            params.distinguished_name = dn;
+            params.is_ca = IsCa::Ca(constraint);
+            params.key_usages = vec![KeyCertSign];
+            params
+        }
 
+        // chain is leaf > inter_2 > inter_1 > root; inter_1 has pathLen=0
         let root_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
-        let mut root_params = CertificateParams::new(vec!["root.example".into()]).unwrap();
-        root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-        root_params.key_usages = vec![KeyCertSign];
-        let root_cert = root_params.self_signed(&root_key).unwrap();
+        let root_cert = ca_params("root", BasicConstraints::Unconstrained)
+            .self_signed(&root_key)
+            .unwrap();
 
         let inter_1_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
-        let mut inter_1_params = CertificateParams::new(vec!["inter_1.example".into()]).unwrap();
-        inter_1_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
-        inter_1_params.key_usages = vec![KeyCertSign];
-        let inter_1_cert = inter_1_params
+        let inter_1_cert = ca_params("inter_1", BasicConstraints::Constrained(0))
             .signed_by(&inter_1_key, &root_cert, &root_key)
             .unwrap();
 
         let inter_2_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
-        let mut inter_2_params = CertificateParams::new(vec!["inter_2.example".into()]).unwrap();
-        inter_2_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-        inter_2_params.key_usages = vec![KeyCertSign];
-        let inter_2_cert = inter_2_params
+        let inter_2_cert = ca_params("inter_2", BasicConstraints::Unconstrained)
             .signed_by(&inter_2_key, &inter_1_cert, &inter_1_key)
             .unwrap();
 
+        let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut leaf_params = CertificateParams::new(vec!["leaf.example".into()]).unwrap();
+        let mut leaf_dn = rcgen::DistinguishedName::new();
+        leaf_dn.push(DnType::CommonName, "leaf");
+        leaf_params.distinguished_name = leaf_dn;
+        let leaf_cert = leaf_params
+            .signed_by(&leaf_key, &inter_2_cert, &inter_2_key)
+            .unwrap();
+
+        let chain = [
+            &to_x509(&leaf_cert),
+            &to_x509(&inter_2_cert),
+            &to_x509(&inter_1_cert),
+            &to_x509(&root_cert),
+        ];
         assert_eq!(
-            validate_chain_steps(&to_x509(&inter_2_cert), &to_x509(&inter_1_cert), 1).unwrap_err(),
-            ChainValidationError::ExceedPathLenConstraint
+            validate_full_chain(&chain).unwrap_err(),
+            X509VerificationError::ExceedPathLenConstraint
         );
     }
 
@@ -777,8 +817,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            validate_chain_steps(&to_x509(&leaf_cert), &to_x509(&root_cert), 0).unwrap_err(),
-            ChainValidationError::NotAuthorizedToSign
+            validate_chain_steps(&to_x509(&leaf_cert), &to_x509(&root_cert)).unwrap_err(),
+            X509VerificationError::IssuerNotAuthorizedToSign
         )
     }
 }

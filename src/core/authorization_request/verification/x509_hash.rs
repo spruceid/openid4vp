@@ -63,7 +63,8 @@ pub fn validate<V: Verifier>(
         );
     }
 
-    validate_chain_and_signature::<V>(&chain, trusted_roots, alg, request_jwt)
+    validate_chain_and_signature::<V>(&chain, trusted_roots, alg, request_jwt)?;
+    Ok(())
 }
 
 #[cfg(test)]
