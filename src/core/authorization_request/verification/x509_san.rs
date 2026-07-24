@@ -1,6 +1,5 @@
 use anyhow::{bail, Context, Result};
 use tracing::debug;
-use url::Url;
 use x509_cert::{
     ext::pkix::{name::GeneralName, SubjectAltName},
     Certificate,
@@ -34,7 +33,7 @@ use super::verifier::Verifier;
 /// * `wallet_metadata` - The wallet's metadata, used to check supported signing algorithms
 /// * `request_object` - The decoded authorization request object
 /// * `request_jwt` - The original JWT string
-/// * `trusted_roots` - Optional trusted root certificates for chain validation - If `None` or empty, chain validation is skipped (intended for tests only)
+/// * `trusted_roots` - Optional trusted root certificates for chain validation - If `None`, chain validation is skipped (intended for tests only)
 /// * `trusted_client_ids` - Optional trusted `client_id` values - If `None` or empty, request_uri check is skipped
 pub fn validate<V: Verifier>(
     wallet_metadata: &WalletMetadata,
@@ -95,8 +94,7 @@ pub fn validate<V: Verifier>(
                 .any(|trusted_client_id| trusted_client_id == client_id);
             if !is_client_id_trusted {
                 let redirect_uri = request_object.return_uri();
-                let fqdn = Url::parse(redirect_uri.as_str())
-                    .context("unable to parse redirect_uri")?
+                let fqdn = redirect_uri
                     .host_str()
                     .map(str::to_owned)
                     .context("no host found in redirect_uri")?;

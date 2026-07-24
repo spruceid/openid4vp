@@ -6,7 +6,7 @@ use const_oid::db::rfc5912::{
 };
 use serde_json::{Map, Value as Json};
 use time::OffsetDateTime;
-use tracing::debug;
+use tracing::{debug, info, warn};
 use x509_cert::{
     der::{referenced::OwnedToRef, Decode, Encode},
     ext::pkix::{BasicConstraints, KeyUsage},
@@ -24,8 +24,10 @@ use super::verifier::{P256Verifier, P384Verifier, RsaVerifier, Verifier};
 pub enum X509VerificationError {
     #[error("distinguished names do not match")]
     DnMismatch,
-    #[error("issuer did not sign subject")]
-    IssuerSignatureInvalid,
+    #[error("issuer signature invalid: {reason}")]
+    IssuerSignatureInvalid { reason: String },
+    #[error("unsupported algorithm: {oid}")]
+    UnsupportedAlgorithm { oid: String },
     #[error("issuing certificate is not a CA")]
     IssuerNotCa,
     #[error(
@@ -86,6 +88,10 @@ pub fn get_header_certificate(
         bail!("'x5c' header was not an array")
     };
 
+    if x5chain.is_empty() {
+        bail!("'x5c' header was an empty array")
+    }
+
     // Decode full chain
     let chain = x5chain
         .iter()
@@ -93,23 +99,14 @@ pub fn get_header_certificate(
             let b64 = value
                 .as_str()
                 .context("certificate in 'x5c' was not a string")?;
-            let der = BASE64_STANDARD_NO_PAD
-                .decode(b64.trim_end_matches('='))
+            let der = BASE64_STANDARD
+                .decode(b64)
                 .context("certificate in 'x5c' was not valid base64")?;
             Certificate::from_der(&der).context("certificate in 'x5c' was not valid DER")
         })
         .collect::<Result<Vec<Certificate>>>()?;
 
-    let Json::String(b64_x509) = x5chain.first().context("'x5c' was an empty array")? else {
-        bail!("'x5c' header was not an array of strings");
-    };
-
-    let leaf_cert_der = BASE64_STANDARD_NO_PAD
-        .decode(b64_x509.trim_end_matches('='))
-        .context("leaf certificate in 'x5c' was not valid base64")?;
-
-    let leaf_cert = Certificate::from_der(&leaf_cert_der)
-        .context("leaf certificate in 'x5c' was not valid DER")?;
+    let leaf_cert = chain.first();
 
     debug!("Leaf certificate: {leaf_cert:?}");
     Ok((chain, alg))
@@ -126,7 +123,11 @@ pub fn validate_chain_and_signature<V: Verifier>(
         reason: ("'x5c' certificate chain was empty".to_string()),
     })?;
 
-    if let Some(trusted_roots) = trusted_roots.filter(|roots| !roots.is_empty()) {
+    if let Some(trusted_roots) = trusted_roots {
+        // If trusted_roots is an empty array, any 'x5c' chain will be rejected, as no root can be trusted
+        if trusted_roots.is_empty() {
+            warn!("No trusted roots provided (trusted_roots is empty)")
+        }
         let mut chain_refs: Vec<&Certificate> = chain.iter().collect();
         // Check if last provided certificate is a root
         let top = chain.last().expect("chain is non-empty");
@@ -148,6 +149,8 @@ pub fn validate_chain_and_signature<V: Verifier>(
         }
 
         validate_full_chain(&chain_refs)?;
+    } else {
+        info!("No trusted roots provided (trusted_roots is None)")
     }
 
     // A leaf certificate should have the digitalSignature bit asserted (RFC 5280 §4.2.1.3) in order to verify request object signatures
@@ -256,8 +259,8 @@ fn validate_chain_steps(
 ) -> Result<(), X509VerificationError> {
     if subject.tbs_certificate.issuer != candidate_issuer.tbs_certificate.subject {
         return Err(X509VerificationError::DnMismatch);
-    } else if !signed_using_supported_algorithm(candidate_issuer, subject) {
-        return Err(X509VerificationError::IssuerSignatureInvalid);
+    } else {
+        verify_issuer_signature(candidate_issuer, subject)?;
     }
 
     if !is_ca(candidate_issuer) {
@@ -273,28 +276,20 @@ fn validate_chain_steps(
 }
 
 fn check_cert_validity_period(certificate: &Certificate) -> Result<(), X509VerificationError> {
-    let now = OffsetDateTime::now_utc().unix_timestamp() as u64;
     let validity = certificate.tbs_certificate.validity;
-    if validity.not_after.to_unix_duration().as_secs() < now {
+    if OffsetDateTime::from(validity.not_after.to_system_time()) < OffsetDateTime::now_utc() {
         return Err(X509VerificationError::Expired);
     };
-    if validity.not_before.to_unix_duration().as_secs() > now {
+    if OffsetDateTime::from(validity.not_before.to_system_time()) > OffsetDateTime::now_utc() {
         return Err(X509VerificationError::NotYetValid);
     };
     Ok(())
 }
 
-fn signed_using_supported_algorithm(candidate_issuer: &Certificate, subject: &Certificate) -> bool {
-    match verify_issuer_signature(candidate_issuer, subject) {
-        Ok(()) => true,
-        Err(e) => {
-            tracing::debug!("issuer did not sign subject: {e:#}");
-            false
-        }
-    }
-}
-
-fn verify_issuer_signature(candidate_issuer: &Certificate, subject: &Certificate) -> Result<()> {
+fn verify_issuer_signature(
+    candidate_issuer: &Certificate,
+    subject: &Certificate,
+) -> Result<(), X509VerificationError> {
     let spki = candidate_issuer
         .tbs_certificate
         .subject_public_key_info
@@ -302,30 +297,49 @@ fn verify_issuer_signature(candidate_issuer: &Certificate, subject: &Certificate
     let tbs = subject
         .tbs_certificate
         .to_der()
-        .context("failed to encode subject TBS certificate")?;
+        .context("failed to encode subject TBS certificate")
+        .map_err(invalid_sig)?;
     let sig = subject.signature.raw_bytes();
     let oid = subject.signature_algorithm.oid;
 
-    if oid == ECDSA_WITH_SHA_256 {
-        let verifier = P256Verifier::from_spki(spki, String::from("ES256"))?;
+    let result = if oid == ECDSA_WITH_SHA_256 {
+        let verifier = P256Verifier::from_spki(spki, String::from("ES256")).map_err(invalid_sig)?;
         let raw = p256::ecdsa::Signature::from_der(sig)
-            .context("failed to parse P-256 certificate signature")?
+            .context("failed to parse P-256 certificate signature")
+            .map_err(invalid_sig)?
             .to_bytes();
         verifier.verify(&tbs, raw.as_slice())
     } else if oid == ECDSA_WITH_SHA_384 {
-        let verifier = P384Verifier::from_spki(spki, String::from("ES384"))?;
+        let verifier = P384Verifier::from_spki(spki, String::from("ES384")).map_err(invalid_sig)?;
         let raw = p384::ecdsa::Signature::from_der(sig)
-            .context("failed to parse P-384 certificate signature")?
+            .context("failed to parse P-384 certificate signature")
+            .map_err(invalid_sig)?
             .to_bytes();
         verifier.verify(&tbs, raw.as_slice())
     } else if oid == SHA_256_WITH_RSA_ENCRYPTION {
-        RsaVerifier::from_spki(spki, String::from("RS256"))?.verify(&tbs, sig)
+        RsaVerifier::from_spki(spki, String::from("RS256"))
+            .map_err(invalid_sig)?
+            .verify(&tbs, sig)
     } else if oid == SHA_384_WITH_RSA_ENCRYPTION {
-        RsaVerifier::from_spki(spki, String::from("RS384"))?.verify(&tbs, sig)
+        RsaVerifier::from_spki(spki, String::from("RS384"))
+            .map_err(invalid_sig)?
+            .verify(&tbs, sig)
     } else if oid == SHA_512_WITH_RSA_ENCRYPTION {
-        RsaVerifier::from_spki(spki, String::from("RS512"))?.verify(&tbs, sig)
+        RsaVerifier::from_spki(spki, String::from("RS512"))
+            .map_err(invalid_sig)?
+            .verify(&tbs, sig)
     } else {
-        bail!("unsupported certificate signature algorithm: {oid}")
+        return Err(X509VerificationError::UnsupportedAlgorithm {
+            oid: oid.to_string(),
+        });
+    };
+
+    result.map_err(invalid_sig)
+}
+
+fn invalid_sig<E: std::fmt::Display>(e: E) -> X509VerificationError {
+    X509VerificationError::IssuerSignatureInvalid {
+        reason: e.to_string(),
     }
 }
 
@@ -439,20 +453,6 @@ mod tests {
     }
 
     #[test]
-    fn no_trusted_roots_success_es384() {
-        // Test if signature validation completes without trusted roots provided (empty slice)
-        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P384_SHA384, "leaf");
-        let jwt = make_jwt(x5c_header("ES384", &[&leaf.cert]), &leaf.key);
-        validate_chain_and_signature::<P384Verifier>(
-            &[leaf.cert.clone()],
-            Some(&[]),
-            "ES384".into(),
-            jwt,
-        )
-        .unwrap();
-    }
-
-    #[test]
     // JWT signature is signed by the wrong key (not leaf certificate's key)
     fn invalid_jwt_signature() {
         let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "cert");
@@ -506,15 +506,30 @@ mod tests {
             &rcgen::PKCS_ECDSA_P256_SHA256,
         ]);
         let trusted_root_1 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "trusted_root_1");
-        let trusted_root_2 = self_signed_cert(&rcgen::PKCS_ECDSA_P256_SHA256, "trusted_root_2");
         let jwt = make_jwt(x5c_header("ES256", &[&chain[0].clone()]), &key);
 
         let formatted_chain = [chain[0].clone(), chain[1].clone()];
-        let formatted_trusted_roots = [trusted_root_1.cert, trusted_root_2.cert];
+        let formatted_trusted_roots = [trusted_root_1.cert];
         assert!(validate_chain_and_signature::<P256Verifier>(
             &formatted_chain,
             Some(&formatted_trusted_roots),
             "ES256".into(),
+            jwt,
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("root is not in the trusted roots list"));
+    }
+
+    #[test]
+    fn empty_trusted_roots_rejected() {
+        // Test if signature validation completes without trusted roots provided (empty slice)
+        let leaf = self_signed_cert(&rcgen::PKCS_ECDSA_P384_SHA384, "leaf");
+        let jwt = make_jwt(x5c_header("ES384", &[&leaf.cert]), &leaf.key);
+        assert!(validate_chain_and_signature::<P384Verifier>(
+            &[leaf.cert.clone()],
+            Some(&[]),
+            "ES384".into(),
             jwt,
         )
         .unwrap_err()
@@ -569,7 +584,10 @@ mod tests {
             jwt,
         )
         .unwrap_err();
-        assert_eq!(err, X509VerificationError::IssuerSignatureInvalid,);
+        assert!(matches!(
+            err,
+            X509VerificationError::IssuerSignatureInvalid { .. }
+        ));
     }
 
     #[test]
@@ -678,7 +696,7 @@ mod tests {
         let jwt = make_jwt(x5c_header("ES384", &x509_chain), &key);
         let err = validate_chain_and_signature::<P384Verifier>(
             &[x509_chain[0].clone()],
-            Some(&[]),
+            None,
             "ES384".into(),
             jwt,
         )
@@ -720,10 +738,10 @@ mod tests {
             &rcgen::PKCS_ECDSA_P256_SHA256,
             &rcgen::PKCS_ECDSA_P256_SHA256,
         ]);
-        assert_eq!(
+        assert!(matches!(
             validate_chain_steps(&chain[0], &unrelated_chain.last().unwrap()).unwrap_err(),
-            X509VerificationError::IssuerSignatureInvalid
-        )
+            X509VerificationError::IssuerSignatureInvalid { .. }
+        ))
     }
 
     #[test]

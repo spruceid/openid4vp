@@ -28,7 +28,7 @@ use super::verifier::Verifier;
 /// * `wallet_metadata` - The wallet's metadata, used to check supported signing algorithms
 /// * `request_object` - The decoded authorization request object
 /// * `request_jwt` - The original JWT string
-/// * `trusted_roots` - Optional trusted root certificates for chain validation - If `None` or empty, chain validation is skipped (intended for tests only)
+/// * `trusted_roots` - Optional trusted root certificates for chain validation - If `None`, chain validation is skipped (intended for tests only)
 pub fn validate<V: Verifier>(
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
