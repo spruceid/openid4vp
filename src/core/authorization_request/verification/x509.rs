@@ -337,9 +337,9 @@ fn verify_issuer_signature(
     result.map_err(invalid_sig)
 }
 
-fn invalid_sig<E: std::fmt::Display>(e: E) -> X509VerificationError {
+fn invalid_sig<E: std::fmt::Debug>(e: E) -> X509VerificationError {
     X509VerificationError::IssuerSignatureInvalid {
-        reason: e.to_string(),
+        reason: format!("{e:?}"),
     }
 }
 
