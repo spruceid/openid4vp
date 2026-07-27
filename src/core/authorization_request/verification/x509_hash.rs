@@ -1,17 +1,16 @@
 use anyhow::{bail, Context, Result};
 use base64::prelude::*;
-use serde_json::{Map, Value as Json};
 use sha2::{Digest, Sha256};
 use tracing::debug;
-use x509_cert::{
-    der::{referenced::OwnedToRef, Decode},
-    Certificate,
-};
+use x509_cert::{der::Encode, Certificate};
 
 use crate::core::{
-    authorization_request::{parameters::ClientIdScheme, AuthorizationRequestObject},
-    metadata::{parameters::wallet::RequestObjectSigningAlgValuesSupported, WalletMetadata},
-    object::ParsingErrorContext,
+    authorization_request::{
+        parameters::ClientIdScheme,
+        verification::x509::{get_header_certificate, validate_chain_and_signature},
+        AuthorizationRequestObject,
+    },
+    metadata::WalletMetadata,
 };
 
 use super::verifier::Verifier;
@@ -29,68 +28,27 @@ use super::verifier::Verifier;
 /// * `wallet_metadata` - The wallet's metadata, used to check supported signing algorithms
 /// * `request_object` - The decoded authorization request object
 /// * `request_jwt` - The original JWT string
-/// * `trusted_roots` - Optional trusted root certificates for chain validation (not yet implemented)
+/// * `trusted_roots` - Optional trusted root certificates for chain validation - If `None`, chain validation is skipped (intended for tests only)
 pub fn validate<V: Verifier>(
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
     trusted_roots: Option<&[Certificate]>,
 ) -> Result<()> {
+    let (chain, alg) = get_header_certificate(wallet_metadata, &request_jwt)?;
+
+    // Strip prefix if present
     let client_id = request_object
         .client_id()
         .context("client_id is required")?;
-
-    // Strip the "x509_hash:" prefix if present
     let expected_hash = client_id
         .0
         .strip_prefix(&format!("{}:", ClientIdScheme::X509_HASH))
         .unwrap_or(&client_id.0);
 
-    let (headers_b64, body_b64, sig_b64) = ssi::claims::jws::split_jws(&request_jwt)?;
-
-    let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
-        .decode(headers_b64)
-        .context("jwt headers were not valid base64url")?;
-
-    let mut headers = serde_json::from_slice::<Map<String, Json>>(&headers_json_bytes)
-        .context("jwt headers were not valid json")?;
-
-    let Json::String(alg) = headers
-        .remove("alg")
-        .context("'alg' was missing from jwt headers")?
-    else {
-        bail!("'alg' header was not a string")
-    };
-
-    let supported_algs: RequestObjectSigningAlgValuesSupported =
-        wallet_metadata.get().parsing_error()?;
-
-    if !supported_algs.0.contains(&alg) {
-        bail!("request was signed with unsupported algorithm: {alg}")
-    }
-
-    let Json::Array(x5chain) = headers
-        .remove("x5c")
-        .context("'x5c' was missing from jwt headers")?
-    else {
-        bail!("'x5c' header was not an array")
-    };
-
-    let Json::String(b64_x509) = x5chain.first().context("'x5c' was an empty array")? else {
-        bail!("'x5c' header was not an array of strings");
-    };
-
-    let leaf_cert_der = BASE64_STANDARD_NO_PAD
-        .decode(b64_x509.trim_end_matches('='))
-        .context("leaf certificate in 'x5c' was not valid base64")?;
-
-    let leaf_cert = Certificate::from_der(&leaf_cert_der)
-        .context("leaf certificate in 'x5c' was not valid DER")?;
-
-    debug!("Leaf certificate: {leaf_cert:?}");
-
     // Compute SHA-256 hash of the DER-encoded certificate and base64url encode
-    let computed_hash = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(&leaf_cert_der));
+    let leaf = chain.first().context("'x5c' was empty")?;
+    let computed_hash = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(leaf.to_der()?));
 
     debug!(
         "x509_hash verification: expected='{}', computed='{}'",
@@ -105,27 +63,186 @@ pub fn validate<V: Verifier>(
         );
     }
 
-    if let Some(_trusted_roots) = trusted_roots {
-        // TODO: Verify chain to root.
+    validate_chain_and_signature::<V>(&chain, trusted_roots, alg, request_jwt)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{
+        authorization_request::verification::verifier::P256Verifier, object::UntypedObject,
+    };
+
+    use base64::{
+        prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
+        Engine,
+    };
+
+    use crate::core::authorization_request::verification::test_util::*;
+    use serde_json::json;
+    use x509_cert::der::Encode;
+
+    /// Builds a signed JWT; x5c or alg can be invalid to test error paths
+    fn make_jwt(header: serde_json::Value, body: serde_json::Value, key: &SigningKey) -> String {
+        let h = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap());
+        let b: String = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&body).unwrap());
+        let signing_input = format!("{h}.{b}");
+        let sig = key.sign(signing_input.as_bytes());
+        format!("{signing_input}.{}", BASE64_URL_SAFE_NO_PAD.encode(sig))
     }
 
-    let verifier = V::from_spki(
-        leaf_cert
-            .tbs_certificate
-            .subject_public_key_info
-            .owned_to_ref(),
-        alg,
-    )
-    .context("unable to parse SPKI")?;
+    /// Builds header containing specified alg and cert chain
+    fn x5c_header(alg: &str, chain: &[&Certificate]) -> serde_json::Value {
+        let x5c: Vec<String> = chain
+            .iter()
+            .map(|c| BASE64_STANDARD.encode(c.to_der().unwrap()))
+            .collect();
+        json!({ "alg": alg, "x5c": x5c })
+    }
 
-    let payload = [headers_b64.as_bytes(), b".", body_b64.as_bytes()].concat();
-    let signature = BASE64_URL_SAFE_NO_PAD
-        .decode(sig_b64)
-        .context("could not decode base64url encoded jwt signature")?;
+    #[test]
+    fn validate_x509_hash_dns_prefix_success() {
+        // Test e2e validation of multi certificate chain with allowed header
+        let (chain, key) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
 
-    verifier
-        .verify(&payload, &signature)
-        .context("request signature could not be verified")?;
+        let leaf_hash = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(&chain[0].to_der().unwrap()));
 
-    Ok(())
+        let jwt = make_jwt(
+            x5c_header("ES256", &[&chain[0], &chain.last().unwrap()]),
+            json!({
+                "client_id": format!("x509_hash:{leaf_hash}"),
+                "response_type": "vp_token",
+                "nonce": "abc123",
+                "response_mode": "direct_post",
+                "response_uri": "https://example.com/response",
+            }),
+            &key,
+        );
+        let authorization_request_object: AuthorizationRequestObject =
+            ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+                .unwrap()
+                .try_into()
+                .unwrap();
+        validate::<P256Verifier>(
+            &wallet(),
+            &authorization_request_object,
+            jwt,
+            Some(&[chain.last().unwrap().clone()]),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn sha_256_hash_client_id_mismatch() {
+        // Reject request_object has a client_id different from leaf certificate's SHA-256 hash
+        let (chain, key) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
+
+        let jwt = make_jwt(
+            x5c_header("ES256", &[&chain[0].clone(), &chain.last().unwrap()]),
+            json!({
+                "client_id": "x509_hash:invalid",
+                "response_type": "vp_token",
+                "nonce": "abc123",
+                "response_mode": "direct_post",
+                "response_uri": "https://example.com/response",
+            }),
+            &key,
+        );
+        let authorization_request_object: AuthorizationRequestObject =
+            ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+                .unwrap()
+                .try_into()
+                .unwrap();
+        assert!(validate::<P256Verifier>(
+            &wallet(),
+            &authorization_request_object,
+            jwt,
+            Some(&[chain.last().unwrap().clone()])
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("does not match certificate hash"));
+    }
+
+    #[test]
+    fn no_client_id() {
+        // Reject request_object that doesn't contain client_id
+        let (chain, key) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
+
+        let jwt = make_jwt(
+            x5c_header("ES256", &[&chain[0], &chain.last().unwrap()]),
+            json!({
+                "response_type": "vp_token",
+                "nonce": "abc123",
+                "response_mode": "direct_post",
+                "response_uri": "https://example.com/response",
+            }),
+            &key,
+        );
+        let authorization_request_object: AuthorizationRequestObject =
+            ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+                .unwrap()
+                .try_into()
+                .unwrap();
+        assert!(validate::<P256Verifier>(
+            &wallet(),
+            &authorization_request_object,
+            jwt,
+            Some(&[chain.last().unwrap().clone()])
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("client_id is required"));
+    }
+
+    #[test]
+    fn reject_untrusted_root_x509_hash() {
+        // Test e2e validation of multi certificate chain with allowed header
+        let (chain, key) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
+        let (unrelated_chain, _) = issued_chain(&[
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+            &rcgen::PKCS_ECDSA_P256_SHA256,
+        ]);
+
+        let leaf_hash = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(&chain[0].to_der().unwrap()));
+
+        let jwt = make_jwt(
+            x5c_header("ES256", &[&chain[0], &chain.last().unwrap()]),
+            json!({
+                "client_id": format!("x509_hash:{leaf_hash}"),
+                "response_type": "vp_token",
+                "nonce": "abc123",
+                "response_mode": "direct_post",
+                "response_uri": "https://example.com/response",
+            }),
+            &key,
+        );
+        let authorization_request_object: AuthorizationRequestObject =
+            ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+                .unwrap()
+                .try_into()
+                .unwrap();
+        assert!(validate::<P256Verifier>(
+            &wallet(),
+            &authorization_request_object,
+            jwt,
+            Some(&[unrelated_chain.last().unwrap().clone()]),
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("chain's self-signed root is not in the trusted roots list"));
+    }
 }

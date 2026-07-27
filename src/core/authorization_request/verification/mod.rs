@@ -22,6 +22,7 @@ use super::{
 
 pub mod did;
 pub mod verifier;
+pub mod x509;
 pub mod x509_hash;
 pub mod x509_san;
 
@@ -242,4 +243,131 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+pub(crate) mod test_util {
+    use base64::prelude::*;
+
+    use crate::core::metadata::WalletMetadata;
+    use x509_cert::{
+        der::{Decode, Encode},
+        Certificate,
+    };
+
+    use p256::pkcs8::DecodePrivateKey;
+    use rcgen::{DistinguishedName, KeyUsagePurpose::KeyCertSign, SignatureAlgorithm};
+    use serde_json::json;
+    pub enum SigningKey {
+        P256(p256::ecdsa::SigningKey),
+        P384(p384::ecdsa::SigningKey),
+    }
+
+    impl SigningKey {
+        /// Parse a PKCS#8 DER key, trying P-256 first then falling back to P-384.
+        pub fn from_pkcs8_der(der: &[u8]) -> anyhow::Result<Self> {
+            if let Ok(key) = p256::ecdsa::SigningKey::from_pkcs8_der(der) {
+                Ok(SigningKey::P256(key))
+            } else {
+                Ok(SigningKey::P384(p384::ecdsa::SigningKey::from_pkcs8_der(
+                    der,
+                )?))
+            }
+        }
+
+        /// Sign a message, returning the raw (fixed-width) signature bytes.
+        pub fn sign(&self, msg: &[u8]) -> Vec<u8> {
+            use p256::ecdsa::signature::Signer as _;
+            match self {
+                SigningKey::P256(key) => {
+                    let sig: p256::ecdsa::Signature = key.sign(msg);
+                    sig.to_bytes().to_vec()
+                }
+                SigningKey::P384(key) => {
+                    let sig: p384::ecdsa::Signature = key.sign(msg);
+                    sig.to_bytes().to_vec()
+                }
+            }
+        }
+    }
+
+    pub fn to_x509(rcgen_cert: &rcgen::Certificate) -> Certificate {
+        Certificate::from_der(&rcgen_cert.der().to_vec()).unwrap()
+    }
+
+    /// Given algorithms for each certificate, issue a chain that links 2+ certificates
+    pub fn issued_chain(algs: &[&'static SignatureAlgorithm]) -> (Vec<Certificate>, SigningKey) {
+        use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair};
+
+        assert!(algs.len() >= 2, "issued_chain needs at least root + leaf");
+
+        let root_key = KeyPair::generate_for(&algs.first().unwrap()).unwrap();
+        let mut root_params = CertificateParams::new(vec!["root.example".into()]).unwrap();
+        root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        root_params.key_usages = vec![KeyCertSign];
+        let root_cert = root_params.self_signed(&root_key).unwrap();
+
+        let mut chain = vec![to_x509(&root_cert)]; // root ends up last after inserts
+
+        let mut issuer = root_cert;
+        let mut issuer_key = root_key;
+
+        for (i, alg) in algs[1..].iter().enumerate() {
+            let is_leaf = i == algs.len() - 2;
+
+            let key = KeyPair::generate_for(alg).unwrap();
+            let mut params = CertificateParams::new(vec![if is_leaf {
+                "leaf.example"
+            } else {
+                "inter.example"
+            }
+            .into()])
+            .unwrap();
+            let mut dn = DistinguishedName::new();
+            dn.push(
+                DnType::CommonName,
+                if is_leaf {
+                    "leaf.example".to_string()
+                } else {
+                    format!("inter_{}.example", i)
+                },
+            );
+            params.distinguished_name = dn;
+            if !is_leaf {
+                params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+                params.key_usages = vec![KeyCertSign];
+            }
+            let cert = params.signed_by(&key, &issuer, &issuer_key).unwrap();
+
+            chain.insert(0, to_x509(&cert));
+            issuer = cert;
+            issuer_key = key;
+        }
+
+        let key = SigningKey::from_pkcs8_der(&issuer_key.serialize_der()).unwrap();
+        (chain, key)
+    }
+
+    pub fn wallet() -> WalletMetadata {
+        WalletMetadata::openid4vp_scheme_static() // supports ES256
+    }
+
+    /// Builds a signed JWT; x5c or alg can be invalid to test error paths
+    pub fn make_jwt(header: serde_json::Value, key: &SigningKey) -> String {
+        let body = json!({ "age": "30" });
+        let h = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap());
+        let b: String = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&body).unwrap());
+        let signing_input = format!("{h}.{b}");
+        let sig = key.sign(signing_input.as_bytes());
+        format!("{signing_input}.{}", BASE64_URL_SAFE_NO_PAD.encode(sig))
+    }
+
+    /// Builds header containing specified alg and cert chain
+    pub fn x5c_header(alg: &str, chain: &[&Certificate]) -> serde_json::Value {
+        let x5c: Vec<String> = chain
+            .iter()
+            .map(|c| BASE64_STANDARD.encode(c.to_der().unwrap()))
+            .collect();
+        json!({ "alg": alg, "x5c": x5c })
+    }
 }
