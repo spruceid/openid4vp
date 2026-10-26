@@ -110,6 +110,8 @@ exceptions = [
     # Each entry is the crate and version constraint, and its specific allow
     # list
     #{ allow = ["Zlib"], crate = "adler32" },
+    # Hasher used by serde_json >= 1.0.154.
+    { allow = ["Zlib"], crate = "foldhash" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,

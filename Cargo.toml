@@ -27,7 +27,7 @@ openid4vp-frontend = { version = "0.1.0", path = "openid4vp-frontend" }
 p256 = { version = "0.13.2", features = ["jwk"] }
 p384 = { version = "0.13", features = ["ecdsa"] }
 rand = { version = "0.8.5" }
-reqwest = { version = "0.12.5", features = ["rustls-tls"] }
+reqwest = { version = "0.12.5", default-features = false, features = ["rustls-tls", "json", "http2"] }
 rsa = "0.9"
 serde = "1.0.188"
 serde_bytes = "0.11"
