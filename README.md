@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/openid4vp)](https://crates.io/crates/openid4vp)
 [![Docs.rs](https://docs.rs/openid4vp/badge.svg)](https://docs.rs/openid4vp)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 Rust implementation of the OpenID for Verifiable Presentations (OID4VP) specification.
 
@@ -264,4 +264,9 @@ Check the [`examples`](examples/) directory for complete implementations:
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under either of
+
+- the Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE)), or
+- the MIT License ([LICENSE-MIT](LICENSE-MIT)),
+
+at your option, the same as `license = "MIT OR Apache-2.0"` in `Cargo.toml`.
