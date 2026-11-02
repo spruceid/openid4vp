@@ -88,7 +88,7 @@ impl X509SanDnsClient {
         x5c: Vec<Certificate>,
         signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
     ) -> Result<Self> {
-        let leaf = &x5c[0];
+        let leaf = x5c.first().context("x5c certificate chain is empty")?;
         let id = if let Some(san) = leaf
             .tbs_certificate
             .filter::<SubjectAltName>()
@@ -138,7 +138,7 @@ impl X509HashClient {
         x5c: Vec<Certificate>,
         signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
     ) -> Result<Self> {
-        let leaf = &x5c[0];
+        let leaf = x5c.first().context("x5c certificate chain is empty")?;
         let leaf_der = leaf
             .to_der()
             .context("failed to DER-encode leaf certificate")?;
@@ -259,4 +259,26 @@ async fn make_jwt<S: RequestSigner + ?Sized>(
     let signature = signer.sign(&payload).await;
     let signature_b64 = BASE64_URL_SAFE_NO_PAD.encode(signature);
     Ok(format!("{header_b64}.{body_b64}.{signature_b64}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::verifier::request_signer::P256Signer;
+
+    fn signer() -> Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync> {
+        Arc::new(P256Signer::new(p256::ecdsa::SigningKey::random(&mut rand::thread_rng())).unwrap())
+    }
+
+    #[test]
+    fn x509_san_dns_client_refuses_an_empty_chain() {
+        let err = X509SanDnsClient::new(vec![], signer()).unwrap_err();
+        assert_eq!(err.to_string(), "x5c certificate chain is empty");
+    }
+
+    #[test]
+    fn x509_hash_client_refuses_an_empty_chain() {
+        let err = X509HashClient::new(vec![], signer()).unwrap_err();
+        assert_eq!(err.to_string(), "x5c certificate chain is empty");
+    }
 }
