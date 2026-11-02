@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: ['**']
+    branches: ["**"]
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,6 +17,11 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
 
       - uses: taiki-e/install-action@v2
         with:
