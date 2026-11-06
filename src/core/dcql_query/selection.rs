@@ -26,19 +26,14 @@ impl DcqlQuery {
         &self,
         selected_query_ids: impl IntoIterator<Item = &'a str>,
     ) -> Result<(), SelectionError> {
-        let mut counts: Vec<(&str, usize)> = Vec::new();
-        let mut index: HashMap<&str, usize> = HashMap::new();
-        for id in selected_query_ids {
-            match index.get(id) {
-                Some(&i) => counts[i].1 += 1,
-                None => {
-                    index.insert(id, counts.len());
-                    counts.push((id, 1));
-                }
-            }
+        let ids: Vec<&str> = selected_query_ids.into_iter().collect();
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for &id in &ids {
+            *counts.entry(id).or_default() += 1;
         }
 
-        for (id, count) in counts {
+        for id in ids {
+            let count = counts[id];
             let query = self
                 .credential_query(id)
                 .ok_or_else(|| SelectionError::UnknownCredentialQuery(id.to_owned()))?;
