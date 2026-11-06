@@ -6,6 +6,14 @@ use anyhow::{Error, Ok};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
+pub mod claims;
+pub mod selection;
+pub mod type_values;
+
+pub use claims::{mdoc_path, select_json, ClaimsPathError};
+pub use selection::SelectionError;
+pub use type_values::{CredentialTypes, TypeExpansionError, TypeValuesError};
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlQuery {
     credentials: NonEmptyVec<DcqlCredentialQuery>,
