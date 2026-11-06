@@ -13,6 +13,8 @@ pub enum ClaimsPathError {
     NotAnArray(usize),
     #[error("the path selects no claim")]
     NoClaim,
+    #[error("no selected claim matches the requested values")]
+    ValueMismatch,
     #[error("an mdoc path must be exactly a namespace and a data element identifier")]
     InvalidMdocPath,
 }
@@ -64,20 +66,15 @@ impl DcqlCredentialClaimsQueryValue {
     pub fn matches_json(&self, claim: &Json) -> bool {
         match self {
             Self::String(expected) => claim.as_str() == Some(expected.as_str()),
-            Self::Integer(expected) => match claim {
-                Json::Number(n) => {
-                    n.as_i64()
-                        .is_some_and(|n| i128::from(n) == *expected as i128)
-                        || n.as_u64()
-                            .is_some_and(|n| i128::from(n) == *expected as i128)
-                }
-                _ => false,
-            },
+            Self::Integer(expected) => claim.as_i64() == Some(*expected as i64),
             Self::Boolean(expected) => claim.as_bool() == Some(*expected),
         }
     }
 
-    pub fn matches_cbor(&self, claim: &ciborium::Value) -> bool {
+    pub fn matches_cbor(&self, mut claim: &ciborium::Value) -> bool {
+        while let Some((_, inner)) = claim.as_tag() {
+            claim = inner;
+        }
         match self {
             Self::String(expected) => claim.as_text() == Some(expected.as_str()),
             Self::Integer(expected) => claim
@@ -107,40 +104,61 @@ impl DcqlCredentialClaimsQuery {
         if any_match {
             Ok(())
         } else {
-            Err(ClaimsPathError::NoClaim)
+            Err(ClaimsPathError::ValueMismatch)
         }
     }
 }
 
 impl DcqlCredentialQuery {
-    pub fn satisfies_claims(&self, has_claim: impl Fn(&DcqlCredentialClaimsQuery) -> bool) -> bool {
+    pub fn select_claims(
+        &self,
+        has_claim: impl Fn(&DcqlCredentialClaimsQuery) -> bool,
+    ) -> Option<Vec<&DcqlCredentialClaimsQuery>> {
         let Some(claims) = self.claims() else {
             if self.claim_sets().is_some() {
                 tracing::warn!(
                     "credential query {:?} has `claim_sets` but no `claims`",
                     self.id()
                 );
-                return false;
+                return None;
             }
-            return true;
+            return Some(Vec::new());
         };
 
         let Some(claim_sets) = self.claim_sets() else {
-            return claims.iter().all(has_claim);
+            return claims
+                .iter()
+                .all(&has_claim)
+                .then(|| claims.iter().collect());
         };
 
-        claim_sets.iter().any(|option| {
-            option.iter().all(|id| {
-                claims
-                    .iter()
-                    .find(|claim| claim.id() == Some(id))
-                    .is_some_and(&has_claim)
-            })
+        claim_sets.iter().find_map(|option| {
+            option
+                .iter()
+                .map(|id| {
+                    let claim = claims.iter().find(|claim| claim.id() == Some(id));
+                    if claim.is_none() {
+                        tracing::warn!(
+                            "credential query {:?}: `claim_sets` references undefined claim {id:?}",
+                            self.id()
+                        );
+                    }
+                    claim.filter(|claim| has_claim(claim))
+                })
+                .collect()
         })
     }
 
+    pub fn satisfies_claims(&self, has_claim: impl Fn(&DcqlCredentialClaimsQuery) -> bool) -> bool {
+        self.select_claims(has_claim).is_some()
+    }
+
     pub fn satisfies_json_claims(&self, credential: &Json) -> bool {
-        self.satisfies_claims(|claim| {
+        self.select_json_claims(credential).is_some()
+    }
+
+    pub fn select_json_claims(&self, credential: &Json) -> Option<Vec<&DcqlCredentialClaimsQuery>> {
+        self.select_claims(|claim| {
             claim
                 .is_satisfied_by_json(credential)
                 .inspect_err(|e| {
@@ -457,5 +475,64 @@ mod tests {
         assert!(q.satisfies_json_claims(&registration()));
         assert!(q.satisfies_json_claims(&insurance()));
         assert!(!q.satisfies_json_claims(&json!({ "type": ["VerifiableCredential"] })));
+    }
+
+    #[test]
+    fn cbor_values_match_through_tags() {
+        use ciborium::Value as Cbor;
+
+        let birth_date = Cbor::Tag(1004, Box::new(Cbor::Text("1990-01-01".into())));
+        let issued_at = Cbor::Tag(0, Box::new(Cbor::Text("2024-01-01T00:00:00Z".into())));
+
+        assert!(
+            DcqlCredentialClaimsQueryValue::String("1990-01-01".into()).matches_cbor(&birth_date)
+        );
+        assert!(
+            DcqlCredentialClaimsQueryValue::String("2024-01-01T00:00:00Z".into())
+                .matches_cbor(&issued_at)
+        );
+        assert!(
+            !DcqlCredentialClaimsQueryValue::String("1990-01-02".into()).matches_cbor(&birth_date)
+        );
+    }
+
+    #[test]
+    fn value_mismatch_is_distinct_from_a_missing_claim() {
+        let q: DcqlCredentialClaimsQuery =
+            serde_json::from_value(json!({ "path": ["name"], "values": ["Ford Prefect"] }))
+                .unwrap();
+        assert_eq!(
+            q.is_satisfied_by_json(&arthur()),
+            Err(ClaimsPathError::ValueMismatch)
+        );
+    }
+
+    #[test]
+    fn selects_the_first_satisfiable_claim_set_option() {
+        let q = query(json!({
+            "claims": [
+                { "id": "a", "path": ["name"] },
+                { "id": "b", "path": ["birthdate"] },
+                { "id": "c", "path": ["address", "postal_code"] },
+                { "id": "d", "path": ["address", "locality"] }
+            ],
+            "claim_sets": [["a", "b"], ["c", "a"], ["d"]]
+        }));
+        let ids = q
+            .select_json_claims(&arthur())
+            .unwrap()
+            .into_iter()
+            .map(|claim| claim.id().unwrap().as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["c", "a"]);
+    }
+
+    #[test]
+    fn selects_every_claim_without_claim_sets() {
+        let q = query(json!({
+            "claims": [{ "path": ["name"] }, { "path": ["address", "locality"] }]
+        }));
+        assert_eq!(q.select_json_claims(&arthur()).unwrap().len(), 2);
+        assert_eq!(query(json!({})).select_json_claims(&arthur()), Some(vec![]));
     }
 }

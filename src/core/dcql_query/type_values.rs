@@ -1,4 +1,3 @@
-use json_syntax::Parse;
 use serde_json::{Map, Value as Json};
 use ssi::json_ld::{ContextLoader, Expand, IriBuf};
 
@@ -16,8 +15,6 @@ pub enum TypeValuesError {
 pub enum TypeExpansionError {
     #[error("the credential is not a JSON object")]
     NotAnObject,
-    #[error("failed to parse the credential as JSON-LD: {0}")]
-    Parse(String),
     #[error("failed to expand the credential: {0}")]
     Expansion(String),
 }
@@ -133,8 +130,7 @@ pub async fn expand_types(
         }
     }
 
-    let (document, _) = json_syntax::Value::parse_str(&Json::Object(document).to_string())
-        .map_err(|e| TypeExpansionError::Parse(e.to_string()))?;
+    let document = json_syntax::Value::from_serde_json(Json::Object(document));
     let expanded = Expand::<IriBuf>::expand(&document, loader)
         .await
         .map_err(|e| TypeExpansionError::Expansion(e.to_string()))?;
