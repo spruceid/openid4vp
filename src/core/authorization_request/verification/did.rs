@@ -11,6 +11,10 @@ use ssi::jwk::JWKResolver;
 
 /// Default implementation of request validation for `decentralized_identifier` Client Identifier Prefix.
 /// Per Section 5.9.3.
+///
+/// The Request Object MUST be signed with a private key associated with the DID in `client_id`.
+/// Unsigned Request Objects (`alg: none`) are always rejected, even if the wallet metadata lists
+/// `none` in `request_object_signing_alg_values_supported`.
 pub async fn verify_with_resolver(
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
@@ -34,19 +38,21 @@ pub async fn verify_with_resolver(
         bail!("'alg' header was not a string")
     };
 
+    // Checked before the supported algorithms, so that wallet metadata listing `none` cannot
+    // re-enable unsigned requests.
+    if alg.eq_ignore_ascii_case("none") {
+        bail!(
+            "unsigned request object ('alg': '{alg}') is not allowed for the \
+            'decentralized_identifier' Client Identifier Prefix: the request MUST be signed \
+            with a private key associated with the DID (OID4VP 1.0 Section 5.9.3)"
+        )
+    }
+
     let supported_algs: RequestObjectSigningAlgValuesSupported =
         wallet_metadata.get().parsing_error()?;
 
     if !supported_algs.0.contains(&alg) {
         bail!("request was signed with unsupported algorithm: {alg}")
-    }
-
-    // This bypass is for unencoded JWT requests, but we will need to change this later
-    // so that trust is preserved when receiving unencoded requests
-    // NOTE: This requires that `Algorithm::None` is permitted in the wallet metadata
-    // Otherwise, this function will error in the previous assertion.
-    if alg.contains("none") {
-        return Ok(());
     }
 
     let Json::String(kid) = headers
@@ -86,4 +92,103 @@ pub async fn verify_with_resolver(
         .context("request signature could not be verified")?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::borrow::Cow;
+
+    use serde_json::json;
+    use ssi::{claims::ProofValidationError, jwk::JWK};
+
+    use crate::core::object::UntypedObject;
+
+    use super::*;
+
+    const DID: &str = "did:key:zDnaeaDj3YpPR4JXos2kCCNPS86hdELeN5PZh97KGkoFzUtGn";
+
+    /// Resolver that must never be reached: unsigned requests are refused before any DID
+    /// resolution happens.
+    struct PanickingResolver;
+
+    impl JWKResolver for PanickingResolver {
+        async fn fetch_public_jwk(
+            &self,
+            _key_id: Option<&str>,
+        ) -> Result<Cow<'_, JWK>, ProofValidationError> {
+            panic!("DID resolution must not happen for unsigned requests")
+        }
+    }
+
+    fn wallet_metadata(request_object_signing_algs: &[&str]) -> WalletMetadata {
+        serde_json::from_value(json!({
+            "authorization_endpoint": "openid4vp:",
+            "client_id_prefixes_supported": ["decentralized_identifier"],
+            "request_object_signing_alg_values_supported": request_object_signing_algs,
+            "response_types_supported": ["vp_token"],
+            "vp_formats_supported": {
+                "jwt_vc_json": { "alg_values_supported": ["ES256"] }
+            }
+        }))
+        .unwrap()
+    }
+
+    fn request_object() -> AuthorizationRequestObject {
+        let object: UntypedObject = serde_json::from_value(json!({
+            "client_id": format!("decentralized_identifier:{DID}"),
+            "response_type": "vp_token",
+            "response_mode": "direct_post",
+            "response_uri": "https://example.com/response",
+            "nonce": "nonce",
+        }))
+        .unwrap();
+        object.try_into().unwrap()
+    }
+
+    /// Unsecured JWT (RFC 7519 Section 6) with an empty signature.
+    fn unsigned_jwt(alg: &str) -> String {
+        let header = json!({
+            "alg": alg,
+            "typ": "oauth-authz-req+jwt",
+            "kid": format!("{DID}#key-1"),
+        });
+        let header = BASE64_URL_SAFE_NO_PAD.encode(header.to_string());
+        let payload = BASE64_URL_SAFE_NO_PAD.encode(r#"{"nonce":"nonce"}"#);
+        format!("{header}.{payload}.")
+    }
+
+    async fn verify_unsigned(alg: &str, metadata_algs: &[&str]) -> anyhow::Error {
+        verify_with_resolver(
+            &wallet_metadata(metadata_algs),
+            &request_object(),
+            unsigned_jwt(alg),
+            Some(&[DID.to_owned()]),
+            PanickingResolver,
+        )
+        .await
+        .expect_err("unsigned request object must be rejected")
+    }
+
+    #[tokio::test]
+    async fn rejects_alg_none_even_if_wallet_metadata_lists_none() {
+        let err = verify_unsigned("none", &["ES256", "none"]).await;
+        assert!(err.to_string().contains("unsigned request object"), "{err}");
+        assert!(err.to_string().contains("5.9.3"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn rejects_alg_none_case_insensitively() {
+        for alg in ["None", "NONE", "nOnE"] {
+            let err = verify_unsigned(alg, &["ES256", alg]).await;
+            assert!(err.to_string().contains("unsigned request object"), "{err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_alg_none_before_supported_alg_check() {
+        // Without `none` in the metadata the specific error is still returned, which shows
+        // the check runs first.
+        let err = verify_unsigned("none", &["ES256"]).await;
+        assert!(err.to_string().contains("unsigned request object"), "{err}");
+    }
 }
