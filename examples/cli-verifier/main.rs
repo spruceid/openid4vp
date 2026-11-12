@@ -34,7 +34,7 @@ use openid4vp::{
             WalletMetadata,
         },
         object::UntypedObject,
-        response::AuthorizationResponse,
+        response::{parameters::VpTokenItem, AuthorizationResponse},
     },
     utils::NonEmptyVec,
     verifier::{
@@ -73,6 +73,18 @@ struct Args {
     /// Example: --credential mdl,vcdm2_sd_jwt
     #[arg(short, long, default_value = "mdl", value_delimiter = ',')]
     credential: Vec<String>,
+
+    /// W3C VC type the ldp_* DCQL cases ask for
+    #[arg(long, default_value = "VehicleRegistrationCredential")]
+    vc_type: String,
+
+    /// W3C VC type the jwt_vc_* DCQL cases ask for
+    #[arg(long, default_value = "Iso18013DriversLicenseCredential")]
+    jwt_vc_type: String,
+
+    /// Serve every DCQL test case at once, with a QR page at the public URL
+    #[arg(long, default_value = "false")]
+    all: bool,
 
     /// Disable QR code display (just show URL)
     #[arg(long, default_value = "false")]
@@ -140,7 +152,6 @@ impl Client for RedirectUriClient {
 
 #[derive(Debug, Clone, PartialEq)]
 enum DisplayStatus {
-    Initializing,
     WaitingForWallet,
     RequestFetched,
     ResponseReceived,
@@ -148,37 +159,75 @@ enum DisplayStatus {
     Failed(String),
 }
 
+#[derive(Debug, Clone)]
+struct CaseSession {
+    case: String,
+    session_id: Uuid,
+    auth_url: Url,
+    dcql_query: serde_json::Value,
+    status: DisplayStatus,
+}
+
 struct AppState {
     verifier: Verifier,
-    session_id: Mutex<Option<Uuid>>,
-    display_status: Mutex<DisplayStatus>,
+    vc_type: String,
+    jwt_vc_type: String,
+    serve_all: bool,
+    sessions: Mutex<Vec<CaseSession>>,
     completion_notify: tokio::sync::Notify,
 }
 
 impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
-            .field("session_id", &self.session_id)
-            .field("display_status", &self.display_status)
+            .field("sessions", &self.sessions)
             .finish()
     }
 }
 
 impl AppState {
-    fn update_status(&self, status: DisplayStatus) {
-        *self.display_status.lock().unwrap() = status;
-    }
-
-    fn get_status(&self) -> DisplayStatus {
-        self.display_status.lock().unwrap().clone()
-    }
-
-    fn set_session_id(&self, id: Uuid) {
-        *self.session_id.lock().unwrap() = Some(id);
+    fn update_status(&self, session_id: Uuid, status: DisplayStatus) {
+        let mut sessions = self.sessions.lock().unwrap();
+        if let Some(session) = sessions.iter_mut().find(|s| s.session_id == session_id) {
+            println!("[{}]", session.case);
+            print_status_update(&status);
+            session.status = status;
+        }
     }
 
     fn notify_complete(&self) {
-        self.completion_notify.notify_one();
+        if !self.serve_all {
+            self.completion_notify.notify_one();
+        }
+    }
+
+    async fn start_session(&self, case: &str) -> Result<CaseSession> {
+        let types: Vec<String> = case.split('+').map(str::to_owned).collect();
+        let (dcql_query, _) = build_dcql_query_for_types(&types, &self.vc_type, &self.jwt_vc_type)?;
+        let dcql_query_json = serde_json::to_value(&dcql_query)?;
+        let (session_id, auth_url) = self
+            .verifier
+            .build_authorization_request()
+            .with_dcql_query(dcql_query)
+            .with_request_parameter(Nonce::from(Uuid::new_v4().to_string()))
+            .with_request_parameter(build_client_metadata(&types))
+            .build(create_wallet_metadata()?)
+            .await
+            .context("Failed to build authorization request")?;
+
+        let session = CaseSession {
+            case: case.to_owned(),
+            session_id,
+            auth_url,
+            dcql_query: dcql_query_json,
+            status: DisplayStatus::WaitingForWallet,
+        };
+        let mut sessions = self.sessions.lock().unwrap();
+        match sessions.iter_mut().find(|s| s.case == case) {
+            Some(existing) => *existing = session.clone(),
+            None => sessions.push(session.clone()),
+        }
+        Ok(session)
     }
 
     async fn wait_for_completion(&self) {
@@ -205,8 +254,7 @@ async fn get_request_object(
         .await
         .context("Failed to retrieve authorization request")?;
 
-    state.update_status(DisplayStatus::RequestFetched);
-    print_status_update(&state.get_status());
+    state.update_status(uuid, DisplayStatus::RequestFetched);
 
     Ok((
         StatusCode::OK,
@@ -225,8 +273,21 @@ async fn receive_response(
     let uuid: Uuid = session_id.parse().context("Invalid session ID")?;
 
     info!("Received response for session {}", uuid);
-    state.update_status(DisplayStatus::ResponseReceived);
-    print_status_update(&state.get_status());
+    state.update_status(uuid, DisplayStatus::ResponseReceived);
+
+    let form: std::collections::HashMap<String, String> =
+        url::form_urlencoded::parse(body.as_bytes()).into_owned().collect();
+    if let Some(error) = form.get("error") {
+        warn!("Wallet returned error {error} for session {uuid}");
+        state.update_status(
+            uuid,
+            DisplayStatus::Failed(format!(
+                "Wallet declined: error={error}, state={}",
+                form.get("state").map(String::as_str).unwrap_or("<none>")
+            )),
+        );
+        return Ok(Json(json!({})));
+    }
 
     let auth_response = AuthorizationResponse::from_x_www_form_urlencoded(body.as_bytes())
         .context("Failed to parse authorization response")?;
@@ -241,13 +302,28 @@ async fn receive_response(
                         let vp_token = &unencoded.vp_token;
                         let credential_ids: Vec<&String> = vp_token.0.keys().collect();
 
+                        let presented: serde_json::Map<_, _> = vp_token
+                            .0
+                            .iter()
+                            .map(|(id, items)| {
+                                (id.clone(), items.iter().map(decode_vp_token_item).collect())
+                            })
+                            .collect();
+
+                        let presentations_per_query: serde_json::Map<_, _> = vp_token
+                            .0
+                            .iter()
+                            .map(|(id, items)| (id.clone(), json!(items.len())))
+                            .collect();
+
                         let info = json!({
                             "credentials_received": vp_token.0.len(),
                             "credential_query_ids": credential_ids,
+                            "presentations_per_query": presentations_per_query,
+                            "presented": presented,
                         });
 
-                        state_clone.update_status(DisplayStatus::Success(info.clone()));
-                        print_status_update(&state_clone.get_status());
+                        state_clone.update_status(uuid, DisplayStatus::Success(info.clone()));
                         state_clone.notify_complete();
 
                         Outcome::Success { info }
@@ -256,8 +332,7 @@ async fn receive_response(
                         let reason =
                             "Encrypted responses (direct_post.jwt) not supported in this example"
                                 .to_string();
-                        state_clone.update_status(DisplayStatus::Failed(reason.clone()));
-                        print_status_update(&state_clone.get_status());
+                        state_clone.update_status(uuid, DisplayStatus::Failed(reason.clone()));
                         state_clone.notify_complete();
 
                         Outcome::Failure { reason }
@@ -269,6 +344,130 @@ async fn receive_response(
         .context("Failed to verify response")?;
 
     Ok(Json(json!({})))
+}
+
+// ============================================================================
+// Presentation Decoding
+// ============================================================================
+
+fn decode_jwt_payload(jwt: &str) -> Option<serde_json::Value> {
+    let payload = jwt.split('.').nth(1)?;
+    let bytes = BASE64_URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn decode_jwt(jwt: &str) -> serde_json::Value {
+    let Some(mut payload) = decode_jwt_payload(jwt) else {
+        return json!({ "undecodable_jwt": jwt });
+    };
+    if let Some(credentials) = payload
+        .pointer_mut("/vp/verifiableCredential")
+        .and_then(|vcs| vcs.as_array_mut())
+    {
+        for credential in credentials {
+            if let Some(decoded) = credential.as_str().and_then(decode_jwt_payload) {
+                *credential = decoded;
+            }
+        }
+    }
+    payload
+}
+
+fn decode_sd_jwt(sd_jwt: &str) -> serde_json::Value {
+    let parts: Vec<&str> = sd_jwt.split('~').collect();
+    let disclosures: Vec<serde_json::Value> = parts[1..parts.len().saturating_sub(1)]
+        .iter()
+        .filter_map(|disclosure| {
+            let bytes = BASE64_URL_SAFE_NO_PAD.decode(disclosure).ok()?;
+            serde_json::from_slice(&bytes).ok()
+        })
+        .collect();
+    json!({
+        "issuer_jwt": parts.first().map(|jwt| decode_jwt(jwt)),
+        "disclosures": disclosures,
+        "kb_jwt": parts.last().filter(|last| !last.is_empty()).map(|jwt| decode_jwt(jwt)),
+    })
+}
+
+fn cbor_to_json(value: &ciborium::Value) -> serde_json::Value {
+    use ciborium::Value as Cbor;
+    match value {
+        Cbor::Text(text) => json!(text),
+        Cbor::Bool(b) => json!(b),
+        Cbor::Null => serde_json::Value::Null,
+        Cbor::Integer(i) => json!(i128::from(*i)),
+        Cbor::Float(f) => json!(f),
+        Cbor::Bytes(bytes) => json!(format!("<{} bytes>", bytes.len())),
+        Cbor::Array(items) => items.iter().map(cbor_to_json).collect(),
+        Cbor::Map(entries) => entries
+            .iter()
+            .map(|(k, v)| {
+                let key = k
+                    .as_text()
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| cbor_to_json(k).to_string());
+                (key, cbor_to_json(v))
+            })
+            .collect::<serde_json::Map<_, _>>()
+            .into(),
+        Cbor::Tag(24, inner) => inner
+            .as_bytes()
+            .and_then(|bytes| ciborium::from_reader::<Cbor, _>(bytes.as_slice()).ok())
+            .map(|decoded| cbor_to_json(&decoded))
+            .unwrap_or_else(|| cbor_to_json(inner)),
+        Cbor::Tag(_, inner) => cbor_to_json(inner),
+        _ => json!(format!("{value:?}")),
+    }
+}
+
+fn decode_mdoc(device_response: &str) -> serde_json::Value {
+    let Some(response) = BASE64_URL_SAFE_NO_PAD
+        .decode(device_response.trim_end_matches('='))
+        .ok()
+        .and_then(|bytes| ciborium::from_reader::<ciborium::Value, _>(bytes.as_slice()).ok())
+    else {
+        return json!({ "undecodable": device_response });
+    };
+    let response = cbor_to_json(&response);
+    let documents: Vec<serde_json::Value> = response["documents"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|document| {
+            let namespaces: serde_json::Map<_, _> = document["issuerSigned"]["nameSpaces"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(namespace, items)| {
+                    let elements: serde_json::Map<_, _> = items
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|item| {
+                            Some((
+                                item["elementIdentifier"].as_str()?.to_owned(),
+                                item["elementValue"].clone(),
+                            ))
+                        })
+                        .collect();
+                    (namespace.clone(), elements.into())
+                })
+                .collect();
+            json!({ "docType": document["docType"], "nameSpaces": namespaces })
+        })
+        .collect();
+    json!({ "documents": documents })
+}
+
+fn decode_vp_token_item(item: &VpTokenItem) -> serde_json::Value {
+    match item {
+        VpTokenItem::JsonObject(object) => serde_json::Value::Object(object.clone()),
+        VpTokenItem::String(text) if text.contains('~') => decode_sd_jwt(text),
+        VpTokenItem::String(text) if text.split('.').count() == 3 => decode_jwt(text),
+        VpTokenItem::String(text) => decode_mdoc(text),
+    }
 }
 
 // ============================================================================
@@ -301,8 +500,222 @@ where
 // Router Setup
 // ============================================================================
 
+const ALL_CASES: &[(&str, &str)] = &[
+    (
+        "jwt_vc_claim_values+ldp_claim_values+ldp_insurance_values",
+        "CHP request: one DL, one --vc-type and one insurance, picked in the multi-credential sheet.",
+    ),
+    (
+        "ldp_claim_values",
+        "Only VCs of --vc-type are offered. One is sent.",
+    ),
+    (
+        "ldp_type_values",
+        "Only VCs of --vc-type are offered. One is sent.",
+    ),
+    (
+        "ldp_claim_sets",
+        "Only VCs of --vc-type are offered, through the second claim_sets option.",
+    ),
+    (
+        "ldp_multiple",
+        "Several VCs of --vc-type can be sent. Count can be above 1.",
+    ),
+    (
+        "ldp_no_match",
+        "No credential matches. The wallet errors and nothing is sent.",
+    ),
+    ("mdl_age_over_18", "The mDL matches if age_over_18 is true."),
+    (
+        "mdl_no_match",
+        "No credential matches. The wallet errors and nothing is sent.",
+    ),
+    (
+        "ldp_claim_sets_first",
+        "Only VCs of --vc-type are offered, through the first claim_sets option.",
+    ),
+    (
+        "ldp_claim_sets_no_claims",
+        "claim_sets without claims can't be satisfied. Nothing matches.",
+    ),
+    (
+        "ldp_claim_sets_unknown_id",
+        "claim_sets names a claim id that doesn't exist. Nothing matches.",
+    ),
+    (
+        "ldp_index_path",
+        "Integer path index: type[0] is VerifiableCredential. Any LDP VC matches.",
+    ),
+    (
+        "ldp_path_wrong_type",
+        "Path selects a key from an array. Nothing matches.",
+    ),
+    (
+        "ldp_type_values_iri",
+        "type_values with the expanded VerifiableCredential IRI. Any LDP VC matches.",
+    ),
+    (
+        "ldp_type_values_no_match",
+        "type_values with a type nobody has. Nothing matches.",
+    ),
+    (
+        "ldp_no_holder_binding",
+        "require_cryptographic_holder_binding is false. A VC of --vc-type is sent.",
+    ),
+    (
+        "jwt_vc_claim_values",
+        "Only JWT VCs of --jwt-vc-type are offered. One is sent.",
+    ),
+    (
+        "jwt_vc_type_values",
+        "Only JWT VCs of --jwt-vc-type are offered. One is sent.",
+    ),
+    (
+        "jwt_vc_no_match",
+        "No JWT VC matches. The wallet errors and nothing is sent.",
+    ),
+    (
+        "mdl_claim_sets",
+        "The mDL matches through the second claim_sets option (given_name).",
+    ),
+    (
+        "mdl_wrong_doctype",
+        "doctype_value doesn't match the mDL. Nothing matches.",
+    ),
+    (
+        "mdl_bad_path",
+        "An mdoc path with three components is invalid. Nothing matches.",
+    ),
+    ("mdl", "The mDL with given_name and family_name."),
+    ("mdl+jwt_vc", "Both an mDL and a JWT VC are required."),
+    ("ldp_or_mdl", "Either an LDP VC or the mDL."),
+];
+
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn status_label(status: &DisplayStatus) -> (&'static str, String) {
+    match status {
+        DisplayStatus::WaitingForWallet => ("waiting", "Waiting for wallet".to_owned()),
+        DisplayStatus::RequestFetched => ("fetched", "Request fetched, no response yet".to_owned()),
+        DisplayStatus::ResponseReceived => ("fetched", "Verifying response".to_owned()),
+        DisplayStatus::Success(info) => (
+            "success",
+            serde_json::to_string_pretty(&info["presented"]).unwrap_or_default(),
+        ),
+        DisplayStatus::Failed(reason) => ("failed", reason.clone()),
+    }
+}
+
+async fn index_page(State(state): State<Arc<AppState>>) -> axum::response::Html<String> {
+    let sessions = state.sessions.lock().unwrap().clone();
+    let cards: String = sessions
+        .iter()
+        .map(|session| {
+            let expected = ALL_CASES
+                .iter()
+                .find(|(case, _)| *case == session.case)
+                .map(|(_, expected)| {
+                    expected
+                        .replace("--jwt-vc-type", &state.jwt_vc_type)
+                        .replace("--vc-type", &state.vc_type)
+                })
+                .unwrap_or_default();
+            let qr = QrCode::new(session.auth_url.as_str())
+                .map(|code| {
+                    code.render::<qrcode::render::svg::Color>()
+                        .min_dimensions(220, 220)
+                        .build()
+                })
+                .unwrap_or_default();
+            let (class, label) = status_label(&session.status);
+            format!(
+                r#"<section class="card {class}" data-case="{case}"><h2>{case}</h2><p class="expected">{expected}</p>{qr}
+<p><a href="{url}">Open in wallet</a> &middot; <a href="/retry/{case}">New QR</a></p>
+<pre class="status">{label}</pre>
+<details><summary>DCQL query</summary><pre class="query">{query}</pre></details></section>"#,
+                case = html_escape(&session.case),
+                expected = html_escape(&expected),
+                url = html_escape(session.auth_url.as_str()),
+                label = html_escape(&label),
+                query = html_escape(
+                    &serde_json::to_string_pretty(&session.dcql_query).unwrap_or_default()
+                ),
+            )
+        })
+        .collect();
+
+    axum::response::Html(format!(
+        r#"<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>DCQL test cases</title>
+<script>
+const openKey = "open-queries";
+const focusKey = "focused-case";
+addEventListener("DOMContentLoaded", () => {{
+  let open = [];
+  try {{ open = JSON.parse(sessionStorage.getItem(openKey) || "[]"); }} catch (e) {{}}
+  document.querySelectorAll("details").forEach((d, i) => {{ if (open.includes(i)) d.open = true; }});
+  const focused = sessionStorage.getItem(focusKey);
+  document.querySelectorAll(".card").forEach((card) => {{
+    if (card.dataset.case === focused) setFocus(card);
+    card.querySelector("svg")?.addEventListener("click", () =>
+      setFocus(card.classList.contains("focus") ? null : card));
+  }});
+}});
+addEventListener("keydown", (e) => {{ if (e.key === "Escape") setFocus(null); }});
+function setFocus(card) {{
+  document.querySelectorAll(".card.focus").forEach((c) => c.classList.remove("focus"));
+  document.body.classList.toggle("focusing", !!card);
+  if (card) card.classList.add("focus");
+  try {{
+    card ? sessionStorage.setItem(focusKey, card.dataset.case) : sessionStorage.removeItem(focusKey);
+  }} catch (e) {{}}
+}}
+setInterval(() => {{
+  const open = [...document.querySelectorAll("details")].flatMap((d, i) => d.open ? [i] : []);
+  try {{ sessionStorage.setItem(openKey, JSON.stringify(open)); }} catch (e) {{}}
+  location.reload();
+}}, 3000);
+</script>
+<style>
+body {{ font-family: system-ui, sans-serif; margin: 16px; background: #fafafa; color: #111; }}
+main {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }}
+.card {{ background: #fff; border: 2px solid #ddd; border-radius: 8px; padding: 12px; }}
+.card h2 {{ font-size: 16px; margin: 0 0 4px; font-family: ui-monospace, monospace; }}
+.expected {{ font-size: 13px; color: #555; min-height: 2.6em; }}
+.card svg {{ width: 220px; height: 220px; }}
+.card svg {{ cursor: zoom-in; }}
+body.focusing {{ overflow: hidden; }}
+.card.focus {{ position: fixed; inset: 0; z-index: 10; border-radius: 0; overflow: auto; display: flex; flex-direction: column; align-items: center; }}
+.card.focus svg {{ width: min(90vw, 70vh); height: min(90vw, 70vh); cursor: zoom-out; }}
+.card.focus .status, .card.focus details {{ align-self: stretch; }}
+details {{ margin-top: 8px; font-size: 12px; }}
+.query {{ font-size: 11px; white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; background: #f4f4f4; padding: 6px; border-radius: 4px; }}
+.status {{ font-size: 11px; white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 360px; overflow: auto; }}
+.success {{ border-color: #2a9d4b; }} .fetched {{ border-color: #d99a00; }} .failed {{ border-color: #c62828; }}
+</style>
+<h1>DCQL test cases</h1><p>VC type: {vc_type}. JWT VC type: {jwt_vc_type}. The page refreshes every 3 seconds. Click a QR code to enlarge it, and click it again or press Esc to go back.</p><main>{cards}</main>"#,
+        vc_type = html_escape(&state.vc_type),
+        jwt_vc_type = html_escape(&state.jwt_vc_type),
+    ))
+}
+
+async fn retry_case(
+    State(state): State<Arc<AppState>>,
+    Path(case): Path<String>,
+) -> Result<axum::response::Redirect, AppError> {
+    state.start_session(&case).await?;
+    Ok(axum::response::Redirect::to("/"))
+}
+
 fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
+        .route("/", get(index_page))
+        .route("/retry/:case", get(retry_case))
         .route("/request/:session_id", get(get_request_object))
         .route("/response/:session_id", post(receive_response))
         .with_state(state)
@@ -376,6 +789,169 @@ fn build_mdl_credential_query() -> DcqlCredentialQuery {
     credential_query
 }
 
+fn credential_query_from_json(query: serde_json::Value) -> DcqlCredentialQuery {
+    serde_json::from_value(query).expect("valid DCQL credential query")
+}
+
+fn build_ldp_dcql_case(case: &str, vc_type: &str) -> Option<DcqlCredentialQuery> {
+    let id = format!("{case}_0");
+    let query = match case {
+        "ldp_type_values" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "meta": { "type_values": [["VerifiableCredential", vc_type]] }
+        }),
+        "ldp_claim_values" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "claims": [{ "path": ["type", null], "values": [vc_type] }]
+        }),
+        "ldp_claim_sets" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "claims": [
+                { "id": "missing", "path": ["credentialSubject", "no_such_claim"] },
+                { "id": "type", "path": ["type", null], "values": [vc_type] }
+            ],
+            "claim_sets": [["missing"], ["type"]]
+        }),
+        "ldp_multiple" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "multiple": true,
+            "claims": [{ "path": ["type", null], "values": [vc_type] }]
+        }),
+        "ldp_no_match" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "claims": [{ "path": ["type", null], "values": ["NoSuchCredential"] }]
+        }),
+        "ldp_insurance_values" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "claims": [{ "path": ["type", null], "values": ["VehicleInsuranceCredential"] }]
+        }),
+        "ldp_claim_sets_first" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "claims": [
+                { "id": "type", "path": ["type", null], "values": [vc_type] },
+                { "id": "missing", "path": ["credentialSubject", "no_such_claim"] }
+            ],
+            "claim_sets": [["type"], ["missing"]]
+        }),
+        "ldp_claim_sets_no_claims" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "claim_sets": [["type"]]
+        }),
+        "ldp_claim_sets_unknown_id" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "claims": [{ "id": "type", "path": ["type", null], "values": [vc_type] }],
+            "claim_sets": [["no_such_id"]]
+        }),
+        "ldp_index_path" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "claims": [{ "path": ["type", 0], "values": ["VerifiableCredential"] }]
+        }),
+        "ldp_path_wrong_type" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "claims": [{ "path": ["type", "not_an_object"] }]
+        }),
+        "ldp_type_values_iri" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "meta": {
+                "type_values": [["https://www.w3.org/2018/credentials#VerifiableCredential"]]
+            }
+        }),
+        "ldp_type_values_no_match" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "meta": { "type_values": [["VerifiableCredential", "NoSuchCredential"]] }
+        }),
+        "ldp_no_holder_binding" => json!({
+            "id": id,
+            "format": "ldp_vc",
+            "require_cryptographic_holder_binding": false,
+            "claims": [{ "path": ["type", null], "values": [vc_type] }]
+        }),
+        _ => return None,
+    };
+    Some(credential_query_from_json(query))
+}
+
+fn build_jwt_dcql_case(case: &str, jwt_vc_type: &str) -> Option<DcqlCredentialQuery> {
+    let id = format!("{case}_0");
+    let query = match case {
+        "jwt_vc_claim_values" => json!({
+            "id": id,
+            "format": "jwt_vc_json",
+            "claims": [{ "path": ["type", null], "values": [jwt_vc_type] }]
+        }),
+        "jwt_vc_type_values" => json!({
+            "id": id,
+            "format": "jwt_vc_json",
+            "meta": { "type_values": [["VerifiableCredential", jwt_vc_type]] }
+        }),
+        "jwt_vc_no_match" => json!({
+            "id": id,
+            "format": "jwt_vc_json",
+            "claims": [{ "path": ["type", null], "values": ["NoSuchCredential"] }]
+        }),
+        _ => return None,
+    };
+    Some(credential_query_from_json(query))
+}
+
+fn build_mdl_dcql_case(case: &str) -> Option<DcqlCredentialQuery> {
+    let id = format!("{case}_0");
+    let given_name = |values: serde_json::Value| {
+        json!({
+            "id": id,
+            "format": "mso_mdoc",
+            "meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+            "claims": [{ "path": ["org.iso.18013.5.1", "given_name"], "values": values }]
+        })
+    };
+    let query = match case {
+        "mdl_age_over_18" => json!({
+            "id": id,
+            "format": "mso_mdoc",
+            "meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+            "claims": [{ "path": ["org.iso.18013.5.1", "age_over_18"], "values": [true] }]
+        }),
+        "mdl_no_match" => given_name(json!(["__no_such_name__"])),
+        "mdl_claim_sets" => json!({
+            "id": id,
+            "format": "mso_mdoc",
+            "meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+            "claims": [
+                { "id": "given_name", "path": ["org.iso.18013.5.1", "given_name"] },
+                { "id": "missing", "path": ["org.iso.18013.5.1", "no_such_element"] }
+            ],
+            "claim_sets": [["missing"], ["given_name"]]
+        }),
+        "mdl_wrong_doctype" => json!({
+            "id": id,
+            "format": "mso_mdoc",
+            "meta": { "doctype_value": "org.iso.18013.5.1.NotAnMdl" },
+            "claims": [{ "path": ["org.iso.18013.5.1", "given_name"] }]
+        }),
+        "mdl_bad_path" => json!({
+            "id": id,
+            "format": "mso_mdoc",
+            "meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+            "claims": [{ "path": ["org.iso.18013.5.1", "given_name", "extra"] }]
+        }),
+        _ => return None,
+    };
+    Some(credential_query_from_json(query))
+}
+
 /// Build a DCQL query for multiple credential types
 ///
 /// Per OID4VP v1.0 Section 6.2, when credential_sets is present, ALL credentials
@@ -384,7 +960,11 @@ fn build_mdl_credential_query() -> DcqlCredentialQuery {
 /// This function creates separate credential_sets for:
 /// - OR types (like ldp_or_mdl): one credential_set with multiple options
 /// - Individual types: one credential_set with a single option (required)
-fn build_dcql_query_for_types(types: &[String]) -> Result<(DcqlQuery, String)> {
+fn build_dcql_query_for_types(
+    types: &[String],
+    vc_type: &str,
+    jwt_vc_type: &str,
+) -> Result<(DcqlQuery, String)> {
     let mut queries = Vec::new();
     let mut descriptions = Vec::new();
     // Each entry is a credential_set: Vec of options, where each option is Vec of credential IDs
@@ -425,7 +1005,19 @@ fn build_dcql_query_for_types(types: &[String]) -> Result<(DcqlQuery, String)> {
                 ]);
             }
             other => {
-                anyhow::bail!("Unknown credential type: {}. Available: mdl, ldp_vc, jwt_vc, vcdm2_sd_jwt, ldp_or_mdl", other);
+                let Some(query) = build_ldp_dcql_case(other, vc_type)
+                    .or_else(|| build_jwt_dcql_case(other, jwt_vc_type))
+                    .or_else(|| build_mdl_dcql_case(other))
+                else {
+                    anyhow::bail!(
+                        "Unknown credential type: {}. Available: {}",
+                        other,
+                        CREDENTIAL_TYPES
+                    );
+                };
+                credential_sets.push(vec![vec![query.id().to_string()]]);
+                queries.push(query);
+                descriptions.push(other);
             }
         }
     }
@@ -466,11 +1058,21 @@ fn build_dcql_query_for_types(types: &[String]) -> Result<(DcqlQuery, String)> {
 /// Per OID4VP v1.0 Section 5.1, `vp_formats_supported` is REQUIRED in client_metadata
 /// when not available to the Wallet via another mechanism. Since we use `redirect_uri`
 /// client_id_scheme, the wallet has no other way to obtain this information.
+const CREDENTIAL_TYPES: &str = "mdl, ldp_vc, jwt_vc, vcdm2_sd_jwt, ldp_or_mdl, \
+or any case name shown on the --all page";
+
 fn build_client_metadata(credential_types: &[String]) -> ClientMetadata {
     let mut vp_formats = ClaimFormatMap::new();
 
     for cred_type in credential_types {
-        match cred_type.as_str() {
+        let kind = match cred_type.as_str() {
+            "ldp_or_mdl" => "ldp_or_mdl",
+            case if case.starts_with("ldp_") => "ldp_vc",
+            case if case.starts_with("jwt_vc_") => "jwt_vc",
+            case if case.starts_with("mdl_") => "mdl",
+            other => other,
+        };
+        match kind {
             "mdl" => {
                 // For mso_mdoc, we accept any algorithm (empty object)
                 vp_formats.insert(
@@ -635,9 +1237,6 @@ fn display_qr_code(url: &str) {
 
 fn print_status_update(status: &DisplayStatus) {
     match status {
-        DisplayStatus::Initializing => {
-            println!("[*] Initializing...");
-        }
         DisplayStatus::WaitingForWallet => {
             println!("[*] Status: WAITING FOR WALLET");
         }
@@ -720,54 +1319,41 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to build verifier")?;
 
-    // Create wallet metadata
-    let wallet_metadata = create_wallet_metadata()?;
-
-    // Create app state
     let state = Arc::new(AppState {
         verifier,
-        session_id: Mutex::new(None),
-        display_status: Mutex::new(DisplayStatus::Initializing),
+        vc_type: args.vc_type.clone(),
+        jwt_vc_type: args.jwt_vc_type.clone(),
+        serve_all: args.all,
+        sessions: Mutex::new(Vec::new()),
         completion_notify: tokio::sync::Notify::new(),
     });
 
-    // Build DCQL query based on credential types
-    let (dcql_query, credential_desc) = build_dcql_query_for_types(&args.credential)?;
-
-    // Build client metadata with vp_formats_supported
-    // Required per OID4VP v1.0 Section 5.1 when using redirect_uri scheme
-    let client_metadata = build_client_metadata(&args.credential);
-
-    // Build authorization request
-    let (session_id, auth_url) = state
-        .verifier
-        .build_authorization_request()
-        .with_dcql_query(dcql_query)
-        .with_request_parameter(Nonce::from(Uuid::new_v4().to_string()))
-        .with_request_parameter(client_metadata)
-        .build(wallet_metadata)
-        .await
-        .context("Failed to build authorization request")?;
-
-    state.set_session_id(session_id);
-    state.update_status(DisplayStatus::WaitingForWallet);
-
-    // Display information
-    println!("[*] Session ID: {}", session_id);
-    println!("[*] Requesting: {}", credential_desc);
-    println!();
-
-    if !args.no_qr {
-        println!("Scan this QR code with your wallet app:");
+    if args.all {
+        for (case, _) in ALL_CASES {
+            state.start_session(case).await?;
+        }
+        println!("[*] Serving {} DCQL test cases", ALL_CASES.len());
+        println!("[*] Open {} to scan them", args.public_url);
         println!();
-        display_qr_code(auth_url.as_str());
-    }
+    } else {
+        let session = state.start_session(&args.credential.join("+")).await?;
 
-    println!("Authorization URL:");
-    println!("{}", auth_url);
-    println!();
-    println!("----------------------------------------");
-    print_status_update(&state.get_status());
+        println!("[*] Session ID: {}", session.session_id);
+        println!("[*] Requesting: {}", session.case);
+        println!();
+
+        if !args.no_qr {
+            println!("Scan this QR code with your wallet app:");
+            println!();
+            display_qr_code(session.auth_url.as_str());
+        }
+
+        println!("Authorization URL:");
+        println!("{}", session.auth_url);
+        println!();
+        println!("----------------------------------------");
+        print_status_update(&session.status);
+    }
 
     // Start HTTP server
     let app = create_router(state.clone());
