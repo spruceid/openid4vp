@@ -66,7 +66,12 @@ impl DcqlCredentialClaimsQueryValue {
     pub fn matches_json(&self, claim: &Json) -> bool {
         match self {
             Self::String(expected) => claim.as_str() == Some(expected.as_str()),
-            Self::Integer(expected) => claim.as_i64() == Some(*expected as i64),
+            Self::Integer(expected) => {
+                claim.as_i64() == Some(*expected as i64)
+                    || claim
+                        .as_f64()
+                        .is_some_and(|n| n.fract() == 0.0 && n == *expected as f64)
+            }
             Self::Boolean(expected) => claim.as_bool() == Some(*expected),
         }
     }
@@ -133,19 +138,21 @@ impl DcqlCredentialQuery {
         };
 
         claim_sets.iter().find_map(|option| {
-            option
-                .iter()
-                .map(|id| {
-                    let claim = claims.iter().find(|claim| claim.id() == Some(id));
-                    if claim.is_none() {
-                        tracing::warn!(
-                            "credential query {:?}: `claim_sets` references undefined claim {id:?}",
-                            self.id()
-                        );
-                    }
-                    claim.filter(|claim| has_claim(claim))
-                })
-                .collect()
+            let mut selected: Vec<&DcqlCredentialClaimsQuery> = Vec::new();
+            for id in option {
+                let claim = claims.iter().find(|claim| claim.id() == Some(id));
+                if claim.is_none() {
+                    tracing::warn!(
+                        "credential query {:?}: `claim_sets` references undefined claim {id:?}",
+                        self.id()
+                    );
+                }
+                let claim = claim.filter(|claim| has_claim(claim))?;
+                if !selected.iter().any(|c| std::ptr::eq(*c, claim)) {
+                    selected.push(claim);
+                }
+            }
+            Some(selected)
         })
     }
 
@@ -534,5 +541,22 @@ mod tests {
         }));
         assert_eq!(q.select_json_claims(&arthur()).unwrap().len(), 2);
         assert_eq!(query(json!({})).select_json_claims(&arthur()), Some(vec![]));
+    }
+
+    #[test]
+    fn repeated_claim_set_ids_select_the_claim_once() {
+        let q = query(json!({
+            "claims": [{ "id": "a", "path": ["name"] }],
+            "claim_sets": [["a", "a"]]
+        }));
+        assert_eq!(q.select_json_claims(&arthur()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn integer_values_match_integral_floats() {
+        let i = DcqlCredentialClaimsQueryValue::Integer(4);
+        assert!(i.matches_json(&json!(4.0)));
+        assert!(!i.matches_json(&json!(4.5)));
+        assert!(!i.matches_json(&json!(5.0)));
     }
 }
