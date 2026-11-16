@@ -1,5 +1,7 @@
 use serde_json::Value as Json;
 
+use crate::utils::NonEmptyVec;
+
 use super::{
     DcqlCredentialClaimsQuery, DcqlCredentialClaimsQueryPath as PathComponent,
     DcqlCredentialClaimsQueryValue, DcqlCredentialQuery,
@@ -19,9 +21,10 @@ pub enum ClaimsPathError {
     InvalidMdocPath,
 }
 
+/// Processes a claims path pointer against a JSON credential (§7.1.1).
 pub fn select_json<'a>(
     credential: &'a Json,
-    path: &[PathComponent],
+    path: &NonEmptyVec<PathComponent>,
 ) -> Result<Vec<&'a Json>, ClaimsPathError> {
     let mut selected = vec![credential];
 
@@ -53,16 +56,8 @@ pub fn select_json<'a>(
     Ok(selected)
 }
 
-pub fn mdoc_path(path: &[PathComponent]) -> Result<(&str, &str), ClaimsPathError> {
-    match path {
-        [PathComponent::String(namespace), PathComponent::String(element)] => {
-            Ok((namespace, element))
-        }
-        _ => Err(ClaimsPathError::InvalidMdocPath),
-    }
-}
-
 impl DcqlCredentialClaimsQueryValue {
+    /// Whether a JSON claim equals this value, where an integer also matches a whole-number float like `4.0`.
     pub fn matches_json(&self, claim: &Json) -> bool {
         match self {
             Self::String(expected) => claim.as_str() == Some(expected.as_str()),
@@ -76,6 +71,7 @@ impl DcqlCredentialClaimsQueryValue {
         }
     }
 
+    /// Whether a CBOR claim equals this value after unwrapping any tags, so a tag 1004 `full-date` matches its string.
     pub fn matches_cbor(&self, mut claim: &ciborium::Value) -> bool {
         while let Some((_, inner)) = claim.as_tag() {
             claim = inner;
@@ -91,6 +87,19 @@ impl DcqlCredentialClaimsQueryValue {
 }
 
 impl DcqlCredentialClaimsQuery {
+    /// The mdoc namespace and data element identifier, or an error unless the path is exactly two strings (§7.2.1).
+    pub fn mdoc_path(&self) -> Result<(&str, &str), ClaimsPathError> {
+        match (
+            self.path().len(),
+            self.namespace(),
+            self.element_identifier(),
+        ) {
+            (2, Some(namespace), Some(element)) => Ok((namespace, element)),
+            _ => Err(ClaimsPathError::InvalidMdocPath),
+        }
+    }
+
+    /// Whether `matches` accepts any of the requested `values`, or `true` when the query has no `values`.
     pub fn matches_values(
         &self,
         matches: impl FnMut(&DcqlCredentialClaimsQueryValue) -> bool,
@@ -102,7 +111,7 @@ impl DcqlCredentialClaimsQuery {
     }
 
     pub fn is_satisfied_by_json(&self, credential: &Json) -> Result<(), ClaimsPathError> {
-        let selected = select_json(credential, self.path())?;
+        let selected = select_json(credential, &self.path)?;
         let any_match = selected
             .iter()
             .any(|claim| self.matches_values(|value| value.matches_json(claim)));
@@ -115,19 +124,13 @@ impl DcqlCredentialClaimsQuery {
 }
 
 impl DcqlCredentialQuery {
+    /// The claims to disclose given a per-claim `has_claim` check: the first satisfiable `claim_sets` option, every claim when there is no `claim_sets`, or `None` when nothing is satisfiable (§6.4.1).
     pub fn select_claims(
         &self,
         has_claim: impl Fn(&DcqlCredentialClaimsQuery) -> bool,
     ) -> Option<Vec<&DcqlCredentialClaimsQuery>> {
         let Some(claims) = self.claims() else {
-            if self.claim_sets().is_some() {
-                tracing::warn!(
-                    "credential query {:?} has `claim_sets` but no `claims`",
-                    self.id()
-                );
-                return None;
-            }
-            return Some(Vec::new());
+            return self.claim_sets().is_none().then(Vec::new);
         };
 
         let Some(claim_sets) = self.claim_sets() else {
@@ -140,14 +143,10 @@ impl DcqlCredentialQuery {
         claim_sets.iter().find_map(|option| {
             let mut selected: Vec<&DcqlCredentialClaimsQuery> = Vec::new();
             for id in option {
-                let claim = claims.iter().find(|claim| claim.id() == Some(id));
-                if claim.is_none() {
-                    tracing::warn!(
-                        "credential query {:?}: `claim_sets` references undefined claim {id:?}",
-                        self.id()
-                    );
-                }
-                let claim = claim.filter(|claim| has_claim(claim))?;
+                let claim = claims
+                    .iter()
+                    .find(|claim| claim.id() == Some(id))
+                    .filter(|claim| has_claim(claim))?;
                 if !selected.iter().any(|c| std::ptr::eq(*c, claim)) {
                     selected.push(claim);
                 }
@@ -185,7 +184,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn path(value: Json) -> Vec<PathComponent> {
+    fn path(value: Json) -> NonEmptyVec<PathComponent> {
         serde_json::from_value(value).unwrap()
     }
 
@@ -216,7 +215,7 @@ mod tests {
 
     fn arthur_presence(query: &DcqlCredentialQuery) -> bool {
         let credential = arthur();
-        query.satisfies_claims(|claim| select_json(&credential, claim.path()).is_ok())
+        query.satisfies_claims(|claim| select_json(&credential, &claim.path).is_ok())
     }
 
     #[test]
@@ -308,11 +307,19 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_path_cannot_be_built() {
+        assert!(serde_json::from_value::<NonEmptyVec<PathComponent>>(json!([])).is_err());
+        assert!(NonEmptyVec::<PathComponent>::try_from(vec![]).is_err());
+    }
+
+    #[test]
     fn mdoc_paths_are_a_namespace_and_an_element() {
-        assert_eq!(
-            mdoc_path(&path(json!(["org.iso.18013.5.1", "given_name"]))),
-            Ok(("org.iso.18013.5.1", "given_name"))
-        );
+        let claim = |p: Json| -> DcqlCredentialClaimsQuery {
+            serde_json::from_value(json!({ "path": p })).unwrap()
+        };
+
+        let valid = claim(json!(["org.iso.18013.5.1", "given_name"]));
+        assert_eq!(valid.mdoc_path(), Ok(("org.iso.18013.5.1", "given_name")));
         for invalid in [
             json!(["org.iso.18013.5.1"]),
             json!(["org.iso.18013.5.1", "given_name", "x"]),
@@ -320,7 +327,7 @@ mod tests {
             json!([null, "given_name"]),
         ] {
             assert_eq!(
-                mdoc_path(&path(invalid.clone())),
+                claim(invalid.clone()).mdoc_path(),
                 Err(ClaimsPathError::InvalidMdocPath),
                 "{invalid}"
             );

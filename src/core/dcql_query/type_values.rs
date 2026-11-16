@@ -29,6 +29,7 @@ pub enum CredentialTypes {
 }
 
 impl CredentialTypes {
+    /// Collects a W3C VC's types as written and, when JSON-LD expansion succeeds, as expanded IRIs.
     pub async fn from_w3c_vc(vc: &Json, loader: &ContextLoader) -> Self {
         Self::W3c {
             expanded: expand_types(vc, loader)
@@ -66,6 +67,7 @@ impl DcqlCredentialQuery {
             .map(|value| parse_type_values(value).ok_or(TypeValuesError::Malformed))
     }
 
+    /// Whether the credential has every type of at least one `type_values` alternative, treating an absent `type_values` or a non-W3C credential as satisfied and a malformed one as unsatisfied.
     pub fn satisfies_type_values(&self, types: &CredentialTypes) -> bool {
         let Some(alternatives) = self.type_values() else {
             return true;
@@ -117,6 +119,7 @@ pub fn literal_types(vc: &Json) -> Vec<String> {
         .collect()
 }
 
+/// The credential's types as IRIs after JSON-LD expansion of only its `@context`, `type` and `@type`.
 pub async fn expand_types(
     vc: &Json,
     loader: &ContextLoader,

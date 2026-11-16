@@ -17,11 +17,16 @@ impl DcqlQuery {
         self.credentials().iter().find(|query| query.id() == id)
     }
 
-    pub fn requires_holder_binding(&self, credential_query_id: &str) -> bool {
+    pub fn requires_holder_binding(
+        &self,
+        credential_query_id: &str,
+    ) -> Result<bool, SelectionError> {
         self.credential_query(credential_query_id)
-            .is_none_or(DcqlCredentialQuery::require_cryptographic_holder_binding)
+            .map(DcqlCredentialQuery::require_cryptographic_holder_binding)
+            .ok_or_else(|| SelectionError::UnknownCredentialQuery(credential_query_id.to_owned()))
     }
 
+    /// Checks that only credential queries with `multiple` have more than one selected credential (§8.1), reporting the first offending or unknown id in input order.
     pub fn check_multiple<'a>(
         &self,
         selected_query_ids: impl IntoIterator<Item = &'a str>,
@@ -110,9 +115,16 @@ mod tests {
     #[test]
     fn holder_binding_defaults_to_required() {
         let dcql = dcql();
-        assert!(dcql.requires_holder_binding("single"));
-        assert!(!dcql.requires_holder_binding("unbound"));
-        assert!(dcql.requires_holder_binding("other"));
+        assert_eq!(dcql.requires_holder_binding("single"), Ok(true));
+        assert_eq!(dcql.requires_holder_binding("unbound"), Ok(false));
+    }
+
+    #[test]
+    fn holder_binding_rejects_unknown_queries() {
+        assert_eq!(
+            dcql().requires_holder_binding("other"),
+            Err(SelectionError::UnknownCredentialQuery("other".into()))
+        );
     }
 
     #[test]

@@ -10,7 +10,7 @@ pub mod claims;
 pub mod selection;
 pub mod type_values;
 
-pub use claims::{mdoc_path, select_json, ClaimsPathError};
+pub use claims::{select_json, ClaimsPathError};
 pub use selection::SelectionError;
 pub use type_values::{CredentialTypes, TypeExpansionError, TypeValuesError};
 
@@ -439,7 +439,7 @@ impl DcqlCredentialClaimsQuery {
     ///
     /// For mdoc credentials, the DCQL path structure is `[namespace, element_identifier]`.
     /// This method returns the first String element of the path if present.
-    /// See: [OID4VP §B.3.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.1)
+    /// See: [OID4VP §7.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7.2)
     pub fn namespace(&self) -> Option<&str> {
         match self.path.first() {
             Some(DcqlCredentialClaimsQueryPath::String(s)) => Some(s.as_str()),
@@ -451,7 +451,7 @@ impl DcqlCredentialClaimsQuery {
     ///
     /// For mdoc credentials, the DCQL path structure is `[namespace, element_identifier]`.
     /// This method returns the second String element of the path if present.
-    /// See: [OID4VP §B.3.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.1)
+    /// See: [OID4VP §7.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7.2)
     pub fn element_identifier(&self) -> Option<&str> {
         match self.path.get(1) {
             Some(DcqlCredentialClaimsQueryPath::String(s)) => Some(s.as_str()),

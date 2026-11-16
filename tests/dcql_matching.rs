@@ -4,7 +4,7 @@ use base64::Engine;
 use ciborium::Value as Cbor;
 use openid4vp::core::{
     credential_format::ClaimFormatDesignation,
-    dcql_query::{mdoc_path, CredentialTypes, DcqlCredentialQuery, DcqlQuery, SelectionError},
+    dcql_query::{CredentialTypes, DcqlCredentialQuery, DcqlQuery, SelectionError},
 };
 use serde_json::{json, Value as Json};
 use ssi::json_ld::ContextLoader;
@@ -90,7 +90,8 @@ impl Credential {
             && match &self.stored {
                 Stored::Json { claims, .. } => query.satisfies_json_claims(claims),
                 Stored::Mdoc { namespaces, .. } => query.satisfies_claims(|claim| {
-                    mdoc_path(claim.path())
+                    claim
+                        .mdoc_path()
                         .ok()
                         .and_then(|(namespace, element)| namespaces.get(namespace)?.get(element))
                         .is_some_and(|value| claim.matches_values(|v| v.matches_cbor(value)))
