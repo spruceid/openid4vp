@@ -276,7 +276,9 @@ async fn receive_response(
     state.update_status(uuid, DisplayStatus::ResponseReceived);
 
     let form: std::collections::HashMap<String, String> =
-        url::form_urlencoded::parse(body.as_bytes()).into_owned().collect();
+        url::form_urlencoded::parse(body.as_bytes())
+            .into_owned()
+            .collect();
     if let Some(error) = form.get("error") {
         warn!("Wallet returned error {error} for session {uuid}");
         state.update_status(
