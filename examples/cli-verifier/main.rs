@@ -82,6 +82,13 @@ struct Args {
     #[arg(long, default_value = "Iso18013DriversLicenseCredential")]
     jwt_vc_type: String,
 
+    #[arg(
+        long,
+        default_value = "VehicleInsuranceCredential",
+        help = "Second W3C VC type the three-credential case asks for"
+    )]
+    extra_vc_type: String,
+
     /// Serve every DCQL test case at once, with a QR page at the public URL
     #[arg(long, default_value = "false")]
     all: bool,
@@ -172,6 +179,7 @@ struct AppState {
     verifier: Verifier,
     vc_type: String,
     jwt_vc_type: String,
+    extra_vc_type: String,
     serve_all: bool,
     sessions: Mutex<Vec<CaseSession>>,
     completion_notify: tokio::sync::Notify,
@@ -203,7 +211,12 @@ impl AppState {
 
     async fn start_session(&self, case: &str) -> Result<CaseSession> {
         let types: Vec<String> = case.split('+').map(str::to_owned).collect();
-        let (dcql_query, _) = build_dcql_query_for_types(&types, &self.vc_type, &self.jwt_vc_type)?;
+        let (dcql_query, _) = build_dcql_query_for_types(
+            &types,
+            &self.vc_type,
+            &self.jwt_vc_type,
+            &self.extra_vc_type,
+        )?;
         let dcql_query_json = serde_json::to_value(&dcql_query)?;
         let (session_id, auth_url) = self
             .verifier
@@ -288,9 +301,20 @@ async fn receive_response(
                 form.get("state").map(String::as_str).unwrap_or("<none>")
             )),
         );
+        state.notify_complete();
         return Ok(Json(json!({})));
     }
 
+    if let Err(e) = verify_wallet_response(&state, uuid, &body).await {
+        state.update_status(uuid, DisplayStatus::Failed(format!("{e:#}")));
+        state.notify_complete();
+        return Err(e.into());
+    }
+
+    Ok(Json(json!({})))
+}
+
+async fn verify_wallet_response(state: &Arc<AppState>, uuid: Uuid, body: &str) -> Result<()> {
     let auth_response = AuthorizationResponse::from_x_www_form_urlencoded(body.as_bytes())
         .context("Failed to parse authorization response")?;
 
@@ -343,9 +367,7 @@ async fn receive_response(
             })
         })
         .await
-        .context("Failed to verify response")?;
-
-    Ok(Json(json!({})))
+        .context("Failed to verify response")
 }
 
 // ============================================================================
@@ -504,8 +526,8 @@ where
 
 const ALL_CASES: &[(&str, &str)] = &[
     (
-        "jwt_vc_claim_values+ldp_claim_values+ldp_insurance_values",
-        "CHP request: one DL, one --vc-type and one insurance, picked in the multi-credential sheet.",
+        "jwt_vc_claim_values+ldp_claim_values+ldp_extra_values",
+        "One --jwt-vc-type, one --vc-type and one --extra-vc-type, picked in the multi-credential sheet.",
     ),
     (
         "ldp_claim_values",
@@ -624,6 +646,7 @@ async fn index_page(State(state): State<Arc<AppState>>) -> axum::response::Html<
                 .map(|(_, expected)| {
                     expected
                         .replace("--jwt-vc-type", &state.jwt_vc_type)
+                        .replace("--extra-vc-type", &state.extra_vc_type)
                         .replace("--vc-type", &state.vc_type)
                 })
                 .unwrap_or_default();
@@ -700,9 +723,10 @@ details {{ margin-top: 8px; font-size: 12px; }}
 .status {{ font-size: 11px; white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 360px; overflow: auto; }}
 .success {{ border-color: #2a9d4b; }} .fetched {{ border-color: #d99a00; }} .failed {{ border-color: #c62828; }}
 </style>
-<h1>DCQL test cases</h1><p>VC type: {vc_type}. JWT VC type: {jwt_vc_type}. The page refreshes every 3 seconds. Click a QR code to enlarge it, and click it again or press Esc to go back.</p><main>{cards}</main>"#,
+<h1>DCQL test cases</h1><p>VC type: {vc_type}. JWT VC type: {jwt_vc_type}. Extra VC type: {extra_vc_type}. The page refreshes every 3 seconds. Click a QR code to enlarge it, and click it again or press Esc to go back.</p><main>{cards}</main>"#,
         vc_type = html_escape(&state.vc_type),
         jwt_vc_type = html_escape(&state.jwt_vc_type),
+        extra_vc_type = html_escape(&state.extra_vc_type),
     ))
 }
 
@@ -795,7 +819,11 @@ fn credential_query_from_json(query: serde_json::Value) -> DcqlCredentialQuery {
     serde_json::from_value(query).expect("valid DCQL credential query")
 }
 
-fn build_ldp_dcql_case(case: &str, vc_type: &str) -> Option<DcqlCredentialQuery> {
+fn build_ldp_dcql_case(
+    case: &str,
+    vc_type: &str,
+    extra_vc_type: &str,
+) -> Option<DcqlCredentialQuery> {
     let id = format!("{case}_0");
     let query = match case {
         "ldp_type_values" => json!({
@@ -828,10 +856,10 @@ fn build_ldp_dcql_case(case: &str, vc_type: &str) -> Option<DcqlCredentialQuery>
             "format": "ldp_vc",
             "claims": [{ "path": ["type", null], "values": ["NoSuchCredential"] }]
         }),
-        "ldp_insurance_values" => json!({
+        "ldp_extra_values" => json!({
             "id": id,
             "format": "ldp_vc",
-            "claims": [{ "path": ["type", null], "values": ["VehicleInsuranceCredential"] }]
+            "claims": [{ "path": ["type", null], "values": [extra_vc_type] }]
         }),
         "ldp_claim_sets_first" => json!({
             "id": id,
@@ -966,6 +994,7 @@ fn build_dcql_query_for_types(
     types: &[String],
     vc_type: &str,
     jwt_vc_type: &str,
+    extra_vc_type: &str,
 ) -> Result<(DcqlQuery, String)> {
     let mut queries = Vec::new();
     let mut descriptions = Vec::new();
@@ -1007,7 +1036,7 @@ fn build_dcql_query_for_types(
                 ]);
             }
             other => {
-                let Some(query) = build_ldp_dcql_case(other, vc_type)
+                let Some(query) = build_ldp_dcql_case(other, vc_type, extra_vc_type)
                     .or_else(|| build_jwt_dcql_case(other, jwt_vc_type))
                     .or_else(|| build_mdl_dcql_case(other))
                 else {
@@ -1055,14 +1084,14 @@ fn build_dcql_query_for_types(
 // Client Metadata (Verifier Metadata for the request)
 // ============================================================================
 
+const CREDENTIAL_TYPES: &str = "mdl, ldp_vc, jwt_vc, vcdm2_sd_jwt, ldp_or_mdl, \
+or any case name shown on the --all page";
+
 /// Build client metadata with vp_formats_supported.
 ///
 /// Per OID4VP v1.0 Section 5.1, `vp_formats_supported` is REQUIRED in client_metadata
 /// when not available to the Wallet via another mechanism. Since we use `redirect_uri`
 /// client_id_scheme, the wallet has no other way to obtain this information.
-const CREDENTIAL_TYPES: &str = "mdl, ldp_vc, jwt_vc, vcdm2_sd_jwt, ldp_or_mdl, \
-or any case name shown on the --all page";
-
 fn build_client_metadata(credential_types: &[String]) -> ClientMetadata {
     let mut vp_formats = ClaimFormatMap::new();
 
@@ -1325,6 +1354,7 @@ async fn main() -> Result<()> {
         verifier,
         vc_type: args.vc_type.clone(),
         jwt_vc_type: args.jwt_vc_type.clone(),
+        extra_vc_type: args.extra_vc_type.clone(),
         serve_all: args.all,
         sessions: Mutex::new(Vec::new()),
         completion_notify: tokio::sync::Notify::new(),
