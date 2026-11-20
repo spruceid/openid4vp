@@ -3,6 +3,7 @@ use std::{fmt, ops::Deref};
 use crate::core::{
     metadata::parameters::verifier::{EncryptedResponseEncValuesSupported, JWKs, VpFormats},
     object::{TypedParameter, UntypedObject},
+    util::require_https,
 };
 use anyhow::{anyhow, bail, Error, Ok};
 use serde::{Deserialize, Serialize};
@@ -350,8 +351,12 @@ impl From<ResponseUri> for Json {
 impl TryFrom<Json> for ResponseUri {
     type Error = Error;
 
+    /// Parse a `response_uri`, refusing URLs that are not `https`
+    /// (see [require_https]).
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(serde_json::from_value(value).map(ResponseUri)?)
+        let url: Url = serde_json::from_value(value)?;
+        require_https(&url, ResponseUri::KEY)?;
+        Ok(ResponseUri(url))
     }
 }
 
@@ -748,5 +753,31 @@ mod tests {
     #[test]
     fn request_uri_method_default_is_get() {
         assert_eq!(RequestUriMethod::default(), RequestUriMethod::Get);
+    }
+
+    #[test]
+    fn response_uri_https_accepted() {
+        let uri = ResponseUri::try_from(json!("https://verifier.example/cb")).unwrap();
+        assert_eq!(uri.0.as_str(), "https://verifier.example/cb");
+    }
+
+    #[test]
+    fn response_uri_http_remote_refused() {
+        let err = ResponseUri::try_from(json!("http://evil.example/cb")).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("response_uri"), "{msg}");
+        assert!(msg.contains("http://evil.example/cb"), "{msg}");
+        assert!(msg.contains("https"), "{msg}");
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn response_uri_http_loopback_accepted_in_debug() {
+        ResponseUri::try_from(json!("http://127.0.0.1:3000/cb")).unwrap();
+    }
+
+    #[test]
+    fn response_uri_other_scheme_refused() {
+        assert!(ResponseUri::try_from(json!("openid4vp://cb")).is_err());
     }
 }

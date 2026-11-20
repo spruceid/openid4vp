@@ -52,7 +52,7 @@ pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
     let verifier = Arc::new(
         Verifier::builder()
             .with_client(client)
-            .with_submission_endpoint("http://example.com/submission".parse().unwrap())
+            .with_submission_endpoint("https://example.com/submission".parse().unwrap())
             .with_session_store(Arc::new(MemoryStore::default()))
             .build()
             .await
