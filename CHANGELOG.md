@@ -113,6 +113,12 @@
   - `authorization_encrypted_response_alg()` - use JWK's `alg` field
   - `authorization_encrypted_response_enc()` - use `encrypted_response_enc_values_supported()`
 
+### Fixed
+
+- `get_encryption_jwk_thumbprint()` now returns the thumbprint of the key selected by `find_encryption_jwk()`, the key the response is encrypted to, per Section B.2.6.1
+  - Previously it took the first key whose `use` was `enc` or absent, so a JWKS listing a signing key without `use` before the encryption key put the signing key's thumbprint in the mdoc `SessionTranscript`
+  - It now returns `None` when no key is suitable for encryption
+
 ## [0.1.0]
 
 Initial release supporting OpenID4VP Draft 20.

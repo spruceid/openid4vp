@@ -378,32 +378,25 @@ fn cbor_to_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 ///
 /// # Returns
 ///
-/// The SHA-256 JWK thumbprint (32 bytes) of the first suitable encryption key found,
+/// The SHA-256 JWK thumbprint (32 bytes) of the key the response is encrypted to,
+/// as selected by [`find_encryption_jwk`](crate::core::jwe::find_encryption_jwk),
 /// or `None` if no encryption key is available.
 pub fn get_encryption_jwk_thumbprint(
     request: &crate::core::authorization_request::AuthorizationRequestObject,
 ) -> Option<[u8; 32]> {
-    use crate::core::object::ParsingErrorContext;
+    use crate::core::{jwe::find_encryption_jwk, object::ParsingErrorContext};
 
-    request
+    // §B.2.6.1 requires the thumbprint of the key used to encrypt the response, so the
+    // key must be chosen exactly as `build_encrypted_response` chooses it.
+    let jwks = request
         .client_metadata()
-        .ok()
-        .and_then(|meta| meta.jwks().parsing_error().ok())
-        .and_then(|jwks| {
-            jwks.keys.iter().find_map(|key_map| {
-                let jwk_json = serde_json::Value::Object(key_map.clone());
-                let is_enc = key_map
-                    .get("use")
-                    .and_then(|v| v.as_str())
-                    .map(|u| u == "enc")
-                    .unwrap_or(true);
-                if is_enc {
-                    compute_jwk_thumbprint(&jwk_json).ok()
-                } else {
-                    None
-                }
-            })
-        })
+        .ok()?
+        .jwks()
+        .parsing_error()
+        .ok()?;
+    let jwk_info = find_encryption_jwk(jwks.keys.iter()).ok()?;
+    let jwk_json = serde_json::to_value(&jwk_info.jwk).ok()?;
+    compute_jwk_thumbprint(&jwk_json).ok()
 }
 
 /// Compute the SHA-256 JWK Thumbprint according to RFC 7638.
@@ -615,6 +608,64 @@ mod tests {
         let t2 = compute_jwk_thumbprint(&jwk2).unwrap();
 
         assert_eq!(t1, t2);
+    }
+
+    fn request_with_jwks(
+        keys: &[serde_json::Value],
+    ) -> crate::core::authorization_request::AuthorizationRequestObject {
+        let object: crate::core::object::UntypedObject = serde_json::from_value(json!({
+            "client_id": "x509_san_dns:example.com",
+            "response_type": "vp_token",
+            "response_mode": "direct_post.jwt",
+            "response_uri": "https://example.com/response",
+            "nonce": "nonce123",
+            "client_metadata": { "jwks": { "keys": keys } }
+        }))
+        .unwrap();
+        object.try_into().unwrap()
+    }
+
+    fn signing_jwk() -> serde_json::Value {
+        json!({
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+            "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
+            "kid": "sig-1",
+            "alg": "ES256"
+        })
+    }
+
+    fn encryption_jwk() -> serde_json::Value {
+        json!({
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "DxiH5Q4Yx3UrukE2lWCErq8N8bqC9CHLLrAwLz5BmE0",
+            "y": "XtLM4-3h5o3HUH0MHVJV0kyq0iBlrBwlh8qEDMZ4-Pc",
+            "kid": "enc-1",
+            "use": "enc",
+            "alg": "ECDH-ES"
+        })
+    }
+
+    #[test]
+    fn encryption_jwk_thumbprint_uses_the_key_the_response_is_encrypted_to() {
+        // A signing key without `use` comes first; the response is encrypted to `enc-1`.
+        let request = request_with_jwks(&[signing_jwk(), encryption_jwk()]);
+
+        let thumbprint = get_encryption_jwk_thumbprint(&request).unwrap();
+
+        assert_eq!(
+            thumbprint,
+            compute_jwk_thumbprint(&encryption_jwk()).unwrap()
+        );
+    }
+
+    #[test]
+    fn encryption_jwk_thumbprint_none_without_an_encryption_key() {
+        let request = request_with_jwks(&[signing_jwk()]);
+
+        assert_eq!(get_encryption_jwk_thumbprint(&request), None);
     }
 
     // =========================================================================
