@@ -20,7 +20,7 @@ use super::{
     dcql_query::DcqlQuery,
     metadata::parameters::verifier::VpFormats,
     object::{ParsingErrorContext, UntypedObject},
-    util::{base_request, AsyncHttpClient},
+    util::{base_request, require_https, AsyncHttpClient},
 };
 
 /// Required `typ` header value for Request Objects per OID4VP v1.0 Section 5.
@@ -117,6 +117,10 @@ impl AuthorizationRequest {
                 Ok((aro, Some(jwt.clone())))
             }
             RequestIndirection::ByReference { request_uri: url } => {
+                // Check before any request is made, so the Request Object is never fetched in
+                // clear text.
+                require_https(url, "request_uri")?;
+
                 let request = base_request()
                     .method("GET")
                     .uri(url.to_string())
@@ -556,6 +560,110 @@ mod test {
         let req = AuthorizationRequest::from_url(url, &authorization_endpoint).unwrap();
         let expected = RequestIndirection::ByReference{request_uri:"https://labs-online-presentation-sample-app.vii.au01.mattr.global/v2/presentations/sessions/f7e72833-6f3f-4385-b9dd-3a4ea9453948/requests/f7286044-4c94-4ccf-9956-29a8cc6d0687".parse().unwrap()};
         assert_eq!(req.request_indirection, expected);
+    }
+
+    /// HTTP client that counts calls and always answers `404 Not Found`.
+    #[derive(Default)]
+    struct CountingClient(std::sync::atomic::AtomicUsize);
+
+    impl CountingClient {
+        fn calls(&self) -> usize {
+            self.0.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AsyncHttpClient for CountingClient {
+        async fn execute(
+            &self,
+            _request: http::Request<Vec<u8>>,
+        ) -> Result<http::Response<Vec<u8>>> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(http::Response::builder().status(404).body(vec![])?)
+        }
+    }
+
+    fn by_reference(request_uri: &str) -> AuthorizationRequest {
+        AuthorizationRequest {
+            client_id: Some("x509_san_dns:verifier.example".to_string()),
+            request_indirection: RequestIndirection::ByReference {
+                request_uri: request_uri.parse().unwrap(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_request_refuses_http_request_uri_without_fetching() {
+        let client = CountingClient::default();
+        let err = by_reference("http://evil.example/request/1")
+            .resolve_request(&client)
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("request_uri"), "{msg}");
+        assert!(msg.contains("http://evil.example/request/1"), "{msg}");
+        assert!(msg.contains("https"), "{msg}");
+        assert_eq!(client.calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn resolve_request_refuses_other_scheme_request_uri_without_fetching() {
+        let client = CountingClient::default();
+        for uri in ["ftp://verifier.example/r", "file:///etc/passwd"] {
+            assert!(by_reference(uri).resolve_request(&client).await.is_err());
+        }
+        assert_eq!(client.calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn resolve_request_fetches_https_request_uri() {
+        let client = CountingClient::default();
+        // The client answers 404, so resolution fails, but only after the fetch.
+        let _ = by_reference("https://verifier.example/request/1")
+            .resolve_request(&client)
+            .await
+            .unwrap_err();
+        assert_eq!(client.calls(), 1);
+    }
+
+    #[tokio::test]
+    #[cfg(debug_assertions)]
+    async fn resolve_request_fetches_loopback_http_request_uri_in_debug() {
+        let client = CountingClient::default();
+        let _ = by_reference("http://127.0.0.1:3000/request/1")
+            .resolve_request(&client)
+            .await
+            .unwrap_err();
+        assert_eq!(client.calls(), 1);
+    }
+
+    fn direct_post_object(response_uri: &str) -> UntypedObject {
+        serde_json::from_value(json!({
+            "client_id": "x509_san_dns:verifier.example",
+            "response_type": "vp_token",
+            "response_mode": "direct_post",
+            "response_uri": response_uri,
+            "nonce": "n-0S6_WzA2Mj",
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn authorization_request_object_accepts_https_response_uri() {
+        let aro: AuthorizationRequestObject = direct_post_object("https://verifier.example/cb")
+            .try_into()
+            .unwrap();
+        assert_eq!(aro.return_uri().as_str(), "https://verifier.example/cb");
+    }
+
+    #[test]
+    fn authorization_request_object_refuses_http_response_uri() {
+        let err =
+            AuthorizationRequestObject::try_from(direct_post_object("http://evil.example/cb"))
+                .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("response_uri"), "{msg}");
+        assert!(msg.contains("http://evil.example/cb"), "{msg}");
     }
 
     #[test]

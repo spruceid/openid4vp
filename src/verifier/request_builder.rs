@@ -14,6 +14,7 @@ use crate::{
             WalletMetadata,
         },
         object::{ParsingErrorContext, TypedParameter, UntypedObject},
+        util::require_https,
     },
     verifier::{by_reference::ByReference, session::Status},
 };
@@ -142,6 +143,9 @@ impl<'a> RequestBuilder<'a> {
                 request: authorization_request_jwt.clone(),
             },
             ByReference::True { mut at } => {
+                // Wallets built on this crate refuse a non-https `request_uri`; fail here
+                // rather than hand out a request that no Wallet will follow.
+                require_https(&at, "request_uri")?;
                 {
                     let Ok(mut path) = at.path_segments_mut() else {
                         bail!("invalid base URL for Authorization Request by reference")
