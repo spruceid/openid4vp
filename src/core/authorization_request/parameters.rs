@@ -11,7 +11,7 @@ use url::Url;
 
 use super::AuthorizationRequestObject;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClientId(pub String);
 
 impl ClientId {
