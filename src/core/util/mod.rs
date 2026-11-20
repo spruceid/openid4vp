@@ -69,10 +69,9 @@ impl ReqwestClient {
             // exception, and tests and examples talk to local servers over http, so debug
             // builds rely on `require_https` alone.
             .https_only(!cfg!(debug_assertions))
-            // Apply `require_https` to every redirect target too. Without this, debug builds
-            // (where `https_only` is off) follow a redirect from an accepted endpoint to any
-            // http host, and a 307/308 on the response POST resends the `vp_token` in clear
-            // text.
+            // Every redirect target must pass `require_https` too: in debug builds `https_only`
+            // is off, and a 307/308 on the response POST to an http host would resend the
+            // `vp_token` in clear text.
             .redirect(https_redirect_policy())
             .build()
             .context("unable to build http_client")
