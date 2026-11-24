@@ -117,8 +117,7 @@ impl AuthorizationRequest {
                 Ok((aro, Some(jwt.clone())))
             }
             RequestIndirection::ByReference { request_uri: url } => {
-                // Check before any request is made, so the Request Object is never fetched in
-                // clear text.
+                // Before the fetch, so the Request Object never travels in clear text.
                 require_https(url, "request_uri")?;
 
                 let request = base_request()

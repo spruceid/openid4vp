@@ -115,25 +115,14 @@
 
 ### Security
 
-- **BREAKING**: `request_uri` and `response_uri` must use the `https` scheme. Requests with an
-  `http` (or any other non-`https`) `request_uri` or `response_uri` now fail. Before, the scheme
-  was not checked, so a request could make the Wallet fetch the Request Object or POST the
-  `vp_token` in clear text, to a host shown as the Verifier. OID4VP 1.0 sends the response "via
-  an HTTPS connection" (Section 5.2, `response_mode`), requires the `https` scheme for the
-  Request URI (Section 5.10: "The request MUST use the HTTP POST method with the `https`
-  scheme"), and requires implementations to follow BCP195 (Section 14.6, "TLS Requirements").
-  - New public helper `core::util::require_https(url, parameter)` that applies the rule, for
-    Wallets that want the same check elsewhere
-  - Debug builds (`cfg(debug_assertions)`) still accept `http` on a loopback host (`localhost`,
-    `127.0.0.0/8`, `::1`) for local tests and examples; release builds accept `https` only
-  - `ResponseUri` parsing (and so `AuthorizationRequestObject` parsing for `direct_post` and
-    `direct_post.jwt`) refuses a non-`https` `response_uri`
-  - `AuthorizationRequest::resolve_request()` refuses a non-`https` `request_uri` before it
-    sends any request
-  - Verifier: `RequestBuilder::build()` refuses a non-`https` `by_reference` URL or submission
-    endpoint (through the `response_uri` check)
-  - `ReqwestClient` uses `https_only` in release builds, and follows a redirect only when its
-    target passes the same rule (in debug builds too)
+- **BREAKING**: `request_uri` and `response_uri` must use `https`, per OID4VP 1.0 Section 14.6
+  (BCP195). Debug builds also accept `http` on a loopback host. See `core::util::require_https`.
+  - `ResponseUri` parsing and `AuthorizationRequest::resolve_request()` (before the fetch)
+    apply the check.
+  - `VerifierBuilder::build()` refuses a non-`https` submission endpoint or `by_reference` URL.
+  - `ReqwestClient` uses `https_only` in release builds. GET and HEAD requests follow a redirect
+    only to a target that passes the check, and other requests follow none: a Response URI
+    that answers the Authorization Response with a redirect now fails the submission.
 
 ## [0.1.0]
 

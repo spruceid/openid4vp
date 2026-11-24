@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::core::{
     object::{TypedParameter, UntypedObject},
     response::AuthorizationResponse,
+    util::require_https,
 };
 
 use by_reference::ByReference;
@@ -141,6 +142,10 @@ pub struct VerifierBuilder {
 
 impl VerifierBuilder {
     /// Build the verifier.
+    ///
+    /// Fails when the client, session store or submission endpoint is missing, or when the
+    /// submission endpoint or the [by_reference](Self::by_reference) URL fails
+    /// [require_https].
     pub async fn build(self) -> Result<Verifier> {
         let Self {
             client,
@@ -161,6 +166,12 @@ impl VerifierBuilder {
         let Some(submission_endpoint) = submission_endpoint else {
             bail!("submission endpoint is required, see `with_submission_endpoint`")
         };
+
+        // Wallets refuse a non-https `response_uri` or `request_uri`.
+        require_https(&submission_endpoint, "submission endpoint")?;
+        if let ByReference::True { at } = &pass_by_reference {
+            require_https(at, "by_reference URL")?;
+        }
 
         Ok(Verifier {
             client,
@@ -216,5 +227,100 @@ impl VerifierBuilder {
     pub fn with_submission_endpoint(mut self, endpoint: Url) -> Self {
         self.submission_endpoint = Some(endpoint);
         self
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use anyhow::Result;
+    use async_trait::async_trait;
+
+    use super::{session::MemoryStore, Client, Verifier, VerifierBuilder};
+    use crate::core::authorization_request::{
+        parameters::{ClientId, ClientIdScheme},
+        AuthorizationRequestObject,
+    };
+
+    #[derive(Debug)]
+    struct UnsignedClient(ClientId);
+
+    #[async_trait]
+    impl Client for UnsignedClient {
+        fn id(&self) -> &ClientId {
+            &self.0
+        }
+
+        fn prefix(&self) -> ClientIdScheme {
+            ClientIdScheme("x509_san_dns".to_string())
+        }
+
+        async fn generate_request_object_jwt(
+            &self,
+            _body: &AuthorizationRequestObject,
+        ) -> Result<String> {
+            Ok("eyJhbGciOiJub25lIn0.e30.".to_string())
+        }
+    }
+
+    fn builder(submission_endpoint: &str) -> VerifierBuilder {
+        Verifier::builder()
+            .with_client(Arc::new(UnsignedClient(ClientId(
+                "x509_san_dns:verifier.example".to_string(),
+            ))))
+            .with_session_store(Arc::new(MemoryStore::default()))
+            .with_submission_endpoint(submission_endpoint.parse().unwrap())
+    }
+
+    #[tokio::test]
+    async fn build_accepts_https_endpoints() {
+        builder("https://verifier.example/submit")
+            .by_reference("https://verifier.example/request".parse().unwrap())
+            .build()
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(debug_assertions)]
+    async fn build_accepts_loopback_http_in_debug() {
+        builder("http://127.0.0.1:3000/submit")
+            .by_reference("http://localhost:3000/request".parse().unwrap())
+            .build()
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(not(debug_assertions))]
+    async fn build_refuses_loopback_http_in_release() {
+        assert!(builder("http://127.0.0.1:3000/submit")
+            .build()
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn build_refuses_an_http_submission_endpoint() {
+        let err = builder("http://verifier.example/submit")
+            .build()
+            .await
+            .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("submission endpoint"), "{msg}");
+        assert!(msg.contains("http://verifier.example/submit"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn build_refuses_an_http_by_reference_url() {
+        let err = builder("https://verifier.example/submit")
+            .by_reference("http://verifier.example/request".parse().unwrap())
+            .build()
+            .await
+            .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("by_reference"), "{msg}");
+        assert!(msg.contains("http://verifier.example/request"), "{msg}");
     }
 }

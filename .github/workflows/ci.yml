@@ -34,6 +34,9 @@ jobs:
         run: cargo build
       - name: Test
         run: cargo test --all-features
+      # The https rules differ in release builds (`cfg(debug_assertions)`).
+      - name: Test (release)
+        run: cargo test --release --lib
       - name: Fmt
         run: cargo fmt -- --check
       - name: Clippy

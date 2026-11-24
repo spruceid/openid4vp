@@ -5,24 +5,17 @@ use async_trait::async_trait;
 use http::{Request, Response};
 use url::{Host, Url};
 
-/// Check that a Verifier endpoint (`request_uri`, `response_uri`) uses TLS.
+/// Check that a Verifier endpoint (`request_uri`, `response_uri`) uses TLS, as OID4VP 1.0
+/// requires through BCP195 (Section 14.6, "TLS Requirements").
 ///
-/// The rule:
-/// - a URL with the `https` scheme is accepted;
-/// - a URL with the `http` scheme is accepted only in debug builds (`cfg(debug_assertions)`)
-///   and only when its host is loopback: the domain `localhost` (case-insensitive), an IPv4
-///   address in `127.0.0.0/8`, or the IPv6 address `::1`. This keeps local tests and
-///   examples working;
-/// - every other URL is refused.
+/// - `https` is accepted.
+/// - `http` is accepted only when this crate is built with `debug_assertions`, and only for a
+///   loopback host: `localhost`, `127.0.0.0/8` or `::1`. `debug_assertions` follows the build
+///   profile of the application that links this crate, so a Wallet's debug build accepts
+///   loopback http and its release build does not.
+/// - Every other URL is refused.
 ///
-/// OID4VP 1.0 sends the Authorization Response "via an HTTPS connection" (Section 5.2,
-/// `response_mode`), requires the `https` scheme for the Request URI (Section 5.10: "The
-/// request MUST use the HTTP POST method with the `https` scheme"), and requires
-/// implementations to follow BCP195 (Section 14.6, "TLS Requirements"). Without TLS, an
-/// attacker on the network can read or change the Request Object and the `vp_token`.
-///
-/// `parameter` is the name of the checked value (for example `"response_uri"`); the error
-/// message contains it.
+/// `parameter` names the checked value in the error, for example `"response_uri"`.
 pub fn require_https(url: &Url, parameter: &str) -> Result<()> {
     match url.scheme() {
         "https" => Ok(()),
@@ -43,6 +36,12 @@ fn is_loopback(url: &Url) -> bool {
 /// Generic HTTP client.
 ///
 /// A trait is used here so to facilitate native HTTP/TLS when compiled for mobile applications.
+///
+/// The crate checks only the first URL of each request. Implementations must not follow a
+/// redirect whose target fails [require_https], and should follow redirects only for GET and
+/// HEAD. The Authorization Response is a POST: a 307 or 308 would resend the `vp_token` to a
+/// host that was never checked against the `client_id`, and OID4VP 1.0 (Section 8.2) has the
+/// Response URI answer with 200.
 #[async_trait]
 pub trait AsyncHttpClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>>;
@@ -52,44 +51,52 @@ pub(crate) fn base_request() -> http::request::Builder {
     Request::builder().header("Prefer", "OID4VP-1.0.0")
 }
 
+/// [AsyncHttpClient] on reqwest.
+///
+/// GET and HEAD requests follow redirects whose targets pass [require_https]. Other requests
+/// follow no redirect and return the 3xx response as it is.
 #[derive(Debug, Clone)]
-pub struct ReqwestClient(reqwest::Client);
+pub struct ReqwestClient {
+    client: reqwest::Client,
+    without_redirects: reqwest::Client,
+}
 
+/// The client used for GET and HEAD, which follows redirects. A POST sent through it directly
+/// follows redirects too; [AsyncHttpClient::execute] is the path that refuses them.
 impl AsRef<reqwest::Client> for ReqwestClient {
     fn as_ref(&self) -> &reqwest::Client {
-        &self.0
+        &self.client
     }
 }
 
 impl ReqwestClient {
     pub fn new() -> Result<Self> {
-        reqwest::Client::builder()
-            .use_rustls_tls()
-            // Refuse plain http in release builds. reqwest's `https_only` has no loopback
-            // exception, and tests and examples talk to local servers over http, so debug
-            // builds rely on `require_https` alone.
-            .https_only(!cfg!(debug_assertions))
-            // Every redirect target must pass `require_https` too: in debug builds `https_only`
-            // is off, and a 307/308 on the response POST to an http host would resend the
-            // `vp_token` in clear text.
-            .redirect(https_redirect_policy())
-            .build()
-            .context("unable to build http_client")
-            .map(Self)
+        Ok(Self {
+            client: builder()
+                .redirect(https_redirect_policy())
+                .build()
+                .context("unable to build http_client")?,
+            without_redirects: builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .context("unable to build http_client")?,
+        })
     }
 }
 
-/// Maximum number of redirects that [ReqwestClient] follows (reqwest's default).
-const MAX_REDIRECTS: usize = 10;
+fn builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .use_rustls_tls()
+        // No loopback exception in `https_only`, so debug builds rely on `require_https`.
+        .https_only(!cfg!(debug_assertions))
+}
 
-/// Redirect policy that follows a redirect only when its target passes [require_https].
+/// Every redirect target must pass [require_https], then reqwest's default limit of 10 hops
+/// applies. The check matters in debug builds, where `https_only` is off.
 fn https_redirect_policy() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(|attempt| {
-        if attempt.previous().len() >= MAX_REDIRECTS {
-            return attempt.error("too many redirects");
-        }
         match require_https(attempt.url(), "redirect target") {
-            Ok(()) => attempt.follow(),
+            Ok(()) => reqwest::redirect::Policy::default().redirect(attempt),
             Err(error) => attempt.error(error),
         }
     })
@@ -98,8 +105,11 @@ fn https_redirect_policy() -> reqwest::redirect::Policy {
 #[async_trait]
 impl AsyncHttpClient for ReqwestClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
-        let response = self
-            .0
+        let client = match *request.method() {
+            http::Method::GET | http::Method::HEAD => &self.client,
+            _ => &self.without_redirects,
+        };
+        let response = client
             .execute(request.try_into().context("unable to convert request")?)
             .await
             .context("http request failed")?;
@@ -136,6 +146,8 @@ mod test {
     use url::Url;
 
     use super::require_https;
+    #[cfg(not(debug_assertions))]
+    use super::{AsyncHttpClient, ReqwestClient};
 
     const LOOPBACK_HTTP: [&str; 6] = [
         "http://127.0.0.1:3000/cb",
@@ -190,6 +202,24 @@ mod test {
         }
     }
 
+    #[tokio::test]
+    #[cfg(not(debug_assertions))]
+    async fn reqwest_client_refuses_loopback_http_in_release() {
+        let client = ReqwestClient::new().unwrap();
+        for method in [http::Method::GET, http::Method::POST] {
+            let request = http::Request::builder()
+                .method(method.clone())
+                .uri("http://127.0.0.1:9/")
+                .body(vec![])
+                .unwrap();
+            let err = client.execute(request).await.unwrap_err();
+            assert!(
+                format!("{err:#}").contains("URL scheme is not allowed"),
+                "{method}: {err:#}"
+            );
+        }
+    }
+
     #[test]
     fn require_https_refuses_http_on_non_loopback_host() {
         for url in [
@@ -223,8 +253,12 @@ mod test {
 /// loopback server, and release builds refuse http before any redirect.
 #[cfg(all(test, debug_assertions))]
 mod redirect_test {
+    use std::collections::HashMap;
+
     use axum::{
+        extract::{Path, Query},
         http::{header, StatusCode},
+        response::IntoResponse,
         routing::any,
         Router,
     };
@@ -254,16 +288,96 @@ mod redirect_test {
                         (StatusCode::TEMPORARY_REDIRECT, [(header::LOCATION, ok)])
                     }),
                 )
-                .route("/ok", any(|| async { "ok" }));
+                .route("/ok", any(|| async { "ok" }))
+                .route(
+                    "/chain/:n",
+                    any(|Path(n): Path<u32>| async move {
+                        match n {
+                            0 => "ok".into_response(),
+                            n => (
+                                StatusCode::TEMPORARY_REDIRECT,
+                                [(header::LOCATION, format!("/chain/{}", n - 1))],
+                            )
+                                .into_response(),
+                        }
+                    }),
+                )
+                .route(
+                    "/to-other-origin",
+                    any(|Query(q): Query<HashMap<String, String>>| async move {
+                        let status = q
+                            .get("status")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(StatusCode::TEMPORARY_REDIRECT);
+                        (status, [(header::LOCATION, q["to"].clone())])
+                    }),
+                );
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         base
+    }
+
+    async fn send(method: http::Method, url: String) -> anyhow::Result<http::Response<Vec<u8>>> {
+        let request = http::Request::builder()
+            .method(method)
+            .uri(url)
+            .body(b"vp_token=secret".to_vec())
+            .unwrap();
+        ReqwestClient::new().unwrap().execute(request).await
+    }
+
+    #[tokio::test]
+    async fn follows_ten_redirects() {
+        let base = redirect_server().await;
+        let response = send(http::Method::GET, format!("{base}/chain/10"))
+            .await
+            .unwrap();
+        assert_eq!(response.body(), b"ok");
+    }
+
+    /// `localhost` and `127.0.0.1` are different origins, though the same server answers.
+    fn other_origin(base: &str, status: u16) -> String {
+        let to = base.replace("127.0.0.1", "localhost") + "/ok";
+        format!("{base}/to-other-origin?status={status}&to={to}")
+    }
+
+    #[tokio::test]
+    async fn a_post_follows_no_redirect() {
+        let base = redirect_server().await;
+        for status in [301, 302, 303, 307, 308] {
+            let response = send(http::Method::POST, other_origin(&base, status))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+        }
+        let response = send(http::Method::POST, format!("{base}/to-loopback"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 307);
+    }
+
+    #[tokio::test]
+    async fn a_get_follows_a_redirect_to_another_origin() {
+        let base = redirect_server().await;
+        let response = send(http::Method::GET, other_origin(&base, 307))
+            .await
+            .unwrap();
+        assert_eq!(response.body(), b"ok");
+    }
+
+    #[tokio::test]
+    async fn refuses_an_eleventh_redirect() {
+        let base = redirect_server().await;
+        let err = send(http::Method::GET, format!("{base}/chain/11"))
+            .await
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("too many redirects"), "{err:#}");
     }
 
     #[tokio::test]
     async fn refuses_a_redirect_to_a_public_http_host() {
         let base = redirect_server().await;
-        let request = http::Request::post(format!("{base}/to-public"))
-            .body(b"vp_token=secret".to_vec())
+        let request = http::Request::get(format!("{base}/to-public"))
+            .body(vec![])
             .unwrap();
         let err = ReqwestClient::new()
             .unwrap()
