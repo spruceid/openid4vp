@@ -113,6 +113,13 @@
   - `authorization_encrypted_response_alg()` - use JWK's `alg` field
   - `authorization_encrypted_response_enc()` - use `encrypted_response_enc_values_supported()`
 
+### Security
+
+- **BREAKING**: `verification::did::verify_with_resolver()` now rejects unsigned Request Objects (`alg: none`, case-insensitive) for the `decentralized_identifier` Client Identifier Prefix, per Section 5.9.3 ("the request MUST be signed with a private key associated with the DID")
+  - Previously an unsigned request was accepted without checking `kid`, `client_id`, `trusted_dids` or any signature whenever the wallet metadata listed `none` in `request_object_signing_alg_values_supported`, so a verifier could claim any DID
+  - The check runs before the supported-algorithm check, so listing `none` in the wallet metadata no longer re-enables unsigned requests
+  - Wallets that relied on unsigned `decentralized_identifier` requests now get an error
+
 ## [0.1.0]
 
 Initial release supporting OpenID4VP Draft 20.
