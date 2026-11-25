@@ -32,7 +32,14 @@ impl VpFormats {
             Some(ClaimFormatPayload::ProofTypeValues(proof_types)) => {
                 proof_types.contains(security_method)
             }
-            _ => false,
+            Some(ClaimFormatPayload::Other(payload)) => {
+                ["alg_values", "proof_type_values", "cryptosuite_values"]
+                    .iter()
+                    .filter_map(|key| payload.get(key)?.as_array())
+                    .flatten()
+                    .any(|value| value.as_str() == Some(security_method))
+            }
+            None => false,
         }
     }
 }
