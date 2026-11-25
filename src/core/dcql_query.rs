@@ -2,9 +2,10 @@ use crate::{
     core::{credential_format::ClaimFormatDesignation, object::TypedParameter},
     utils::NonEmptyVec,
 };
-use anyhow::{Error, Ok};
+use anyhow::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DcqlQuery {
@@ -47,6 +48,72 @@ impl DcqlQuery {
     pub fn set_credentials(&mut self, credentials: NonEmptyVec<DcqlCredentialQuery>) {
         self.credentials = credentials;
     }
+
+    pub fn validate(&self) -> Result<(), DcqlValidationError> {
+        let mut credential_ids = HashSet::new();
+        for credential in self.credentials.iter() {
+            if !is_valid_identifier(&credential.id) {
+                return Err(DcqlValidationError::InvalidCredentialId(
+                    credential.id.clone(),
+                ));
+            }
+            if !credential_ids.insert(credential.id.as_str()) {
+                return Err(DcqlValidationError::DuplicateCredentialId(
+                    credential.id.clone(),
+                ));
+            }
+            credential.validate()?;
+        }
+
+        for credential_set in self.credential_sets.iter().flatten() {
+            for option in credential_set.options.iter() {
+                if option.is_empty() {
+                    return Err(DcqlValidationError::EmptyCredentialSetOption);
+                }
+                if let Some(unknown) = option
+                    .iter()
+                    .find(|id| !credential_ids.contains(id.as_str()))
+                {
+                    return Err(DcqlValidationError::UnknownCredentialId(unknown.clone()));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DcqlValidationError {
+    #[error("credential query id {0:?} is empty or has characters other than [A-Za-z0-9_-]")]
+    InvalidCredentialId(String),
+    #[error("credential query id {0:?} appears more than once")]
+    DuplicateCredentialId(String),
+    #[error("credential_sets option is empty")]
+    EmptyCredentialSetOption,
+    #[error("credential_sets references unknown credential query id {0:?}")]
+    UnknownCredentialId(String),
+    #[error("credential query {credential:?} has claim id {claim:?}, which is empty or has characters other than [A-Za-z0-9_-]")]
+    InvalidClaimId { credential: String, claim: String },
+    #[error("credential query {credential:?} has claim id {claim:?} more than once")]
+    DuplicateClaimId { credential: String, claim: String },
+    #[error("credential query {credential:?} has claim_sets but no claims")]
+    ClaimSetsWithoutClaims { credential: String },
+    #[error("credential query {credential:?} has claim_sets and a claim without an id")]
+    ClaimWithoutId { credential: String },
+    #[error(
+        "credential query {credential:?} has claim_sets referencing unknown claim id {claim:?}"
+    )]
+    UnknownClaimId { credential: String, claim: String },
+    #[error("credential query {credential:?} has an mso_mdoc claim path that is not exactly two strings")]
+    InvalidMdocClaimPath { credential: String },
+}
+
+fn is_valid_identifier(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 impl TypedParameter for DcqlQuery {
@@ -230,6 +297,60 @@ impl DcqlCredentialQuery {
 
     pub fn set_multiple(&mut self, multiple: Option<bool>) {
         self.multiple = multiple;
+    }
+
+    fn validate(&self) -> Result<(), DcqlValidationError> {
+        let credential = || self.id.clone();
+        let claims = self.claims.as_deref().unwrap_or(&[]);
+
+        let mut claim_ids = HashSet::new();
+        for claim in claims {
+            if let Some(id) = &claim.id {
+                if !is_valid_identifier(id) {
+                    return Err(DcqlValidationError::InvalidClaimId {
+                        credential: credential(),
+                        claim: id.clone(),
+                    });
+                }
+                if !claim_ids.insert(id.as_str()) {
+                    return Err(DcqlValidationError::DuplicateClaimId {
+                        credential: credential(),
+                        claim: id.clone(),
+                    });
+                }
+            }
+            if self.format == ClaimFormatDesignation::MsoMDoc && !claim.is_mdoc_path() {
+                return Err(DcqlValidationError::InvalidMdocClaimPath {
+                    credential: credential(),
+                });
+            }
+        }
+
+        let Some(claim_sets) = &self.claim_sets else {
+            return Ok(());
+        };
+        if claims.is_empty() {
+            return Err(DcqlValidationError::ClaimSetsWithoutClaims {
+                credential: credential(),
+            });
+        }
+        if claims.iter().any(|claim| claim.id.is_none()) {
+            return Err(DcqlValidationError::ClaimWithoutId {
+                credential: credential(),
+            });
+        }
+        if let Some(unknown) = claim_sets
+            .iter()
+            .flatten()
+            .find(|id| !claim_ids.contains(id.as_str()))
+        {
+            return Err(DcqlValidationError::UnknownClaimId {
+                credential: credential(),
+                claim: unknown.clone(),
+            });
+        }
+
+        Ok(())
     }
 }
 
@@ -425,6 +546,16 @@ impl DcqlCredentialClaimsQuery {
 
     pub fn set_intent_to_retain(&mut self, intent_to_retain: Option<bool>) {
         self.intent_to_retain = intent_to_retain;
+    }
+
+    fn is_mdoc_path(&self) -> bool {
+        matches!(
+            &*self.path,
+            [
+                DcqlCredentialClaimsQueryPath::String(_),
+                DcqlCredentialClaimsQueryPath::String(_)
+            ]
+        )
     }
 
     /// Extracts the namespace from the path (for mso_mdoc credentials).
@@ -734,5 +865,238 @@ mod tests {
         assert_eq!(claim.namespace(), Some("name"));
         assert_eq!(claim.element_identifier(), None);
         assert_eq!(claim.claim_name(), Some("name"));
+    }
+    fn query(json: serde_json::Value) -> DcqlQuery {
+        serde_json::from_value(json).unwrap()
+    }
+
+    fn ldp_credential(extra: serde_json::Value) -> serde_json::Value {
+        let mut credential = json!({ "id": "vc", "format": "ldp_vc", "meta": {} });
+        credential
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        credential
+    }
+
+    #[test]
+    fn validate_accepts_claim_sets_referencing_claim_ids() {
+        let dcql = query(json!({
+            "credentials": [ldp_credential(json!({
+                "claims": [
+                    { "id": "a", "path": ["credentialSubject", "a"] },
+                    { "id": "b", "path": ["credentialSubject", "b"] }
+                ],
+                "claim_sets": [["a"], ["a", "b"]]
+            }))]
+        }));
+        assert_eq!(dcql.validate(), Ok(()));
+    }
+
+    #[test]
+    fn validate_rejects_credential_id_with_invalid_characters() {
+        let dcql = query(json!({
+            "credentials": [{ "id": "my credential", "format": "ldp_vc", "meta": {} }]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::InvalidCredentialId(
+                "my credential".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_empty_credential_id() {
+        let dcql = query(json!({
+            "credentials": [{ "id": "", "format": "ldp_vc", "meta": {} }]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::InvalidCredentialId("".into()))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_credential_ids() {
+        let dcql = query(json!({
+            "credentials": [
+                { "id": "vc", "format": "ldp_vc", "meta": {} },
+                { "id": "vc", "format": "jwt_vc_json", "meta": {} }
+            ]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::DuplicateCredentialId("vc".into()))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_credential_set_with_unknown_credential_id() {
+        let dcql = query(json!({
+            "credentials": [{ "id": "vc", "format": "ldp_vc", "meta": {} }],
+            "credential_sets": [{ "options": [["vc"], ["mdl"]] }]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::UnknownCredentialId("mdl".into()))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_empty_credential_set_option() {
+        let dcql = query(json!({
+            "credentials": [{ "id": "vc", "format": "ldp_vc", "meta": {} }],
+            "credential_sets": [{ "options": [[]] }]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::EmptyCredentialSetOption)
+        );
+    }
+
+    #[test]
+    fn validate_rejects_claim_sets_without_claims() {
+        let dcql = query(json!({
+            "credentials": [ldp_credential(json!({ "claim_sets": [["type"]] }))]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::ClaimSetsWithoutClaims {
+                credential: "vc".into()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_claim_sets_with_unknown_claim_id() {
+        let dcql = query(json!({
+            "credentials": [ldp_credential(json!({
+                "claims": [{ "id": "type", "path": ["type", null] }],
+                "claim_sets": [["no_such_id"]]
+            }))]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::UnknownClaimId {
+                credential: "vc".into(),
+                claim: "no_such_id".into()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_claim_sets_when_a_claim_has_no_id() {
+        let dcql = query(json!({
+            "credentials": [ldp_credential(json!({
+                "claims": [
+                    { "id": "type", "path": ["type", null] },
+                    { "path": ["credentialSubject", "name"] }
+                ],
+                "claim_sets": [["type"]]
+            }))]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::ClaimWithoutId {
+                credential: "vc".into()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_claim_ids() {
+        let dcql = query(json!({
+            "credentials": [ldp_credential(json!({
+                "claims": [
+                    { "id": "a", "path": ["credentialSubject", "a"] },
+                    { "id": "a", "path": ["credentialSubject", "b"] }
+                ]
+            }))]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::DuplicateClaimId {
+                credential: "vc".into(),
+                claim: "a".into()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_claim_id_with_invalid_characters() {
+        let dcql = query(json!({
+            "credentials": [ldp_credential(json!({
+                "claims": [{ "id": "a.b", "path": ["credentialSubject", "a"] }]
+            }))]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::InvalidClaimId {
+                credential: "vc".into(),
+                claim: "a.b".into()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_mdoc_path_with_three_components() {
+        let dcql = query(json!({
+            "credentials": [{
+                "id": "mdl",
+                "format": "mso_mdoc",
+                "meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+                "claims": [{ "path": ["org.iso.18013.5.1", "given_name", "extra"] }]
+            }]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::InvalidMdocClaimPath {
+                credential: "mdl".into()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_mdoc_path_with_non_string_component() {
+        let dcql = query(json!({
+            "credentials": [{
+                "id": "mdl",
+                "format": "mso_mdoc",
+                "meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+                "claims": [{ "path": ["org.iso.18013.5.1", 0] }]
+            }]
+        }));
+        assert_eq!(
+            dcql.validate(),
+            Err(DcqlValidationError::InvalidMdocClaimPath {
+                credential: "mdl".into()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_allows_three_component_paths_outside_mdoc() {
+        let dcql = query(json!({
+            "credentials": [ldp_credential(json!({
+                "claims": [{ "path": ["credentialSubject", "address", "locality"] }]
+            }))]
+        }));
+        assert_eq!(dcql.validate(), Ok(()));
+    }
+
+    #[test]
+    fn deserialize_ignores_unknown_properties() {
+        let dcql = query(json!({
+            "credentials": [{
+                "id": "vc",
+                "format": "ldp_vc",
+                "meta": {},
+                "future_extension": true,
+                "claims": [{ "path": ["type"], "future_extension": true }]
+            }],
+            "future_extension": true
+        }));
+        assert_eq!(dcql.validate(), Ok(()));
     }
 }

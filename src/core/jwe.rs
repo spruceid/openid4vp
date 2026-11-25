@@ -482,4 +482,58 @@ mod tests {
         let result = find_encryption_jwk(keys.into_iter());
         assert!(result.is_err());
     }
+
+    fn spec_example_private_jwk() -> Json {
+        json!({
+            "kty": "EC", "kid": "ac", "use": "enc", "crv": "P-256", "alg": "ECDH-ES",
+            "x": "YO4epjifD-KWeq1sL2tNmm36BhXnkJ0He-WqMYrp9Fk",
+            "y": "Hekpm0zfK7C-YccH5iBjcIXgf6YdUvNUac_0At55Okk",
+            "d": "Et-3ce0omz8_TuZ96Df9lp0GAaaDoUnDe6X-CRO7Aww"
+        })
+    }
+
+    fn spec_example_public_jwk() -> Json {
+        let mut jwk = spec_example_private_jwk();
+        jwk.as_object_mut().unwrap().remove("d");
+        jwk
+    }
+
+    fn decrypt_with_spec_example_key(jwe: &str) -> (Json, JweHeader) {
+        let jwk = Jwk::from_bytes(spec_example_private_jwk().to_string().as_bytes()).unwrap();
+        let decrypter: josekit::jwe::alg::ecdh_es::EcdhEsJweDecrypter<p256::NistP256> =
+            josekit::jwe::ECDH_ES.decrypter_from_jwk(&jwk).unwrap();
+        let (payload, header) = josekit::jwe::deserialize_compact(jwe, &decrypter).unwrap();
+        (serde_json::from_slice(&payload).unwrap(), header)
+    }
+
+    #[test]
+    fn spec_example_encrypted_response_decrypts_with_spec_example_key() {
+        let jwe = "eyJhbGciOiJFQ0RILUVTIiwiZW5jIjoiQTEyOEdDTSIsImtpZCI6ImFjIiwiZXBrIjp7Imt0eSI6IkVDIiwieCI6Im5ubVZwbTNWM2piaGNhZlFhUkJrU1ZOSGx3Wkh3dC05ck9wSnVmeVlJdWsiLCJ5IjoicjRmakRxd0p5czlxVU9QLV9iM21SNVNaRy0tQ3dPMm1pYzVWU05UWU45ZyIsImNydiI6IlAtMjU2In19..uAYcHRUSSn2X0WPX.yVzlGSYG4qbg0bq18JcUiDRw56yVnbKR8E7S7YlEtzT00RqE3Pw5oTpUG3hdLN4taHZ9gC1kwak8JOnJgQ.1wR024_3-qtAlx1oFIUpQQ";
+        let (payload, header) = decrypt_with_spec_example_key(jwe);
+        assert_eq!(header.algorithm(), Some("ECDH-ES"));
+        assert_eq!(header.content_encryption(), Some("A128GCM"));
+        assert_eq!(header.key_id(), Some("ac"));
+        assert!(payload["vp_token"].is_object());
+    }
+
+    #[test]
+    fn jwe_builder_output_decrypts_with_spec_example_key() {
+        let payload = json!({
+            "vp_token": { "example_credential_id": ["eyJhb...YMetA"] }
+        });
+        let jwe = JweBuilder::new()
+            .payload(payload.clone())
+            .recipient_key_json(&spec_example_public_jwk())
+            .unwrap()
+            .alg("ECDH-ES")
+            .build()
+            .unwrap();
+
+        let (decrypted, header) = decrypt_with_spec_example_key(&jwe);
+        assert_eq!(decrypted, payload);
+        assert_eq!(header.algorithm(), Some("ECDH-ES"));
+        assert_eq!(header.content_encryption(), Some("A128GCM"));
+        assert_eq!(header.key_id(), Some("ac"));
+        assert_eq!(header.claim("epk").unwrap()["crv"], "P-256");
+    }
 }
